@@ -304,7 +304,7 @@ impl NodeRef {
         if let Err(_) = prev_ptr.compare_exchange(
             (old_ptr, old_new_refs_gen),
             self.next.load(Ordering::Acquire),
-            Ordering::AcqRel,
+            Ordering::SeqCst,
             Ordering::Relaxed
         ) {
             return Err(self);
