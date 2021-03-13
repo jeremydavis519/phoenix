@@ -27,13 +27,15 @@
 #![feature(asm)]
 
 // use libdriver::IoType;
-use libphoenix::ThreadResult;
+use libphoenix::block_on;
 
 // mod mmio;
 // mod pci;
 
 fn main() -> Result<(), ()> {
-    let device = libdriver::get_device("*/virtio/gpu")
+    let device = libphoenix::block_on(
+        libdriver::get_device("*/virtio/gpu")
+    )
         .map_err(|e| { eprintln!("Driver initialization failed: {}", e); })?;
     /*match device.io_type {
         IoType::Mmio => self::mmio::init(&device),
