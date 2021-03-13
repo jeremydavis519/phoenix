@@ -33,9 +33,7 @@ use libphoenix::block_on;
 // mod pci;
 
 fn main() -> Result<(), ()> {
-    let device = libphoenix::block_on(
-        libdriver::get_device("*/virtio/gpu")
-    )
+    let device = libdriver::device("*/virtio/gpu").block()
         .map_err(|e| { eprintln!("Driver initialization failed: {}", e); })?;
     /*match device.io_type {
         IoType::Mmio => self::mmio::init(&device),

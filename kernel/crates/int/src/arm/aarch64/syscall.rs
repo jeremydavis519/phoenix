@@ -38,11 +38,13 @@ pub(crate) fn handle_system_call(
         result: &mut usize
 ) -> Response {
     match SystemCall::try_from(syscall) {
-        Ok(SystemCall::Thread_Exit)  => thread_exit(thread.map(|t| &*t), args[0]),
+        Ok(SystemCall::Thread_Exit)  => thread_exit(thread, args[0]),
         Ok(SystemCall::Thread_Sleep) => thread_sleep(thread, args[0]),
         Ok(SystemCall::Thread_Spawn) => thread_spawn(thread, args[0], args[1] as u8, args[2], result),
 
-        Ok(SystemCall::Process_Exit) => process_exit(thread.map(|t| &*t), args[0]),
+        Ok(SystemCall::Process_Exit) => process_exit(thread, args[0]),
+
+        Ok(SystemCall::Future_Block) => future_block(thread, args[0]),
 
         // TODO: Remove all of these temporary system calls.
         Ok(SystemCall::Temp_PutChar) => temp_putchar(args[0]),
@@ -67,6 +69,8 @@ ffi_enum! {
 
         Process_Exit = 0x0100,
 
+        Future_Block = 0x0200,
+
         Temp_PutChar = 0xff00,
         Temp_GetChar = 0xff01
     }
@@ -74,9 +78,9 @@ ffi_enum! {
 
 // Terminates the current thread, returning to the kernel's state from before the thread started
 // running.
-fn thread_exit(thread: Option<&Thread<File>>, result: usize) -> Response {
+fn thread_exit(thread: Option<&mut Thread<File>>, status: usize) -> Response {
     assert!(!thread.is_none(), "attempted to terminate a kernel thread");
-    if result != 0 {
+    if status != 0 {
         // FIXME: Handle thread return values.
         unimplemented!("thread return value");
     }
@@ -122,14 +126,23 @@ fn thread_spawn(
 
 // Terminates the process containing the current thread, thereby terminating every thread in that
 // process.
-fn process_exit(thread: Option<&Thread<File>>, result: usize) -> Response {
+fn process_exit(thread: Option<&mut Thread<File>>, status: usize) -> Response {
     assert!(!thread.is_none(), "attempted to terminate a kernel thread's process");
-    if result != 0 {
+    if status != 0 {
         // FIXME: Handle process return values.
         unimplemented!("process return value");
     }
     // FIXME: Exit the process, not just the current thread.
     Response::leave_userspace(ThreadStatus::Terminated)
+}
+
+
+// Blocks the thread until the given future has a value.
+fn future_block(thread: Option<&mut Thread<File>>, future_addr: usize) -> Response {
+    assert!(!thread.is_none(), "attempted to block a kernel thread");
+    // FIXME: If the given address doesn't point to a future, terminate the thread.
+    // TODO: Block the thread. That probably means leaving userspace with a certain `ThreadStatus`.
+    unimplemented!("future_block");
 }
 
 
