@@ -1,0 +1,12 @@
+[package]
+name = "phoenix-kernel-tagged-ptr"
+version = "0.1.0"
+authors = ["Jeremy Davis <jeremydavis519@gmail.com>"]
+edition = "2018"
+
+[lib]
+name = "tagged_ptr"
+
+[features]
+self-test = []
+unit-test = []

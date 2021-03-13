@@ -1,0 +1,18 @@
+[package]
+name = "libc"
+version = "0.1.0"
+authors = ["jeremydavis519 <jeremydavis519@gmail.com>"]
+edition = "2018"
+
+[lib]
+name = "c"
+crate-type = ["staticlib"]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+
+[dependencies]
+spin = "0.5"

@@ -1,0 +1,15 @@
+/kernel/target-cache
+
+build/
+lib/
+target/
+*.o
+*.a
+*.bin
+*.elf
+*.exe
+*.log
+
+*.bk
+*.un~
+Cargo.lock

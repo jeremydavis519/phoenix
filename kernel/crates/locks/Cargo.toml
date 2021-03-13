@@ -1,0 +1,12 @@
+[package]
+name = "phoenix-kernel-locks"
+version = "0.1.0"
+authors = ["Jeremy Davis <jeremydavis519@gmail.com>"]
+edition = "2018"
+
+[lib]
+name = "locks"
+
+[features]
+self-test = []
+unit-test = []

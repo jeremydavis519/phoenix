@@ -1,0 +1,19 @@
+[package]
+name = "phoenix-kernel-shared"
+version = "0.1.0"
+authors = ["Jeremy Davis <jeremydavis519@gmail.com>"]
+edition = "2018"
+
+[lib]
+name = "shared"
+
+[dependencies]
+bitflags = "1.0"
+
+phoenix-kernel-error = { path = "../error" }
+phoenix-kernel-i18n = { path = "../i18n" }
+phoenix-kernel-macros-unreachable = { path = "../macros/unreachable" }
+
+[features]
+self-test = []
+unit-test = []

@@ -1,0 +1,21 @@
+[package]
+name = "phoenix-kernel-fs"
+version = "0.1.0"
+authors = ["Jeremy Davis <jeremydavis519@gmail.com>"]
+edition = "2018"
+
+[lib]
+name = "fs"
+
+[dependencies]
+bitflags = "1.0"
+
+phoenix-kernel-error = { path = "../error" }
+phoenix-kernel-hosted = { path = "../hosted" }
+phoenix-kernel-initrd = { path = "../initrd" }
+phoenix-kernel-io = { path = "../io" }
+phoenix-kernel-shared = { path = "../shared" }
+
+[features]
+self-test = []
+unit-test = []

@@ -1,0 +1,24 @@
+[package]
+name = "phoenix-kernel-int"
+version = "0.1.0"
+authors = ["Jeremy Davis <jeremydavis519@gmail.com>"]
+edition = "2018"
+
+[lib]
+name = "int"
+
+[dependencies]
+bitflags = "1.0"
+
+phoenix-kernel-fs = { path = "../fs" }
+phoenix-kernel-io = { path = "../io" }
+phoenix-kernel-macros-unreachable = { path = "../macros/unreachable" }
+phoenix-kernel-memory = { path = "../memory" }
+phoenix-kernel-scheduler = { path = "../scheduler" }
+phoenix-kernel-shared = { path = "../shared" }
+phoenix-kernel-time = { path = "../time" }
+phoenix-kernel-timers = { path = "../timers" }
+
+[features]
+self-test = []
+unit-test = []

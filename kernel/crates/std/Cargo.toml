@@ -1,0 +1,21 @@
+[package]
+name = "phoenix-kernel-std"
+version = "0.1.0"
+authors = ["Jeremy Davis <jeremydavis519@gmail.com>"]
+edition = "2018"
+
+[lib]
+name = "std"
+
+[dependencies]
+phoenix-kernel-hosted = { path = "../hosted" }
+phoenix-kernel-i18n = { path = "../i18n" }
+phoenix-kernel-initrd = { path = "../initrd" }
+phoenix-kernel-io = { path = "../io" }
+phoenix-kernel-memory = { path = "../memory" }
+phoenix-kernel-shared = { path = "../shared" }
+phoenix-kernel-timers = { path = "../timers" }
+
+[features]
+self-test = []
+unit-test = []

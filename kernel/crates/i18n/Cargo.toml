@@ -1,0 +1,18 @@
+[package]
+name = "phoenix-kernel-i18n"
+version = "0.1.0"
+authors = ["Jeremy Davis <jeremydavis519@gmail.com>"]
+edition = "2018"
+
+[lib]
+name = "i18n"
+
+[dependencies]
+phoenix-kernel-macros-unreachable = { path = "../macros/unreachable" }
+
+[features]
+all_languages = []
+language_en_us = []
+language_tok = []
+self-test = []
+unit-test = []

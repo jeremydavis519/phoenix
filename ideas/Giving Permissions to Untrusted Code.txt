@@ -1,0 +1,18 @@
+There seem to be two common approaches to handling untrusted code in an operating system:
+(1) just let it run and do whatever it wants to (we assume that the user was well-informed when choosing to execute it); or
+(2) ask the user beforehand whether the program should be allowed to do something, then assume it should be allowed to continue doing that until it dies.
+
+The problem with (1) is obvious: almost no one bothers looking into an innocuous-looking program before running it. The problem with (2) is less obvious but just as real: since the user has no way of knowing what the program will do in the future, the only way to make a decision of whether to grant permission is a vague sense of trust coupled with the idea that this program is the only thing that will accomplish a certain task. So we end up with users granting admin permissions to random programs without even thinking about it. And how could they think about it? They're given no information besides the program's name and the company that it claims published it.
+
+But if we have a way to batch system calls, a third option is possible.
+
+Don't provide an API for a program to request permissions. Let it assume that it has permissions and make a bunch of privileged system calls. Put them in a batch to present them to the user, saying, "This program wants to make these changes to these files. Should this be allowed?" The user can review the changes and accept or deny them (or even kill the process).
+
+This batching can happen behind the scenes if all the system calls are asynchronous. Alternatively, there can be a special system call to send a batch of them all at once, using a DSL without looping (possibly just a list of calls, but variables and branching would be great). An excellent extra capability would be to have the kernel work out what the return values and side effects of all system calls would be without actually causing any side effects until the user accepts them.
+
+
+Now, what about implicit permissions? For instance, the shell must have the ability to grant permissions to other programs, since it must pass on the user's decision to them. Also, the user will likely want to grant certain permissions to certain programs permanently. These permissions should be stored in the filesystem somehow, for the kernel to check when starting new processes.
+
+In addition, if a process has permission to do a particular action, it should be able to grant that same permission to any process that it spawns, since it could just as easily take a request from that process and perform the action on its behalf. Granting permissions to a child process can be implemented as a callback function which is called in response to a system call that needs a permission that this process has. I'll probably implement it that way at first, but we can avoid a lot of context switching by using a DSL to give the kernel instructions on how to decide when to grant the permissions. The callback method will likely be necessary for the user to grant permissions through the shell anyway.
+
+If the parent doesn't have the authority to grant a permission, the kernel should ask the grandparent, and so on up the process tree to the shell, which will have authority to grant all permissions. If, for some reason, the shell is configured not to have that authority, the default is to refuse the untrusted process's request.

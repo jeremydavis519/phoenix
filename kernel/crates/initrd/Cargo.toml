@@ -1,0 +1,12 @@
+[package]
+name = "phoenix-kernel-initrd"
+version = "0.1.0"
+authors = ["Jeremy Davis <jeremydavis519@gmail.com>"]
+edition = "2018"
+
+[lib]
+name = "initrd"
+
+[features]
+self-test = []
+unit-test = []

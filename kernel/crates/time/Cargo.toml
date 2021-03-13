@@ -1,0 +1,16 @@
+[package]
+name = "phoenix-kernel-time"
+version = "0.1.0"
+authors = ["Jeremy Davis <jeremydavis519@gmail.com>"]
+edition = "2018"
+
+[lib]
+name = "time"
+
+[dependencies]
+phoenix-kernel-error = { path = "../error" }
+phoenix-kernel-shared = { path = "../shared" }
+
+[features]
+self-test = []
+unit-test = []

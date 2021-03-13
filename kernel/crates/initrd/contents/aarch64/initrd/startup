@@ -1,0 +1,8 @@
+# This file defines all the processes that should be started when the system
+# boots up. It also defines their initial permissions.
+
+:initrd/test.exe {}
+
+:initrd/drivers/virtio-gpu
+    own device */virtio/gpu
+}

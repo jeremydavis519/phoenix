@@ -1,0 +1,21 @@
+[package]
+name = "phoenix-kernel-io"
+version = "0.1.0"
+authors = ["Jeremy Davis <jeremydavis519@gmail.com>"]
+edition = "2018"
+
+[lib]
+name = "io"
+
+[dependencies]
+volatile = "0.2"
+
+phoenix-kernel-error = { path = "../error" }
+phoenix-kernel-i18n = { path = "../i18n" }
+phoenix-kernel-locks = { path = "../locks" }
+phoenix-kernel-memory = { path = "../memory" }
+phoenix-kernel-shared = { path = "../shared" }
+
+[features]
+self-test = []
+unit-test = []

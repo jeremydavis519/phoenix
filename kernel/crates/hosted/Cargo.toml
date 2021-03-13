@@ -1,0 +1,20 @@
+[package]
+name = "phoenix-kernel-hosted"
+version = "0.1.0"
+authors = ["jeremydavis519 <jeremydavis519@gmail.com>"]
+edition = "2018"
+
+[lib]
+name = "hosted"
+
+[dependencies]
+bitflags = "1.0"
+static_assertions = "0.3"
+
+phoenix-kernel-i18n = { path = "../i18n" }
+phoenix-kernel-io = { path = "../io" }
+phoenix-kernel-shared = { path = "../shared" }
+
+[features]
+self-test = []
+unit-test = []

@@ -1,0 +1,12 @@
+#/bin/sh -x
+
+"/mnt/c/Program Files/qemu/qemu-system-aarch64.exe" \
+    -M virt \
+    -cpu cortex-a53 \
+    -kernel "build/debug/kernel-aarch64.bin" \
+    $QEMU_PARAMS \
+    -s \
+    -m 192m \
+    -device virtio-balloon-device -device pci-testdev -device virtio-gpu-device \
+    -semihosting \
+    -serial stdio

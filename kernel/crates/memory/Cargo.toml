@@ -1,0 +1,27 @@
+[package]
+name = "phoenix-kernel-memory"
+version = "0.1.0"
+authors = ["Jeremy Davis <jeremydavis519@gmail.com>"]
+edition = "2018"
+
+[lib]
+name = "memory"
+
+[dependencies]
+bitflags = "1.0"
+hashbrown = "0.7"
+volatile = "0.2"
+
+phoenix-kernel-collections = { path = "../collections" }
+phoenix-kernel-i18n = { path = "../i18n" }
+phoenix-kernel-macros-unreachable = { path = "../macros/unreachable" }
+phoenix-kernel-shared = { path = "../shared" }
+phoenix-kernel-tagged-ptr = { path = "../tagged-ptr" }
+
+[dev-dependencies]
+oorandom = "11.1"
+spin = "0.6"
+
+[features]
+self-test = []
+unit-test = []

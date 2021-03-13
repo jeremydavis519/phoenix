@@ -1,0 +1,23 @@
+[package]
+name = "phoenix-kernel-timers"
+version = "0.1.0"
+authors = ["Jeremy Davis <jeremydavis519@gmail.com>"]
+edition = "2018"
+
+[lib]
+name = "timers"
+
+[dependencies]
+bitflags = "1.0"
+volatile = "0.2"
+cfg-if = "0.1"
+
+phoenix-kernel-io = { path = "../io" }
+phoenix-kernel-irqs = { path = "../irqs" }
+phoenix-kernel-memory = { path = "../memory" }
+phoenix-kernel-shared = { path = "../shared" }
+phoenix-kernel-time = { path = "../time" }
+
+[features]
+self-test = []
+unit-test = []
