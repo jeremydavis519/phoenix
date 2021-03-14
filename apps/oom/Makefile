@@ -108,5 +108,5 @@ target/$(TARGET)/$(DEBUG_OR_RELEASE)/%.o: src/arch/$(ARCH)/%.S
 	$(ASSEMBLER) -I$(shell dirname $<) $(AS_PARAMS) -mcpu="$(AS_CPU)" $(AS_SYMS) $(AS_DEBUG) $< -o $@
 
 $(MULTIARCH_LIB): $(RUST_SRC) $(TARGET).json Cargo.toml
-	RUST_TARGET_PATH="$(PWD)" \
+	RUST_TARGET_PATH="$(PWD)/../.." \
 	xargo build $(CARGO_PARAMS) $(CARGO_RELEASE) --target "$(TARGET)"
