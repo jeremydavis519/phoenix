@@ -25,7 +25,60 @@
 #![feature(asm)]
 
 pub mod future;
+mod panic;
+pub mod process;
 pub mod syscall;
 pub mod thread;
 
 pub use future::Future;
+
+/// Defines the entry point of the program.
+///
+/// Since Phoenix isn't officially supported by Rust, the runtime has a really hard time understanding
+/// how to compile and link an executable file (i.e. a `bin` crate). This macro automates some of the
+/// workarounds we have to use to get it to work. Just write a `main` function like you normally would
+/// and wrap it in an invocation of this macro, after applying the `start` feature to the crate.
+///
+/// You will also have to pass `-C link-arg=--entry=main` to rustc so the linker will be able to find
+/// the entry point. That should be automatic, but for some reason it isn't. Probably because rustc
+/// thinks we're compiling for an architecture without an operating system.
+///
+/// # Example
+/// ```
+/// #![feature(start)]
+/// phoenix_main! {
+///     fn main() {
+///         println!("Hello, world!");
+///     }
+/// }
+/// ```
+#[macro_export]
+macro_rules! phoenix_main {
+    // TODO: Allow signatures with argc and argv.
+
+    ($vis:vis fn main() $(-> ())? { $($body:tt)* }) => {
+        $vis fn main() { $($body)* }
+
+        #[start]
+        fn start(_argc: isize, _argv: *const *const u8) -> isize {
+            main();
+            $crate::syscall::process_exit($crate::process::ExitCode::Success as i32);
+        }
+    };
+
+    ($vis:vis fn main() -> Result<(), $error:ty> { $($body:tt)* }) => {
+        $vis fn main() { $($body)* }
+
+        #[start]
+        fn start(_argc: isize, _argv: *const *const u8) -> isize {
+            let status = match main() {
+                Ok(()) => $crate::process::ExitCode::Success,
+                Err(e) => {
+                    eprintln!("{:?}", e);
+                    $crate::process::ExitCode::Failure
+                }
+            };
+            $crate::syscall::process_exit(status as i32);
+        }
+    };
+}

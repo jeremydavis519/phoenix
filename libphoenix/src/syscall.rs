@@ -18,7 +18,10 @@
 
 //! This module defines a function to encapsulate each system call the Phoenix kernel understands.
 
-use super::thread::Thread;
+use {
+    core::num::NonZeroUsize,
+    super::thread::Thread
+};
 
 /*macro_rules! define_async_syscall {
     (@func $name:ident() -> $ret_type:ty { $syscall_num:tt }) => {
@@ -263,6 +266,30 @@ pub(crate) fn future_block(promised_value_addr: usize) {
             options(nomem, nostack, preserves_flags)
         );
     }
+}
+
+/// Looks up a physical device by name and claims ownership of it if it exists.
+///
+/// This function is intended for use only by `libdriver`, which builds further abstractions on top
+/// of it.
+///
+/// # Returns
+/// The address of the object describing the device, or `None` if the device doesn't exist.
+///
+/// # Required permissions
+/// * `own device <name>`
+pub fn device_claim(name: &str) -> Option<NonZeroUsize> {
+    let dev_addr: usize;
+    unsafe {
+        asm!(
+            "svc 0x0300",
+            in("x2") name as *const str as *const u8 as usize,
+            in("x3") name.len(),
+            lateout("x0") dev_addr,
+            options(nostack, preserves_flags)
+        );
+    }
+    NonZeroUsize::new(dev_addr)
 }
 
 /*define_async_syscalls! {

@@ -16,40 +16,13 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-//! This program is the Phoenix operating system's driver for the VirtIO GPU.
-//!
-//! # Required permissions:
-//! * own device mmio/virtio-gpu
-//! * own device pci/virtio-gpu
+//! This module defines abstractions that pertain to processes in Phoenix.
 
-#![no_std]
-#![deny(warnings, missing_docs)]
-
-#![feature(start)]
-
-use {
-    // libdriver::IoType,
-    libphoenix::phoenix_main
-};
-
-// mod mmio;
-// mod pci;
-
-phoenix_main! {
-    fn main() {
-        let _device = libdriver::Device::claim(&["mmio/virtio-gpu", "pci/virtio-gpu"])
-            .expect("no VirtIO GPU found");
-        /*match device.io_type {
-            IoType::Mmio => self::mmio::init(&device),
-            IoType::Pci => self::pci::init(&device),
-            t => panic!("unexpected I/O type {:?}", t)
-        };*/
-
-        // Event loop
-        // TODO: Should this be encapsulated in a library call?
-        loop {
-            // TODO: Handle events.
-            return;
-        }
-    }
+/// A code that can be returned from `main`.
+#[repr(i32)]
+pub enum ExitCode {
+    /// Indicates successful completion.
+    Success = 0,
+    /// Indicates that something went wrong.
+    Failure = 1
 }
