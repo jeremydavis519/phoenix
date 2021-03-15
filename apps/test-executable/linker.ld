@@ -36,7 +36,7 @@ SECTIONS {
 		*(.rodata.*)
 	} :read_only
 
-        . = NEXT(0x10000);
+	. = NEXT(0x10000);
 
 	.data : {
 		*(.data)
