@@ -6,3 +6,8 @@ edition = "2018"
 
 [dependencies]
 libphoenix = { path = "../../libphoenix" }
+
+[features]
+default = ["global-allocator"]
+
+global-allocator = ["libphoenix/global-allocator"]

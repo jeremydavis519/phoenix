@@ -20,9 +20,12 @@
 
 use core::panic::PanicInfo;
 
-#[panic_handler]
+// FIXME: #[panic_handler], and not `pub`
+//        Using this attribute here causes a linker error. If it's not fixed soon, we should try to
+//        find a minimal example and submit an issue to the Rust repository.
+#[doc(hidden)] // TODO: Not needed once this becomes private.
 #[cold]
-fn panic_handler(_: &PanicInfo) -> ! {
+pub fn panic_handler(_: &PanicInfo) -> ! {
     // FIXME: Print some debug information and close the program using a defined system call.
     unsafe {
         asm!(

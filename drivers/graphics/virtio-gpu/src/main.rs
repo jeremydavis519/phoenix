@@ -25,6 +25,7 @@
 #![no_std]
 #![deny(warnings, missing_docs)]
 
+#![feature(default_alloc_error_handler)]
 #![feature(start)]
 
 use {

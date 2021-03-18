@@ -24,8 +24,11 @@
 
 #![feature(asm)]
 
+extern crate alloc;
+
+pub mod allocator;
 pub mod future;
-mod panic;
+pub mod panic; // FIXME: Not `pub` (blocked on making `panic::panic_handler` private).
 pub mod process;
 pub mod syscall;
 pub mod thread;
@@ -64,6 +67,11 @@ macro_rules! phoenix_main {
             main();
             $crate::syscall::process_exit($crate::process::ExitCode::Success as i32);
         }
+
+        #[panic_handler]
+        fn panic_handler(p: &core::panic::PanicInfo) -> ! {
+            $crate::panic::panic_handler(p)
+        }
     };
 
     ($vis:vis fn main() -> Result<(), $error:ty> { $($body:tt)* }) => {
@@ -79,6 +87,11 @@ macro_rules! phoenix_main {
                 }
             };
             $crate::syscall::process_exit(status as i32);
+        }
+
+        #[panic_handler]
+        fn panic_handler(p: &core::panic::PanicInfo) -> ! {
+            $crate::panic::panic_handler(p)
         }
     };
 }
