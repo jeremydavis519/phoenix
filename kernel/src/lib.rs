@@ -44,8 +44,6 @@ use {
         sync::Arc
     },
 
-    rlibc as _,
-
     fs::File,
     i18n::Text,
     io::{Read, Write},

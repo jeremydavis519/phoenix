@@ -16,10 +16,9 @@ panic = "abort"
 panic = "abort"
 
 [dependencies]
-rlibc    = "1.0"
-bitflags = "1.0"
-spin     = "0.6"
-volatile = "0.2"
+bitflags          = "1.0"
+spin              = "0.6"
+volatile          = "0.2"
 
 phoenix-kernel-collections        = { path = "crates/collections" }
 phoenix-kernel-error              = { path = "crates/error" }
