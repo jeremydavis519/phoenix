@@ -30,7 +30,8 @@ use std::{
 /// Runs the assembler on all the assembly files in the given directory and its subdirectories,
 /// returning an iterator over the paths to the resulting `.o` files. Note that this is done
 /// lazily: if the build script never uses a given object file, that file may never be assembled.
-pub fn run_assembler<P: AsRef<Path>>(source_dir: P) -> Result<impl Iterator<Item = Result<PathBuf, BuildError>>, BuildError> {
+pub fn run_assembler<P: AsRef<Path>>(source_dir: P)
+        -> Result<impl Iterator<Item = Result<PathBuf, BuildError>>, BuildError> {
     let source_dir = PathBuf::from(source_dir.as_ref());
 
     let out_dir = PathBuf::from(env::var("OUT_DIR")
@@ -64,7 +65,7 @@ pub fn run_assembler<P: AsRef<Path>>(source_dir: P) -> Result<impl Iterator<Item
         source_dir.clone(),
         move |path| is_in_target(path.strip_prefix(&source_dir).unwrap(), &target) && is_assembly_file(path),
         move |path| {
-            let out_path = out_dir.join(path).with_extension(".o");
+            let out_path = out_dir.join(path).with_extension("o");
             DirBuilder::new()
                 .recursive(true)
                 .create(out_path.parent().unwrap())
@@ -90,8 +91,7 @@ pub fn run_assembler<P: AsRef<Path>>(source_dir: P) -> Result<impl Iterator<Item
 pub fn archive<I, P, Q>(in_paths: I, out_path: P) -> Result<(), BuildError>
         where I: IntoIterator<Item = Result<Q, BuildError>>,
               P: AsRef<Path>,
-              Q: AsRef<Path>
-{
+              Q: AsRef<Path> {
     let out_path = out_path.as_ref();
 
     let archiver = env::var("PHOENIX_ARCHIVER")
@@ -116,7 +116,7 @@ pub fn archive<I, P, Q>(in_paths: I, out_path: P) -> Result<(), BuildError>
     }
     match cmd.status() {
         Ok(status) if status.success() => Ok(()),
-        Ok(status)                     => Err(BuildError::LinkError(status)),
+        Ok(status)                     => Err(BuildError::ArchiveError(status)),
         Err(e)                         => Err(BuildError::IoError(e))
     }
 }
@@ -139,7 +139,8 @@ pub fn is_assembly_file<P: AsRef<Path>>(path: P) -> bool {
 
 /// Lazily performs the given operation on every file in the given directory and its subdirectories
 /// that matches the given filter. Returns an iterator over the results.
-pub fn files_filter_map<P, F, M, T>(dir: P, filter: F, map: M) -> Result<impl Iterator<Item = Result<T, BuildError>>, BuildError>
+pub fn files_filter_map<P, F, M, T>(dir: P, filter: F, map: M)
+        -> Result<impl Iterator<Item = Result<T, BuildError>>, BuildError>
         where P: AsRef<Path>,
               F: Fn(&Path) -> bool,
               M: Fn(&Path) -> Result<T, BuildError> {
@@ -195,7 +196,7 @@ pub fn files_filter_map<P, F, M, T>(dir: P, filter: F, map: M) -> Result<impl It
 #[derive(Debug)]
 pub enum BuildError {
     CompileError(ExitStatus),
-    LinkError(ExitStatus),
+    ArchiveError(ExitStatus),
     IoError(io::Error),
     VarError(&'static str, VarError)
 }
@@ -204,7 +205,7 @@ impl fmt::Display for BuildError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Self::CompileError(ref status) => write!(f, "compiler exited with status `{}`", status),
-            Self::LinkError(ref status)    => write!(f, "linker exited with status `{}`", status),
+            Self::ArchiveError(ref status) => write!(f, "archiver exited with status `{}`", status),
             Self::IoError(ref e)  => write!(f, "{}", e),
             Self::VarError(var_name, ref e) => write!(f, "{}: {}", e, var_name)
         }

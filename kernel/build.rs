@@ -19,13 +19,19 @@
 //! This is a build script. It does some setup before the crate is compiled, such as compiling
 //! non-Rust code and telling Cargo to link it.
 
-use std::path::PathBuf;
+use std::{
+    env,
+    path::PathBuf
+};
 
 fn main() {
     if cfg!(feature = "unit-test") {
         // FIXME: This branch should be unnecessary when we start supporting the host architecture
         // (i.e. x86_64).
     } else {
+        let out_dir = PathBuf::from(env::var("OUT_DIR")
+            .expect("OUT_DIR not defined"));
+
         // Compile the relevant architecture-specific source files.
         let arch_dir = "src/arch";
         println!("cargo:rerun-if-changed={}", arch_dir);
@@ -35,12 +41,12 @@ fn main() {
         };
 
         // Link the architecture-specific files into a static library.
-        let mut lib_dir = PathBuf::from("lib");
+        let mut lib_dir = out_dir.join("lib");
         lib_dir.push(env!("PHOENIX_TARGET"));
         let pkg_name = env!("CARGO_PKG_NAME");
         match build_util::archive(o_files, lib_dir.join(format!("lib{}.a", pkg_name))) {
             Ok(()) => {},
-            Err(e) => panic!("linker failed: {}", e)
+            Err(e) => panic!("archiver failed: {}", e)
         };
 
         // Tell Cargo to link to the newly created library.
