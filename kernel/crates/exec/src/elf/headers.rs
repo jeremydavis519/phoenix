@@ -550,8 +550,10 @@ ffi_enum! {
         // LoOs .. HiOs = 0x6000_0000 .. 0x6fff_ffff
         // LoProc .. HiProc = 0x7000_0000 .. 0x7fff_ffff
 
+        GnuEhFrame = 0x6474_e550,
+
         // Segment types to ignore
-        GnuStack = 0x6474_e551
+        GnuStack   = 0x6474_e551
     }
 
     #[repr(u32)]
@@ -567,8 +569,10 @@ ffi_enum! {
         ArchExt = 0x7000_0000,
         Unwind  = 0x7000_0001,
 
+        GnuEhFrame = SegmentTypeCommon::GnuEhFrame as u32,
+
         // Segment types to ignore
-        GnuStack = SegmentTypeCommon::GnuStack as u32
+        GnuStack   = SegmentTypeCommon::GnuStack as u32
     }
 }
 

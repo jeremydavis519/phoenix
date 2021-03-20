@@ -76,7 +76,8 @@ fn decode_segment(ph_entry: ProgramHeaderEntry64) -> io::Result<Option<Segment>>
         ElfSegTypeArm::Load |
         ElfSegTypeArm::Interp |
         ElfSegTypeArm::Note |
-        ElfSegTypeArm::PHdr => Ok(Some(Segment {
+        ElfSegTypeArm::PHdr |
+        ElfSegTypeArm::GnuEhFrame => Ok(Some(Segment {
                 seg_type:    SegmentType::Load,
                 flags,
                 file_offset: ph_entry.offset as usize,
@@ -132,7 +133,8 @@ fn decode_segment(ph_entry: ProgramHeaderEntry64) -> io::Result<Option<Segment>>
         ElfSegTypeCommon::Load |
         ElfSegTypeCommon::Interp |
         ElfSegTypeCommon::Note |
-        ElfSegTypeCommon::PHdr => Ok(Some(Segment {
+        ElfSegTypeCommon::PHdr |
+        ElfSegTypeCommon::GnuEhFrame => Ok(Some(Segment {
                 seg_type:    SegmentType::Load,
                 flags,
                 file_offset: ph_entry.offset as usize,
