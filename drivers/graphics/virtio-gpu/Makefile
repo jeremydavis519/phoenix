@@ -30,11 +30,13 @@ else
 	RUSTFLAGS_RELEASE := -C link-arg=-O -C link-arg=-s
 endif
 
+ROOT := $(shell dirname $(shell dirname $(shell dirname $(PWD))))
+
 .PHONY: all clean release
 
 all:
-	RUST_TARGET_PATH="$(PWD)/../../.." \
-	RUSTFLAGS="$(RUSTFLAGS) $(RUSTFLAGS_RELEASE) -C linker=$(LINKER) -C link-arg=--entry=main" \
+	RUST_TARGET_PATH="$(ROOT)" \
+	RUSTFLAGS="$(RUSTFLAGS) $(RUSTFLAGS_RELEASE) -C linker=$(LINKER) -C link-arg=-T -C link-arg=$(ROOT)/userspace-$(ARCH).ld" \
 	xargo build $(CARGO_PARAMS) $(CARGO_RELEASE) --target "$(TARGET)"
 
 clean:
