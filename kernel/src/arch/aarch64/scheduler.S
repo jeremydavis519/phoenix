@@ -111,17 +111,35 @@ enter_userspace:
 // Output (to the caller of `enter_userspace`):
 // X0 = the `ThreadStatus` that was passed in through X30
 leave_userspace:
-    str x19, [sp, -16]!
-
     cmp x19, 255
     b.eq .Lthread_save_done // Don't bother saving the registers when terminating a thread.
 
     // Save the thread's registers.
     mov x20, x0 // X20 = the value the thread left in X0
-    ldr x0, [sp, 48] // X0 = main kernel stack pointer
+    ldr x0, [sp, 32] // X0 = main kernel stack pointer
     ldr x0, [x0]     // X0 = address of the `Thread` object
-    ldr x19, =get_thread_register_store // X0 = address of the thread's register store
-    blr x19
+    stp x1, x2, [sp, -16]!
+    stp x3, x4, [sp, -16]!
+    stp x5, x6, [sp, -16]!
+    stp x7, x8, [sp, -16]!
+    stp x9, x10, [sp, -16]!
+    stp x11, x12, [sp, -16]!
+    stp x13, x14, [sp, -16]!
+    stp x15, x16, [sp, -16]!
+    stp x17, x18, [sp, -16]!
+    str x29, [sp, -16]!
+    ldr x29, =get_thread_register_store // X0 = address of the thread's register store
+    blr x29
+    ldr x29, [sp], 16
+    ldp x17, x18, [sp], 16
+    ldp x15, x16, [sp], 16
+    ldp x13, x14, [sp], 16
+    ldp x11, x12, [sp], 16
+    ldp x9, x10, [sp], 16
+    ldp x7, x8, [sp], 16
+    ldp x5, x6, [sp], 16
+    ldp x3, x4, [sp], 16
+    ldp x1, x2, [sp], 16
     stp x20, x1, [x0, 0x00]
     stp x2, x3, [x0, 0x10]
     stp x4, x5, [x0, 0x20]
@@ -131,20 +149,20 @@ leave_userspace:
     stp x12, x13, [x0, 0x60]
     stp x14, x15, [x0, 0x70]
     stp x16, x17, [x0, 0x80]
-    ldp x19, x20, [sp, 16] // X19, X20 = the values the thread left in them
-    stp x18, x19, [x0, 0x90]
-    stp x20, x21, [x0, 0xa0]
+    ldp x9, x10, [sp], 16 // X9, X10 = the values the thread left in X19, X20
+    stp x18, x9, [x0, 0x90]
+    stp x10, x21, [x0, 0xa0]
     stp x22, x23, [x0, 0xb0]
     stp x24, x25, [x0, 0xc0]
     stp x26, x27, [x0, 0xd0]
     stp x28, x29, [x0, 0xe0]
-    ldr x30, [sp, 32]
-    mrs x19, SP_EL0 // X19 = the value the thread left in SP
-    stp x30, x19, [x0, 0xf0]
+    ldr x30, [sp], 16
+    mrs x9, SP_EL0 // X9 = the value the thread left in SP
+    stp x30, x9, [x0, 0xf0]
 .Lthread_save_done:
 
     // Remove the thread's registers from the stack, and also retrieve the argument.
-    ldr x0, [sp], 48 // X0 = return value
+    mov x0, x19 // X0 = return value
 
     // Return to where we were on the main stack before entering userspace.
     ldr x9, [sp], 16 // X9 = the stack pointer that was saved on the trampoline stack
