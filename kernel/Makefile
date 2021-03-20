@@ -107,7 +107,7 @@ MULTIARCH_SRC := $(call rwildcard,./,*.rs)
 
 ARCH_OBJ = $(patsubst src/arch/$(ARCH)/%.S, target/$(TARGET)/$(DEBUG_OR_RELEASE)/%.o, $(KERNEL_ASM)) \
 	$(patsubst src/arch/$(ARCH)/%.S, target/$(TARGET)/$(DEBUG_OR_RELEASE)/%.o, $(KERNEL_ASM))
-MULTIARCH_LIB = target/$(TARGET)/$(DEBUG_OR_RELEASE)/libphoenix_kernel.a
+KERNEL_LIB = target/$(TARGET)/$(DEBUG_OR_RELEASE)/libphoenix_kernel.a
 
 CARGO_TOML := $(call rwildcard,./,Cargo.toml)
 
@@ -141,12 +141,12 @@ test:
 
 kernel: $(KERNEL_BIN)
 
-$(KERNEL_BIN): $(LINKER_SCRIPT) $(MULTIARCH_LIB)
+$(KERNEL_BIN): $(LINKER_SCRIPT) $(KERNEL_LIB)
 	@mkdir -p "$(shell dirname $@)"
 	$(LINKER) $(LD_PARAMS) $(LD_RELEASE) -o "$(KERNEL_BIN).elf" -T $^
 	$(OBJCOPY) $(OBJCOPY_PARAMS) "$(KERNEL_BIN).elf" "$(KERNEL_BIN)"
 
-$(MULTIARCH_LIB): $(MULTIARCH_SRC) $(TARGET).json $(CARGO_TOML)
+$(KERNEL_LIB): $(MULTIARCH_SRC) $(KERNEL_ASM) $(TARGET).json $(CARGO_TOML)
 	RUST_TARGET_PATH="$(PWD)" \
 	RUSTFLAGS="--cfg target_machine=\"$(MACHINE)\"" \
 	xargo build $(CARGO_PARAMS) --features="$(CARGO_FEATURES)" $(CARGO_RELEASE) --target "$(TARGET)"

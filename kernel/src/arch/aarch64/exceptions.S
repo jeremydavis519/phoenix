@@ -305,13 +305,16 @@ synchronous_el0_aarch64:
     mov sp, x19
     mov x19, x30 // X19 = trampoline stack pointer
 
-    ldr x0, [sp], -16 // Current thread (pushed to the stack in scheduler.S)
+    stp x1, x6, [sp, -16]!
+    stp x0, x7, [sp, -16]!
+    ldr x0, [sp, 32]  // Current thread (pushed to the stack in scheduler.S)
     mrs x1, ESR_EL1   // Syndrome register
     mov x6, sp        // Where to put the return value, if any
     mov x7, 0         // Exception level
     bl aarch64_handle_synchronous_exception_indirect
     mov x30, x0
-    ldr x0, [sp], 16 // X0 = return value
+    ldp x0, x7, [sp], 16 // X0 = return value
+    ldp x1, x6, [sp], 16
 
     mov sp, x19
     tst x30, 0xff00 // 0x00nn = ERET, 0x01nn = leave userspace
@@ -337,8 +340,6 @@ irq_el0_aarch64:
 .endif
     str x30, [sp, -16]!
     stp x19, x20, [sp, -16]!
-
-    msr SPSel, 1  // Switch to trampoline stack
 
     // PERF: When possible, handle the exception entirely within the trampoline. But make sure
     // nothing sensitive is mapped in the trampoline, including its stack, to prevent Meltdown.
@@ -380,8 +381,6 @@ fiq_el0_aarch64:
 .endif
     str x30, [sp, -16]!
     stp x19, x20, [sp, -16]!
-
-    msr SPSel, 1  // Switch to trampoline stack
 
     // PERF: When possible, handle the exception entirely within the trampoline. But make sure
     // nothing sensitive is mapped in the trampoline, including its stack, to prevent Meltdown.
