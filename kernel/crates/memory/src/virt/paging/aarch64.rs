@@ -229,8 +229,8 @@ macro_rules! define_root_page_table {
                     NonZeroUsize::new(mem::align_of::<RootPageTable>()).unwrap()
                 )?;
                 let root = unsafe { &mut *block.index(0) };
-                root.exception_level = exception_level;
-                root.asid = asid;
+                mem::forget(mem::replace(&mut root.exception_level, exception_level));
+                mem::forget(mem::replace(&mut root.asid, asid));
                 match page_size() {
                     $(
                         $page_size => {
@@ -241,7 +241,7 @@ macro_rules! define_root_page_table {
                             unsafe {
                                 <$table_root>::make_new(table_block.index(0));
                             }
-                            root.internals = RootPageTableInternal::$table(table_block);
+                            mem::forget(mem::replace(&mut root.internals, RootPageTableInternal::$table(table_block)));
                         },
                     )*
                     page_size => panic!("unsupported page size {:#x}", page_size)
