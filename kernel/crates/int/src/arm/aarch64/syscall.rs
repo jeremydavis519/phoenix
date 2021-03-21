@@ -41,10 +41,10 @@ pub(crate) fn handle_system_call(
         Ok(SystemCall::Thread_Exit)  => thread_exit(thread, args[0]),
         Ok(SystemCall::Thread_Sleep) => thread_sleep(thread, args[0]),
         Ok(SystemCall::Thread_Spawn) => thread_spawn(thread, args[0], args[1] as u8, args[2], result),
+        Ok(SystemCall::Thread_Wait)  => thread_wait(thread, args[0]),
 
         Ok(SystemCall::Process_Exit) => process_exit(thread, args[0]),
 
-        Ok(SystemCall::Future_Block) => future_block(thread, args[0]),
 
         // TODO: Remove all of these temporary system calls.
         Ok(SystemCall::Temp_PutChar) => temp_putchar(args[0]),
@@ -66,10 +66,10 @@ ffi_enum! {
         Thread_Exit  = 0x0000,
         Thread_Sleep = 0x0001,
         Thread_Spawn = 0x0002,
+        Thread_Wait  = 0x0003,
 
         Process_Exit = 0x0100,
 
-        Future_Block = 0x0200,
 
         Temp_PutChar = 0xff00,
         Temp_GetChar = 0xff01
@@ -123,6 +123,14 @@ fn thread_spawn(
     Response::eret()
 }
 
+// Blocks the thread until a system call it made is complete.
+fn thread_wait(thread: Option<&mut Thread<File>>, _future_addr: usize) -> Response {
+    assert!(!thread.is_none(), "attempted to block a kernel thread");
+    // FIXME: If the given address doesn't point to a future, terminate the process (not just the thread).
+    // TODO: Block the thread. That probably means leaving userspace with a certain `ThreadStatus`.
+    unimplemented!("thread_wait");
+}
+
 
 // Terminates the process containing the current thread, thereby terminating every thread in that
 // process.
@@ -137,13 +145,6 @@ fn process_exit(thread: Option<&mut Thread<File>>, status: usize) -> Response {
 }
 
 
-// Blocks the thread until the given future has a value.
-fn future_block(thread: Option<&mut Thread<File>>, future_addr: usize) -> Response {
-    assert!(!thread.is_none(), "attempted to block a kernel thread");
-    // FIXME: If the given address doesn't point to a future, terminate the thread.
-    // TODO: Block the thread. That probably means leaving userspace with a certain `ThreadStatus`.
-    unimplemented!("future_block");
-}
 
 
 // TODO: Remove these temporary system calls.

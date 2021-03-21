@@ -227,6 +227,23 @@ pub(crate) fn thread_spawn(entry_point: fn(), priority: u8, stack_size: usize) -
     Thread { handle }
 }
 
+/// Waits until an asynchronous system call is finished.
+///
+/// This function blocks the thread until a system call is complete, allowing other threads to run
+/// in the meantime. This may return spurriously; it is up to the caller to determine which system
+/// calls, if any, have completed.
+///
+/// # Returns
+/// Nothing. The value is at the given address.
+pub fn thread_wait() {
+    unsafe {
+        asm!(
+            "svc 0x0003",
+            options(nomem, nostack, preserves_flags)
+        );
+    }
+}
+
 /// Ends the currently running process with the given status.
 ///
 /// Every thread in the process is immediately terminated.
@@ -246,24 +263,6 @@ pub fn process_exit(status: i32) -> ! {
             "svc 0x0100",
             in("x2") status as usize,
             options(nomem, nostack, preserves_flags, noreturn)
-        );
-    }
-}
-
-/// Blocks on the result of an asynchronous system call.
-///
-/// This function should *not* be made public because it is an implementation detail of the
-/// [`Future`] type. It would only provide a worse, unsafe interface to something that can already
-/// be done in safe code.
-///
-/// # Returns
-/// Nothing. The value is at the given address.
-pub(crate) fn future_block(promised_value_addr: usize) {
-    unsafe {
-        asm!(
-            "svc 0x0200",
-            in("x2") promised_value_addr,
-            options(nomem, nostack, preserves_flags)
         );
     }
 }
