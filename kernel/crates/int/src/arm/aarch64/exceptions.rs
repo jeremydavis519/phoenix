@@ -335,7 +335,10 @@ fn try_map_page(thread: Option<&Thread<File>>, fault_address: usize, iss: MmuIss
                 core::mem::forget(block);
                 return Response::eret();
             },
-            Ok(None) => { // Not mapped, but we should retry later
+            Ok(None) => { // Mapped to an existing block (e.g. CoW)
+                return Response::eret();
+            },
+            Err(None) => { // Not mapped, but we should try again later
                 return Response::leave_userspace(ThreadStatus::Running)
             },
             Err(_) => {} // Failed

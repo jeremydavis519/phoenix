@@ -105,9 +105,12 @@ impl<T: Read+Seek> ExecImage<T> {
     /// will be modified to read entire pages.
     ///
     /// # Returns
-    /// `Ok(Some(block))` on success, `Err(e)` on failure, and `Ok(None)` if the pages weren't
-    /// mapped but the operation should be retried in the future.
-    pub fn load_segment_piece(&self, base: usize, size: NonZeroUsize) -> Result<Option<BlockMut<u8>>, LoadSegmentError> {
+    /// * `Ok(Some(block))` on a normal success
+    /// * `Ok(None)` on success if the segment was mapped using a pre-existing block (e.g. for CoW)
+    /// * `Err(Some(e))` on failure
+    /// * `Err(None)` if the operation failed but should be retried later
+    pub fn load_segment_piece(&self, base: usize, size: NonZeroUsize)
+            -> Result<Option<BlockMut<u8>>, Option<LoadSegmentError>> {
         let segment = self.find_segment_containing(base, size.get())?;
         let page_size = memory::virt::paging::page_size();
 
@@ -122,7 +125,7 @@ impl<T: Read+Seek> ExecImage<T> {
         if !segment_overflows && base >= segment.vaddr + segment.file_sz {
             return self.page_table().map_zeroed_from_exe_file(base, NonZeroUsize::new(size).unwrap())
                 .map(|()| None)
-                .map_err(|()| LoadSegmentError::MapError);
+                .map_err(|()| Some(LoadSegmentError::MapError));
         }
 
         // PERF: If the pages are read-only and have already been loaded into another process with
@@ -133,7 +136,7 @@ impl<T: Read+Seek> ExecImage<T> {
         // Allocate enough space for the segment piece.
         let block = match AllMemAlloc.malloc::<u8>(size, NonZeroUsize::new(page_size).unwrap()) {
             Ok(block) => block,
-            Err(AllocError) => return Err(LoadSegmentError::AllocError(size))
+            Err(AllocError) => return Err(Some(LoadSegmentError::AllocError(size)))
         };
 
         // Clear any bytes that won't come from the file.
@@ -154,7 +157,7 @@ impl<T: Read+Seek> ExecImage<T> {
             let file_offset = segment.file_offset + base.saturating_sub(segment.vaddr);
             if let Ok(mut reader) = self.reader.try_lock() {
                 reader.seek(SeekFrom::Start(file_offset.try_into().unwrap()))
-                    .map_err(|e| LoadSegmentError::IoError(e))?;
+                    .map_err(|e| Some(LoadSegmentError::IoError(e)))?;
                 let buffer_base = usize::max(base, segment.vaddr);
                 let buffer_size = usize::min(
                     base         .wrapping_add(size)           .wrapping_sub(buffer_base),
@@ -162,9 +165,9 @@ impl<T: Read+Seek> ExecImage<T> {
                 );
                 let buffer: &mut [u8] = unsafe { slice::from_raw_parts_mut(block.index(buffer_base - base), buffer_size) };
                 reader.read_exact(buffer)
-                    .map_err(|e| LoadSegmentError::IoError(e))?;
+                    .map_err(|e| Some(LoadSegmentError::IoError(e)))?;
             } else {
-                return Ok(None);
+                return Err(None);
             }
         }
 
