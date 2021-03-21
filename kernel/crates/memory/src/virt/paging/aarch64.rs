@@ -317,7 +317,7 @@ macro_rules! define_root_page_table {
             pub fn map(&self, phys_base: usize, virt_base: Option<usize>, size: NonZeroUsize, reg_type: RegionType)
                     -> Result<usize, ()> {
                 self.map_impl(
-                    phys_base,
+                    Some(phys_base),
                     virt_base,
                     size,
                     Some(reg_type),
@@ -331,7 +331,7 @@ macro_rules! define_root_page_table {
             fn map_dirty(&self, phys_base: usize, virt_base: Option<usize>, size: NonZeroUsize, reg_type: RegionType)
                     -> Result<usize, ()> {
                 self.map_impl(
-                    phys_base,
+                    Some(phys_base),
                     virt_base,
                     size,
                     Some(reg_type),
@@ -356,7 +356,7 @@ macro_rules! define_root_page_table {
             pub fn map_cow(&self, phys_base: usize, virt_base: Option<usize>, size: NonZeroUsize)
                     -> Result<usize, ()> {
                 self.map_impl(
-                    phys_base,
+                    Some(phys_base),
                     virt_base,
                     size,
                     Some(RegionType::Ram),
@@ -400,7 +400,7 @@ macro_rules! define_root_page_table {
             pub fn map_exe_file(&self, virt_base: Option<usize>, size: NonZeroUsize)
                     -> Result<usize, ()> {
                 self.map_impl(
-                    0,
+                    None,
                     virt_base,
                     size,
                     None,
@@ -427,7 +427,7 @@ macro_rules! define_root_page_table {
                     reg_type: RegionType
             ) -> Result<(), ()> {
                 self.map_impl(
-                    phys_base,
+                    Some(phys_base),
                     Some(virt_base),
                     size,
                     Some(reg_type),
@@ -455,7 +455,7 @@ macro_rules! define_root_page_table {
 
             fn map_impl(
                     &self,
-                    phys_base: usize,
+                    phys_base: Option<usize>,
                     virt_base: Option<usize>,
                     size: NonZeroUsize,
                     reg_type: Option<RegionType>,
@@ -465,11 +465,13 @@ macro_rules! define_root_page_table {
                 let page_size = page_size();
 
                 assert!(page_size.is_power_of_two(), "page size {:#x} is not a power of 2", page_size);
-                assert!(phys_base.checked_add(size.get() - 1).is_some(),
-                    "physical address range overflows integer size (base: {:#018x}, size: {:#018x})",
-                    phys_base, size.get());
-                assert!(phys_base + (size.get() - 1) < 1 << usize::from(MAX_PHYS_BITS.load(Ordering::Acquire)),
-                    "physical address out of range: {:#018x}", phys_base + (size.get() - 1));
+                if let Some(phys_base) = phys_base {
+                    assert!(phys_base.checked_add(size.get() - 1).is_some(),
+                        "physical address range overflows integer size (base: {:#018x}, size: {:#018x})",
+                        phys_base, size.get());
+                    assert!(phys_base + (size.get() - 1) < 1 << usize::from(MAX_PHYS_BITS.load(Ordering::Acquire)),
+                        "physical address out of range: {:#018x}", phys_base + (size.get() - 1));
+                }
 
                 match virt_base {
                     Some(virt_base) => {
@@ -550,7 +552,7 @@ macro_rules! define_root_page_table {
                         let end = virt_base.wrapping_add(size.get());
                         while addr_virt != end {
                             match self.map_impl(
-                                    PhysPtr::<u8, *const u8>::from_virt(ZEROES_PAGE.index(0)).as_addr_phys(),
+                                    Some(PhysPtr::<u8, *const u8>::from_virt(ZEROES_PAGE.index(0)).as_addr_phys()),
                                     Some(addr_virt),
                                     NonZeroUsize::new(page_size).unwrap(),
                                     Some(RegionType::Ram),
@@ -853,7 +855,7 @@ macro_rules! impl_branch_table {
             // The given bases and size are required to be multiples of `PAGE_SIZE`.
             fn map(
                     &self,
-                    phys_base: usize,
+                    phys_base: Option<usize>,
                     virt_base: usize,
                     size: NonZeroUsize,
                     exception_level: ExceptionLevel,
@@ -870,34 +872,38 @@ macro_rules! impl_branch_table {
                 let max_virt_bits_mask = (1 << (max_virt_bits as u64)) - 1;
 
                 assert!(page_size.is_power_of_two(), "page size {:#x} is not a power of 2", page_size);
-                assert_eq!(phys_base % page_size, 0, "{}", Text::PagesPhysBaseMisaligned(phys_base));
+                if let Some(phys_base) = phys_base {
+                    assert_eq!(phys_base % page_size, 0, "{}", Text::PagesPhysBaseMisaligned(phys_base));
+                }
                 assert_eq!(virt_base % page_size, 0, "{}", Text::PagesVirtBaseMisaligned(virt_base));
                 assert_eq!(size % page_size, 0, "{}", Text::PagesSizeMisaligned(size));
 
-                assert!(phys_base.checked_add(size).is_some(),
-                    "physical address overflows address space (base: {:#018x}, size: {:#018x})", phys_base, size);
-                let end_phys = phys_base + size;
-                assert!(end_phys < 1 << MAX_PHYS_BITS.load(Ordering::Acquire),
-                    "physical address {:#018x} overflows address space", end_phys);
+                assert!(virt_base.checked_add(size).is_some(),
+                    "virtual address overflows address space (base: {:#018x}, size: {:#018x})", virt_base, size);
+                let end_virt = virt_base + size;
+                assert!(end_virt < 1 << MAX_VIRT_BITS.load(Ordering::Acquire),
+                    "virtual address {:#018x} overflows address space", end_virt);
+                let mut addr_virt = virt_base;
                 let mut addr_phys = phys_base;
-                while addr_phys < end_phys {
-                    let index = (virt_base + (addr_phys - phys_base) - bigger_virt_base) / block_size;
-                    if $blocks_allowed && addr_phys % block_size == 0 && addr_phys + block_size <= end_phys {
+                while addr_virt < end_virt {
+                    let index = (addr_virt - bigger_virt_base) / block_size;
+                    if $blocks_allowed && addr_phys.unwrap_or(0) % block_size == 0
+                            && addr_virt + block_size <= end_virt {
                         // We can map a whole large page here.
                         let new_descriptor = Descriptor {
                             page: page_flags
-                                | PageEntry::from_address(addr_phys as u64 & max_virt_bits_mask).unwrap()
+                                | PageEntry::from_address(addr_phys.unwrap_or(0) as u64 & max_virt_bits_mask).unwrap()
                         };
                         match self.entries[index].compare_exchange(Descriptor { page: expected },
                                 new_descriptor, Ordering::AcqRel, Ordering::Acquire) {
                             Ok(_) => {}, // Success!
                             Err(desc) => {
                                 // At least one page has already been mapped in this block.
-                                if let Some(mapped_size) = NonZeroUsize::new(addr_phys - phys_base) {
+                                if let Some(mapped_size) = NonZeroUsize::new(addr_virt - virt_base) {
                                     self.unmap(virt_base, mapped_size, asid, expected);
                                 }
                                 if unsafe { desc.raw != new_descriptor.raw } {
-                                    let next_addr = virt_base + (addr_phys - phys_base + block_size);
+                                    let next_addr = addr_virt + block_size;
                                     if next_addr < 1 << max_virt_bits {
                                         return Err(NonZeroUsize::new(next_addr));
                                     } else {
@@ -914,7 +920,10 @@ macro_rules! impl_branch_table {
                         // constantly allocating new ones and freeing them when they turn out not
                         // to be needed. Or maybe a single thread-local cached table, since that's
                         // all any one thread will need.
-                        let subtable_block = AllMemAlloc.malloc::<$next>(mem::size_of::<$next>(), NonZeroUsize::new(mem::align_of::<$next>()).unwrap())
+                        let subtable_block = AllMemAlloc.malloc::<$next>(
+                                mem::size_of::<$next>(),
+                                NonZeroUsize::new(mem::align_of::<$next>()).unwrap()
+                        )
                             .map_err(|AllocError| None)?;
                         unsafe {
                             <$next>::make_new(subtable_block.index(0));
@@ -933,7 +942,7 @@ macro_rules! impl_branch_table {
                                 | PageTableEntry::ONE
                         };
                         let subsize = NonZeroUsize::new(
-                            usize::min(end_phys - addr_phys, block_size - (addr_phys % block_size))
+                            usize::min(end_virt - addr_virt, block_size - (addr_virt % block_size))
                         ).unwrap();
                         match self.entries[index].compare_exchange(Descriptor { table: PageTableEntry::UNMAPPED },
                                 new_descriptor, Ordering::AcqRel, Ordering::Acquire) {
@@ -941,7 +950,7 @@ macro_rules! impl_branch_table {
                                 let subtable = unsafe { &mut *subtable_block.index(0) };
                                 if let Err(next_addr) = subtable.map(
                                         addr_phys,
-                                        virt_base + (addr_phys - phys_base),
+                                        addr_virt,
                                         subsize,
                                         exception_level,
                                         asid,
@@ -949,7 +958,7 @@ macro_rules! impl_branch_table {
                                         expected
                                 ) {
                                     // Someone else mapped a page in this block before we could get to it.
-                                    if let Some(mapped_size) = NonZeroUsize::new(addr_phys - phys_base) {
+                                    if let Some(mapped_size) = NonZeroUsize::new(addr_virt - virt_base) {
                                         self.unmap(virt_base, mapped_size, asid, expected);
                                     }
                                     return Err(next_addr);
@@ -962,7 +971,7 @@ macro_rules! impl_branch_table {
                                     let subtable = &*(subtable_addr as *const $next);
                                     if let Err(next_addr) = subtable.map(
                                             addr_phys,
-                                            virt_base + (addr_phys - phys_base),
+                                            addr_virt,
                                             subsize,
                                             exception_level,
                                             asid,
@@ -970,7 +979,7 @@ macro_rules! impl_branch_table {
                                             expected
                                     ) {
                                         // At least one page has been mapped in this block.
-                                        if let Some(mapped_size) = NonZeroUsize::new(addr_phys - phys_base) {
+                                        if let Some(mapped_size) = NonZeroUsize::new(addr_virt - virt_base) {
                                             self.unmap(virt_base, mapped_size, asid, expected);
                                         }
                                         return Err(next_addr);
@@ -979,7 +988,10 @@ macro_rules! impl_branch_table {
                             }
                         };
                     }
-                    addr_phys += block_size;
+                    addr_virt += block_size;
+                    if let Some(addr) = addr_phys {
+                        addr_phys = Some(addr + block_size);
+                    }
                 }
                 Ok(())
             }
@@ -1206,7 +1218,7 @@ macro_rules! impl_leaf_table {
             // The given bases and size are required to be multiples of `PAGE_SIZE`.
             fn map(
                     &self,
-                    phys_base: usize,
+                    phys_base: Option<usize>,
                     virt_base: usize,
                     size: NonZeroUsize,
                     _exception_level: ExceptionLevel,
@@ -1227,31 +1239,34 @@ macro_rules! impl_leaf_table {
                 }
 
                 assert_eq!(page_size, block_size, "{}", Text::PageSizeDifferent(block_size, page_size));
-                assert_eq!(phys_base % page_size, 0, "{}", Text::PagesPhysBaseMisaligned(phys_base));
+                if let Some(phys_base) = phys_base {
+                    assert_eq!(phys_base % page_size, 0, "{}", Text::PagesPhysBaseMisaligned(phys_base));
+                }
                 assert_eq!(virt_base % page_size, 0, "{}", Text::PagesVirtBaseMisaligned(virt_base));
                 assert_eq!(size % page_size, 0, "{}", Text::PagesSizeMisaligned(size));
 
-                assert!(phys_base.checked_add(size).is_some(),
-                    "physical address overflows address space (base: {:#018x}, size: {:#018x})", phys_base, size);
-                let end_phys = phys_base + size;
-                assert!(end_phys < 1 << MAX_PHYS_BITS.load(Ordering::Acquire),
-                    "physical address {:#018x} overflows address space", end_phys);
+                assert!(virt_base.checked_add(size).is_some(),
+                    "virtual address overflows address space (base: {:#018x}, size: {:#018x})", virt_base, size);
+                let end_virt = virt_base + size;
+                assert!(end_virt < 1 << MAX_VIRT_BITS.load(Ordering::Acquire),
+                    "virtual address {:#018x} overflows address space", end_virt);
+                let mut addr_virt = virt_base;
                 let mut addr_phys = phys_base;
-                while addr_phys < end_phys {
-                    let index = (virt_base + (addr_phys - phys_base) - bigger_virt_base) / block_size;
+                while addr_virt < end_virt {
+                    let index = (addr_virt - bigger_virt_base) / block_size;
 
                     // Map the next page.
                     let new_entry = page_flags
-                        | PageEntry::from_address(addr_phys as u64).unwrap();
+                        | PageEntry::from_address(addr_phys.unwrap_or(0) as u64).unwrap();
                     match self.entries[index].compare_exchange(expected, new_entry, Ordering::AcqRel, Ordering::Acquire) {
                         Ok(_) => {}, // Success!
                         Err(entry) => {
                             // This page is already mapped.
-                            if let Some(mapped_size) = NonZeroUsize::new(addr_phys - phys_base) {
+                            if let Some(mapped_size) = NonZeroUsize::new(addr_virt - virt_base) {
                                 self.unmap(virt_base, mapped_size, asid, expected);
                             }
                             if entry != new_entry {
-                                let next_addr = virt_base + (addr_phys - phys_base) + block_size;
+                                let next_addr = addr_virt + block_size;
                                 if next_addr < 1 << MAX_VIRT_BITS.load(Ordering::Acquire) {
                                     return Err(NonZeroUsize::new(next_addr));
                                 } else {
@@ -1261,7 +1276,10 @@ macro_rules! impl_leaf_table {
                         }
                     };
 
-                    addr_phys += block_size;
+                    addr_virt += block_size;
+                    if let Some(addr) = addr_phys {
+                        addr_phys = Some(addr + block_size);
+                    }
                 }
                 Ok(())
             }
