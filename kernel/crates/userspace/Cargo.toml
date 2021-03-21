@@ -1,0 +1,15 @@
+[package]
+name = "phoenix-kernel-userspace"
+version = "0.1.0"
+authors = ["jeremydavis519 <jeremydavis519@gmail.com>"]
+edition = "2018"
+
+[lib]
+name = "userspace"
+
+[dependencies]
+phoenix-kernel-memory = { path = "../memory" }
+
+[features]
+self-test = []
+unit-test = []

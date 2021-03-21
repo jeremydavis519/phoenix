@@ -266,6 +266,20 @@ macro_rules! define_root_page_table {
                 }
             }
 
+            /// Returns an address in kernelspace that is mapped to the same byte as the given address
+            /// in userspace.
+            pub fn userspace_addr_to_kernel_addr(&self, userspace_addr: usize) -> Option<usize> {
+                let phys_addr = match self.internals {
+                    $(
+                        RootPageTableInternal::$table(ref table_block) => {
+                            let table = unsafe { &mut *table_block.index(0) };
+                            table.virt_addr_to_phys_addr(userspace_addr)?
+                        }
+                    ),*
+                };
+                Some(PhysPtr::<u8, *const u8>::from_addr_phys(phys_addr).as_virt_unchecked() as usize)
+            }
+
             // Identity-maps the given list of regions. The given bases and sizes are required to be
             // multiples of `page_size()`. Any byte that is listed in two or more regions is included in
             // the first of those regions and excluded from the rest.
@@ -677,6 +691,27 @@ macro_rules! impl_branch_table {
             unsafe fn make_new(table: *mut $table) {
                 for entry in (*table).entries.iter() {
                     entry.store(Descriptor { table: PageTableEntry::UNMAPPED }, Ordering::Release);
+                }
+            }
+
+            fn virt_addr_to_phys_addr(&self, virt_addr: usize) -> Option<usize> {
+                let block_size = 1 << $bits_lo;
+                let page_size = page_size();
+                let bigger_block_size = 2 << $bits_hi;
+                let bigger_base = virt_addr & !(bigger_block_size - 1);
+
+                assert!(page_size.is_power_of_two(), "page size {:#x} is not a power of 2", page_size);
+
+                let index = (virt_addr - bigger_base) / block_size;
+                let desc = self.entries[index].load(Ordering::Acquire);
+                if unsafe { desc.table.contains(PageTableEntry::ONE) } {
+                    let subtable = unsafe { &mut *(desc.table.address($granule_size) as *mut $next) };
+                    subtable.virt_addr_to_phys_addr(virt_addr)
+                } else if unsafe { desc.page.contains(PageEntry::ONE) } {
+                    let base = unsafe { desc.page.address($granule_size) } as usize;
+                    Some(base + virt_addr % block_size)
+                } else {
+                    None
                 }
             }
 
@@ -1142,11 +1177,31 @@ macro_rules! impl_branch_table {
 }
 
 macro_rules! impl_leaf_table {
-    ( $table:ty : bits $bits_lo:expr => $bits_hi:expr ) => {
+    ( $table:ty : bits $bits_lo:expr => $bits_hi:expr ; kiB $granule_size:expr ) => {
         impl $table {
             unsafe fn make_new(table: *mut $table) {
                 for entry in (*table).entries.iter() {
                     entry.store(PageEntry::UNMAPPED, Ordering::Release);
+                }
+            }
+
+            fn virt_addr_to_phys_addr(&self, virt_addr: usize) -> Option<usize> {
+                let block_size = 1 << $bits_lo;
+                let page_size = page_size();
+                let bigger_block_size = 2 << $bits_hi;
+                let bigger_base = virt_addr & !(bigger_block_size - 1);
+
+                assert!(page_size.is_power_of_two(), "page size {:#x} is not a power of 2", page_size);
+
+                let index = (virt_addr - bigger_base) / block_size;
+                let entry = self.entries[index].load(Ordering::Acquire);
+                if entry.contains(PageEntry::ONE | PageEntry::LEVEL_3) {
+                    let base = entry.address($granule_size) as usize;
+                    Some(base + virt_addr % block_size)
+                } else {
+                    // FIXME: If the page isn't currently in RAM (i.e. it's in a swapfile or the executable file),
+                    //        load it into RAM and return that address.
+                    None
                 }
             }
 
@@ -1400,16 +1455,16 @@ define_page_table!(Level3PageTable64k: PageEntry, 8192; 0x1_0000);
 impl_branch_table!(Level0PageTable4k, Level1PageTable4k: bits 39 => 47; kiB 4; tables only);
 impl_branch_table!(Level1PageTable4k, Level2PageTable4k: bits 30 => 38; kiB 4);
 impl_branch_table!(Level2PageTable4k, Level3PageTable4k: bits 21 => 29; kiB 4);
-impl_leaf_table!(Level3PageTable4k: bits 12 => 20);
+impl_leaf_table!(Level3PageTable4k: bits 12 => 20; kiB 4);
 
 impl_branch_table!(Level0PageTable16k, Level1PageTable16k: bits 47 => 47; kiB 16; tables only);
 impl_branch_table!(Level1PageTable16k, Level2PageTable16k: bits 36 => 46; kiB 16; tables only);
 impl_branch_table!(Level2PageTable16k, Level3PageTable16k: bits 25 => 35; kiB 16);
-impl_leaf_table!(Level3PageTable16k: bits 14 => 24);
+impl_leaf_table!(Level3PageTable16k: bits 14 => 24; kiB 16);
 
 impl_branch_table!(Level1PageTable64k, Level2PageTable64k: bits 42 => 51; kiB 64; tables only); // Block descriptors allowed here iff ARMv8.2-LPA is implemented
 impl_branch_table!(Level2PageTable64k, Level3PageTable64k: bits 29 => 41; kiB 64);
-impl_leaf_table!(Level3PageTable64k: bits 16 => 28);
+impl_leaf_table!(Level3PageTable64k: bits 16 => 28; kiB 64);
 
 #[derive(Clone, Copy)]
 #[repr(C)]

@@ -61,6 +61,9 @@
         pub fn map_zeroed_from_exe_file(&self, _virt_base: usize, _size: NonZeroUsize) -> Result<(), ()> {
             unimplemented!()
         }
+        pub fn userspace_addr_to_kernel_addr(&self, _userspace_addr: usize) -> Option<usize> {
+            unimplemented!()
+        }
     }
     #[allow(missing_docs)]
     pub fn trampoline<T>(ptr: *const T) -> *const T { ptr }

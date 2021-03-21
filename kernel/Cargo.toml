@@ -40,6 +40,7 @@ phoenix-kernel-std                = { path = "crates/std" }
 phoenix-kernel-tagged-ptr         = { path = "crates/tagged-ptr" }
 phoenix-kernel-time               = { path = "crates/time" }
 phoenix-kernel-timers             = { path = "crates/timers" }
+phoenix-kernel-userspace          = { path = "crates/userspace" }
 
 [build-dependencies]
 phoenix-kernel-build-util = { path = "crates/build-util" }
@@ -71,7 +72,8 @@ self-test = [
     "phoenix-kernel-std/self-test",
     "phoenix-kernel-tagged-ptr/self-test",
     "phoenix-kernel-time/self-test",
-    "phoenix-kernel-timers/self-test"
+    "phoenix-kernel-timers/self-test",
+    "phoenix-kernel-userspace/self-test"
 ]
 
 # Adds some code that's needed in unit tests (cfg(test) doesn't always work).
@@ -94,5 +96,6 @@ unit-test = [
     "phoenix-kernel-std/unit-test",
     "phoenix-kernel-tagged-ptr/unit-test",
     "phoenix-kernel-time/unit-test",
-    "phoenix-kernel-timers/unit-test"
+    "phoenix-kernel-timers/unit-test",
+    "phoenix-kernel-userspace/unit-test"
 ]
