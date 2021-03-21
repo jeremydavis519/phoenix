@@ -1078,10 +1078,14 @@ macro_rules! impl_branch_table {
                 } else if unsafe { descriptor.page.contains(PageEntry::ONE) } {
                     PageStatus::Mapped
                 } else if unsafe { descriptor.page.contains(PageEntry::IN_SWAPFILE) } {
-                    PageStatus::Mapped
+                    // We somehow have a non-level-3 page in a swapfile? That's not currently supported.
+                    panic!("non-level-3 page found in a swapfile");
                 } else if unsafe { descriptor.page.contains(PageEntry::IN_EXE_FILE) } {
-                    PageStatus::Mapped
+                    // We somehow have a non-level-3 page in the executable file? That's not currently supported.
+                    panic!("non-level-3 page found in an executable file");
                 } else {
+                    assert_eq!(unsafe { descriptor.raw }, PageEntry::UNMAPPED.bits(),
+                        "unrecognized page table entry {:#x}", unsafe { descriptor.raw });
                     PageStatus::Unmapped
                 }
             }
