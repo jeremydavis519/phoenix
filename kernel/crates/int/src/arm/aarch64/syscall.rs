@@ -54,7 +54,7 @@ pub(crate) fn handle_system_call(
             // TODO: Maybe distinguish between normal termination and a crash.
             // TODO: Send a signal to the thread's parent or something, instead of printing.
             println!("{}", e);
-            process_exit(thread.map(|t| &*t), usize::MAX) // TODO: Use a named constant for the failure code.
+            process_exit(thread, usize::MAX) // TODO: Use a named constant for the failure code.
         }
     }
 }
