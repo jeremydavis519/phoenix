@@ -39,10 +39,12 @@ use {
     core::sync::atomic::{AtomicBool, Ordering},
     memory::virt::paging::RootPageTable,
     shared::lazy_static,
-    userspace::UserspaceStr
+    userspace::UserspaceStr,
+    self::resource::Resource
 };
 
 pub mod bus;
+pub mod resource;
 pub mod virtio;
 
 lazy_static! {
@@ -101,20 +103,12 @@ pub enum DeviceTree {
     /// A device.
     Device {
         /// The name of the device, which a driver can use to refer to it.
-        name:    String,
+        name:      String,
         /// Whether or not a driver is currently asserting ownership of this device.
-        claimed: AtomicBool,
-        /// The device itself.
-        // FIXME: We should be able to simplify this to just a vector of resource specifications.
-        device:  DeviceEnum
+        claimed:   AtomicBool,
+        /// The resources (MMIO, ISA ports, etc.) that the device owns.
+        resources: Vec<Resource>
     }
-}
-
-/// Represents a device of any type we support.
-#[derive(Debug)]
-pub enum DeviceEnum {
-    /// A VirtIO device.
-    VirtIo(virtio::Device)
 }
 
 impl DeviceTree {
@@ -169,7 +163,7 @@ impl DeviceTree {
             DeviceTree::Device {
                 ref name,
                 ref claimed,
-                device: _
+                resources: _
             } => {
                 if let Some(name_tail) = path.match_and_advance(name) {
                     if !name_tail.is_empty() {

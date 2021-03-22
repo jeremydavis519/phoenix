@@ -21,42 +21,26 @@
 use {
     alloc::{
         collections::TryReserveError,
+        vec::Vec,
         string::String,
     },
     core::{
-        convert::TryFrom,
         fmt::Write,
         mem,
         sync::atomic::AtomicBool
     },
-    bitflags::bitflags,
     shared::{
         ffi_enum,
         ffi::{Endian, Le}
     },
     crate::{
         DeviceTree,
-        DeviceEnum,
-        bus::{Bus, ResourceRw}
+        bus::Bus,
+        resource::Resource
     }
 };
 
-/// Represents a VirtIO device.
-#[derive(Debug)]
-pub struct Device {
-    version: u32,
-    dev_type: DeviceType,
-    resources: VirtioResources
-}
-
-#[derive(Debug)]
-enum VirtioResources {
-    Mmio {
-        registers: ResourceRw
-    },
-    // TODO: Pci { ... },
-    // TODO: ChannelIo { ... }
-}
+const MMIO_MAGIC_NUMBER: u32 = 0x74726976; // Little-endian "virt"
 
 /// Inserts all the VirtIO devices into the given device tree.
 pub fn enumerate(device_tree: &mut DeviceTree) -> Result<(), TryReserveError> {
@@ -83,39 +67,34 @@ pub fn enumerate(device_tree: &mut DeviceTree) -> Result<(), TryReserveError> {
             use temp::*;
 
             for i in 0 .. MMIO_MAX_DEVICES {
-                if let Ok(registers) = bus.reserve_rw(MMIO_BASE + i * MMIO_SIZE_PER_DEVICE, MMIO_SIZE_PER_DEVICE) {
-                    let mut device = Device {
-                        // These first values are just placeholders, to be replaced before the device
-                        // is added to the vector.
-                        version: 0,
-                        dev_type: DeviceType::NetworkCard,
-
-                        resources: VirtioResources::Mmio { registers }
-                    };
-
-                    unsafe {
-                        if device.magic_number() == MMIO_MAGIC_NUMBER as u32 {
-                            let version = device.version();
-                            if version > 0 && version <= CURRENT_VERSION as u32 {
-                                device.version = version;
-                                if let Ok(device_type) = DeviceType::try_from(device.device_id()) {
-                                    device.dev_type = device_type;
-
+                match bus.reserve(MMIO_BASE + i * MMIO_SIZE_PER_DEVICE, MMIO_SIZE_PER_DEVICE) {
+                    Ok(Resource::Mmio(registers)) => {
+                        unsafe {
+                            if (*(registers.index(0) as *const Le<u32>)).into_native() == MMIO_MAGIC_NUMBER {
+                                let device_id = (*(registers.index(8) as *const Le<u32>)).into_native();
+                                if device_id != 0 {
                                     // It seems we've found a VirtIO device. Add it to the tree.
                                     let mut name = String::new();
-                                    name.try_reserve(mem::size_of_val("virtio-99"))?;
-                                    write!(name, "virtio-{}", device_type as u32).unwrap();
+                                    name.try_reserve(mem::size_of_val("virtio-4294967295"))?;
+                                    write!(name, "virtio-{}", device_id).unwrap();
+
+                                    let mut resources = Vec::new();
+                                    resources.try_reserve(1)?;
+                                    resources.push(Resource::Mmio(registers));
+
                                     children.try_reserve(1)?;
                                     children.push(DeviceTree::Device {
                                         name,
                                         claimed: AtomicBool::new(false),
-                                        device: DeviceEnum::VirtIo(device)
+                                        resources
                                     });
                                 }
                             }
                         }
-                    }
-                }
+                    },
+                    // Ok(resource) => panic!("unexpected resource type: {:?}", resource),
+                    Err(_) => {}
+                };
             }
         },
         DeviceTree::Device { .. } => {} // There can't be a VirtIO device inside another device.
@@ -179,8 +158,8 @@ ffi_enum! {
     }
 }
 
-const MMIO_MAGIC_NUMBER: usize = 0x74726976; // Little-endian "virt"
-const CURRENT_VERSION: usize   = 2;
+// FIXME: Move all this stuff into the userspace driver.
+/*const CURRENT_VERSION: usize   = 2;
 
 impl Device {
     /// Reads the device's magic number (should be 0x74726976).
@@ -388,4 +367,4 @@ bitflags! {
         /// The guest OS has given up on the device.
         const FAILED       = 0x80_u32.to_le();
     }
-}
+}*/

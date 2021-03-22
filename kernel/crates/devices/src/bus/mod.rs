@@ -23,16 +23,14 @@ pub mod mmio;
 
 use {
     alloc::collections::TryReserveError,
-    core::{
-        fmt,
-        ptr::{read_volatile, write_volatile}
-    },
+    core::fmt,
     error::Error,
     i18n::Text,
-    memory::phys::block::Mmio
+    crate::{
+        DeviceTree,
+        resource::Resource
+    }
 };
-
-use crate::DeviceTree;
 
 /// Enumerates all the buses under the given level of the device tree.
 pub fn enumerate(device_tree: &mut DeviceTree) -> Result<(), TryReserveError> {
@@ -42,105 +40,9 @@ pub fn enumerate(device_tree: &mut DeviceTree) -> Result<(), TryReserveError> {
 
 /// Common functionality that all buses need to have.
 pub trait Bus {
-    /// Reserves a range of addresses on this bus as read-only. This guarantees exclusive access.
-    /// For instance, although we only need read access, no one can get write access while these
-    /// addresses are reserved.
-    fn reserve_ro(&self, base: usize, size: usize) -> Result<ResourceRo, ReserveError>;
-
-    /// Reserves a range of addresses on this bus as write-only. This guarantees exclusive access.
-    /// For instance, although we only need write access, no one can get read access while these
-    /// addresses are reserved.
-    fn reserve_wo(&self, base: usize, size: usize) -> Result<ResourceWo, ReserveError>;
-
-    /// Reserves a range of addresses on this bus as read-write. This guarantees exclusive access.
-    fn reserve_rw(&self, base: usize, size: usize) -> Result<ResourceRw, ReserveError>;
-}
-
-/// A read-only range of addresses on a bus, with an interface for reading from them.
-#[derive(Debug)]
-pub struct ResourceRo {
-    pub(crate) resource: Resource
-}
-
-/// A write-only range of addresses on a bus, with an interface for writing to them.
-#[derive(Debug)]
-pub struct ResourceWo {
-    pub(crate) resource: Resource
-}
-
-/// A read-write range of addresses on a bus, with an interface for reading and writing.
-#[derive(Debug)]
-pub struct ResourceRw {
-    pub(crate) resource: Resource
-}
-
-#[derive(Debug)]
-pub(crate) enum Resource {
-    Mmio(Mmio<u8>)
-}
-
-impl ResourceRo {
-    /// Reads the value `offset` addresses beyond the start of this resource. Note that this
-    /// doesn't work like pointer addition: if an MMIO block starts at `0xA0000`, then
-    /// `read::<u16>::(8)` reads the `u16` from `0xA0008`, not from `0xA0010`.
-    ///
-    /// # Safety
-    /// This function interacts directly with low-level system resources. Rust has no way to reason
-    /// about its safety, so it is assumed to be unsafe.
-    pub unsafe fn read<T: Copy>(&self, offset: usize) -> T {
-        self.resource.read(offset)
-    }
-}
-
-impl ResourceWo {
-    /// Writes the given value `offset` addresses beyond the start of this resource. Note that this
-    /// doesn't work like pointer addition: if an MMIO block starts at `0xA0000`, then
-    /// `write::<u16>::(8, 0x076f)` will write `0x076f` to `0xA0008`, not to `0xA0010`.
-    ///
-    /// # Safety
-    /// This function interacts directly with low-level system resources. Rust has no way to reason
-    /// about its safety, so it is assumed to be unsafe.
-    pub unsafe fn write<T: Copy>(&self, offset: usize, value: T) {
-        self.resource.write(offset, value)
-    }
-}
-
-impl ResourceRw {
-    /// Reads the value `offset` addresses beyond the start of this resource. Note that this
-    /// doesn't work like pointer addition: if an MMIO block starts at `0xA0000`, then
-    /// `read::<u16>::(8)` reads the `u16` from `0xA0008`, not from `0xA0010`.
-    ///
-    /// # Safety
-    /// This function interacts directly with low-level system resources. Rust has no way to reason
-    /// about its safety, so it is assumed to be unsafe.
-    pub unsafe fn read<T: Copy>(&self, offset: usize) -> T {
-        self.resource.read(offset)
-    }
-
-    /// Writes the given value `offset` addresses beyond the start of this resource. Note that this
-    /// doesn't work like pointer addition: if an MMIO block starts at `0xA0000`, then
-    /// `write::<u16>::(8, 0x076f)` will write `0x076f` to `0xA0008`, not to `0xA0010`.
-    ///
-    /// # Safety
-    /// This function interacts directly with low-level system resources. Rust has no way to reason
-    /// about its safety, so it is assumed to be unsafe.
-    pub unsafe fn write<T: Copy>(&self, offset: usize, value: T) {
-        self.resource.write(offset, value)
-    }
-}
-
-impl Resource {
-    unsafe fn read<T: Copy>(&self, offset: usize) -> T {
-        match *self {
-            Self::Mmio(ref block) => read_volatile(block.index(offset) as *const _ as *const T)
-        }
-    }
-
-    unsafe fn write<T: Copy>(&self, offset: usize, value: T) {
-        match *self {
-            Self::Mmio(ref block) => write_volatile(block.index(offset) as *mut T, value)
-        }
-    }
+    /// Reserves a range of addresses on this bus. This guarantees exclusive access by preventing
+    /// two devices to use the same addresses.
+    fn reserve(&self, base: usize, size: usize) -> Result<Resource, ReserveError>;
 }
 
 /// An error that can occur when trying to reserve an address range on a bus.

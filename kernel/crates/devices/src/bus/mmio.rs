@@ -28,8 +28,11 @@ use {
     
     memory::allocator::AllMemAlloc,
 
-    super::{Bus, ResourceRo, ResourceWo, ResourceRw, Resource, ReserveError},
-    crate::DeviceTree
+    super::{Bus, ReserveError},
+    crate::{
+        DeviceTree,
+        resource::Resource
+    }
 };
 
 /// Enumerates any MMIO buses present at the given level of the device tree.
@@ -48,26 +51,10 @@ pub fn enumerate(device_tree: &mut DeviceTree) -> Result<(), TryReserveError> {
 #[derive(Debug)]
 pub struct MmioBus;
 
-impl MmioBus {
-    const BUS_NAME: &'static str = "mmio";
-}
-
 impl Bus for MmioBus {
-    fn reserve_ro(&self, base: usize, size: usize) -> Result<ResourceRo, ReserveError> {
+    fn reserve(&self, base: usize, size: usize) -> Result<Resource, ReserveError> {
         AllMemAlloc.mmio_mut(base, size)
-            .map(|block| ResourceRo { resource: Resource::Mmio(block) })
-            .map_err(|_| ReserveError { bus_type: Self::BUS_NAME, base, size })
-    }
-
-    fn reserve_wo(&self, base: usize, size: usize) -> Result<ResourceWo, ReserveError> {
-        AllMemAlloc.mmio_mut(base, size)
-            .map(|block| ResourceWo { resource: Resource::Mmio(block) })
-            .map_err(|_| ReserveError { bus_type: Self::BUS_NAME, base, size })
-    }
-
-    fn reserve_rw(&self, base: usize, size: usize) -> Result<ResourceRw, ReserveError> {
-        AllMemAlloc.mmio_mut(base, size)
-            .map(|block| ResourceRw { resource: Resource::Mmio(block) })
-            .map_err(|_| ReserveError { bus_type: Self::BUS_NAME, base, size })
+            .map(|block| Resource::Mmio(block))
+            .map_err(|_| ReserveError { bus_type: "mmio", base, size })
     }
 }
