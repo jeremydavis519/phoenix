@@ -15,6 +15,7 @@ phoenix-kernel-error = { path = "../error" }
 phoenix-kernel-i18n = { path = "../i18n" }
 phoenix-kernel-memory = { path = "../memory" }
 phoenix-kernel-shared = { path = "../shared" }
+phoenix-kernel-userspace = { path = "../userspace" }
 
 [features]
 self-test = []

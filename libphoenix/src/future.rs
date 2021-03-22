@@ -16,83 +16,132 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-//! This module defines the [`Future`](struct.Future.html) type, which represents a value that the
-//! kernel has promised to give us but may not have provided yet. This type is a core part of the
-//! Phoenix system call model, since almost every system call is asynchronous.
+//! This module defines the [`OsFuture`] type, which represents a value that the kernel has promised
+//! to give us but may not have provided yet. This type is a core part of the Phoenix system call
+//! model, since almost every system call is asynchronous.
 
 use {
-    core::{
-        fmt,
-        ptr,
-        sync::atomic::{AtomicBool, Ordering}
+    alloc::{
+        boxed::Box,
+        vec::Vec
     },
-    super::syscall
+    core::{
+        future::Future,
+        pin::Pin,
+        ptr,
+        sync::atomic::{AtomicBool, Ordering},
+        task::{Context, Poll, RawWaker, RawWakerVTable, Waker}
+    },
+    crate::syscall
 };
 
-/// A promised but possibly not-yet-available return value from a system call.
-#[derive(Debug)]
-pub struct Future<'a, T> {
-    pub(crate) promised: &'a mut PromisedValue<T>
+/// An executor designed for waiting for the results of asynchronous system calls.
+///
+/// This type of executor can either poll all of its futures once or block until either one or all
+/// of them are complete. Note that blocking with this executor can lead to deadlock if the futures
+/// it owns are not waiting for the results of asynchronous system calls.
+pub struct SysCallExecutor<'a> {
+    futures: Vec<Pin<Box<dyn 'a+Future<Output = ()>>>>
 }
 
-impl<'a, T> Future<'a, T> {
-    /// Checks whether this future has a value yet and returns a reference to it if so.
-    pub fn poll(&self) -> Option<&T> {
-        if self.promised.exists.load(Ordering::Acquire) {
-            Some(&self.promised.value)
-        } else {
-            None
-        }
+impl<'a> SysCallExecutor<'a> {
+    /// Makes a new executor with no futures.
+    pub fn new() -> SysCallExecutor<'a> {
+        SysCallExecutor { futures: Vec::new() }
     }
 
-    /// Checks whether this future has a value yet and returns a mutable reference to it if so.
-    pub fn poll_mut(&mut self) -> Option<&mut T> {
-        if self.promised.exists.load(Ordering::Acquire) {
-            Some(&mut self.promised.value)
-        } else {
-            None
-        }
-    }
-
-    /// Moves the inner value out of this future.
+    /// Adds a future to this executor.
     ///
     /// # Returns
-    /// The inner value, or an error if the future does not yet have a value.
-    pub fn into_inner(self) -> Result<T, FutureUnwrapError> {
-        if self.promised.exists.swap(false, Ordering::AcqRel) {
-            Ok(unsafe { ptr::read(&self.promised.value as *const T) })
-        } else {
-            Err(FutureUnwrapError)
+    /// `self`, so that multiple function calls can be chained.
+    pub fn spawn<F: 'a+Future<Output = ()>>(&mut self, future: F) -> &mut Self {
+        self.futures.push(Box::pin(future));
+        self
+    }
+
+    /// Polls each future once.
+    ///
+    /// # Returns
+    /// The number of futures that finished executing.
+    pub fn poll(&mut self) -> usize {
+        let mut futures_finished = 0;
+        let waker = unsafe { Waker::from_raw(Self::raw_waker()) };
+        for i in (0 .. self.futures.len()).rev() {
+            let mut cx = Context::from_waker(&waker);
+            match self.futures[i].as_mut().poll(&mut cx) {
+                Poll::Ready(()) => {
+                    futures_finished += 1;
+                    self.futures.swap_remove(i);
+                },
+                Poll::Pending => {}
+            };
+        }
+        futures_finished
+    }
+
+    /// Blocks until at least one future finishes.
+    ///
+    /// # Returns
+    /// The number of futures that finished executing.
+    pub fn block_on_any(&mut self) -> usize {
+        loop {
+            let futures_finished = self.poll();
+            if futures_finished > 0 {
+                return futures_finished;
+            }
+            syscall::thread_wait();
         }
     }
 
-    /// Transfers control to the kernel until this future has a value, then returns that value.
-    pub fn block(self) -> T {
-        syscall::future_block(self.promised as *mut _ as usize);
-        self.into_inner().unwrap()
+    /// Blocks until all the futures in this executor finish.
+    pub fn block_on_all(&mut self) {
+        while self.futures.len() > 0 {
+            self.block_on_any();
+        }
+    }
+
+    fn raw_waker() -> RawWaker {
+        RawWaker::new(
+            ptr::null(),
+            &RawWakerVTable::new(
+                |_| Self::raw_waker(), // fn clone(_: *const ())
+                |_| {},                // fn wake(_: *const ())
+                |_| {},                // unsafe fn wake_by_ref(_: *const ())
+                |_| {}                 // fn drop(_: *const ())
+            )
+        )
     }
 }
 
-impl<'a, T> Drop for Future<'a, T> {
-    fn drop(&mut self) {
-        // TODO: Tell the kernel it can free this future.
-        unimplemented!("Future::drop");
-    }
-}
-
+// A promised but possibly not-yet-available return value from a system call.
 #[derive(Debug)]
 #[repr(C)]
-pub(crate) struct PromisedValue<T> {
-    exists: AtomicBool,
-    value:  T
+pub(crate) struct OsFuture {
+    finished: AtomicBool,
+    value:    usize
 }
 
-/// An error resulting from trying to unwrap a `Future` that does not yet have a value.
-#[derive(Debug)]
-pub struct FutureUnwrapError;
+impl OsFuture {
+    pub(crate) unsafe fn new(addr: usize) -> Pin<&'static mut OsFuture> {
+        Pin::new_unchecked(&mut *(addr as *mut _))
+    }
+}
 
-impl fmt::Display for FutureUnwrapError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "attempted to unwrap a future that did not have a value yet")
+impl Future for OsFuture {
+    type Output = usize;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<usize> {
+        if self.finished.load(Ordering::Acquire) {
+            Poll::Ready(self.value)
+        } else {
+            cx.waker().wake_by_ref();
+            Poll::Pending
+        }
+    }
+}
+
+impl Drop for OsFuture {
+    fn drop(&mut self) {
+        // FIXME: Tell the kernel it can free this future.
     }
 }

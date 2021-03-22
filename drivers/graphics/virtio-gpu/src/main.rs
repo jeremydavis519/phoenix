@@ -19,8 +19,7 @@
 //! This program is the Phoenix operating system's driver for the VirtIO GPU.
 //!
 //! # Required permissions:
-//! * own device mmio/virtio-gpu
-//! * own device pci/virtio-gpu
+//! * own device mmio/virtio-16
 
 #![no_std]
 #![deny(warnings, missing_docs)]
@@ -30,7 +29,10 @@
 
 use {
     // libdriver::IoType,
-    libphoenix::phoenix_main
+    libphoenix::{
+        phoenix_main,
+        future::SysCallExecutor
+    }
 };
 
 // mod mmio;
@@ -38,8 +40,13 @@ use {
 
 phoenix_main! {
     fn main() {
-        let _device = libdriver::Device::claim(&["mmio/virtio-gpu", "pci/virtio-gpu"])
-            .expect("no VirtIO GPU found");
+        let mut device = None;
+        SysCallExecutor::new()
+            .spawn(async {
+                device = libdriver::Device::claim("mmio/virtio-16").await
+            })
+            .block_on_all();
+        let _device = device.expect("no VirtIO GPU found");
         /*match device.io_type {
             IoType::Mmio => self::mmio::init(&device),
             IoType::Pci => self::pci::init(&device),

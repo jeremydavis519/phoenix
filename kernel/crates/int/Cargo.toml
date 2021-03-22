@@ -10,6 +10,7 @@ name = "int"
 [dependencies]
 bitflags = "1.0"
 
+phoenix-kernel-devices = { path = "../devices" }
 phoenix-kernel-fs = { path = "../fs" }
 phoenix-kernel-io = { path = "../io" }
 phoenix-kernel-macros-unreachable = { path = "../macros/unreachable" }
@@ -18,6 +19,7 @@ phoenix-kernel-scheduler = { path = "../scheduler" }
 phoenix-kernel-shared = { path = "../shared" }
 phoenix-kernel-time = { path = "../time" }
 phoenix-kernel-timers = { path = "../timers" }
+phoenix-kernel-userspace = { path = "../userspace" }
 
 [features]
 self-test = []

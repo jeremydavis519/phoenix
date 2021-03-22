@@ -16,12 +16,19 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-//! This module defines the interface for the kernel to enumerate and communicate with Virtual I/O
-//! (VirtIO) devices.
+//! This module defines the interface for the kernel to enumerate Virtual I/O (VirtIO) devices.
 
 use {
-    alloc::collections::TryReserveError,
-    core::convert::TryFrom,
+    alloc::{
+        collections::TryReserveError,
+        string::String,
+    },
+    core::{
+        convert::TryFrom,
+        fmt::Write,
+        mem,
+        sync::atomic::AtomicBool
+    },
     bitflags::bitflags,
     shared::{
         ffi_enum,
@@ -95,8 +102,15 @@ pub fn enumerate(device_tree: &mut DeviceTree) -> Result<(), TryReserveError> {
                                     device.dev_type = device_type;
 
                                     // It seems we've found a VirtIO device. Add it to the tree.
+                                    let mut name = String::new();
+                                    name.try_reserve(mem::size_of_val("virtio-99"))?;
+                                    write!(name, "virtio-{}", device_type as u32).unwrap();
                                     children.try_reserve(1)?;
-                                    children.push(DeviceTree::Device(DeviceEnum::VirtIo(device)));
+                                    children.push(DeviceTree::Device {
+                                        name,
+                                        claimed: AtomicBool::new(false),
+                                        device: DeviceEnum::VirtIo(device)
+                                    });
                                 }
                             }
                         }
@@ -104,7 +118,7 @@ pub fn enumerate(device_tree: &mut DeviceTree) -> Result<(), TryReserveError> {
                 }
             }
         },
-        DeviceTree::Device(_) => {} // There can't be a VirtIO device inside another device.
+        DeviceTree::Device { .. } => {} // There can't be a VirtIO device inside another device.
     };
     Ok(())
 }

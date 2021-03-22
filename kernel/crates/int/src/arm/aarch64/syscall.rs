@@ -23,11 +23,13 @@ use {
         convert::{TryFrom, TryInto},
         time::Duration
     },
+    devices::DEVICES,
     fs::File,
     io::{println, Read},
     scheduler::{Thread, ThreadStatus},
     shared::ffi_enum,
     time::SystemTime,
+    userspace::UserspaceStr,
     super::exceptions::Response
 };
 
@@ -45,6 +47,7 @@ pub(crate) fn handle_system_call(
 
         Ok(SystemCall::Process_Exit) => process_exit(thread, args[0]),
 
+        Ok(SystemCall::Device_Claim) => device_claim(thread, args[0], args[1], result),
 
         // TODO: Remove all of these temporary system calls.
         Ok(SystemCall::Temp_PutChar) => temp_putchar(args[0]),
@@ -70,6 +73,7 @@ ffi_enum! {
 
         Process_Exit = 0x0100,
 
+        Device_Claim = 0x0200,
 
         Temp_PutChar = 0xff00,
         Temp_GetChar = 0xff01
@@ -145,6 +149,38 @@ fn process_exit(thread: Option<&mut Thread<File>>, status: usize) -> Response {
 }
 
 
+// Looks up a device by its path in the device tree, gives the process access to its registers, and
+// returns a pointer to an object describing the device.
+//
+// Requires the permission `own device <device_name>`.
+//
+// If the device doesn't exist, or the process lacks the necessary permission (and the user doesn't
+// grant it that permission), this returns a null pointer.
+fn device_claim(
+        thread: Option<&mut Thread<File>>,
+        dev_name_userspace_addr: usize,
+        dev_name_len: usize,
+        _future_userspace_addr: &mut usize
+) -> Response {
+    let thread = thread.expect("kernel thread attempted to get a device");
+
+    let dev_path = match UserspaceStr::from_raw_parts(
+            thread.exec_image.page_table(),
+            dev_name_userspace_addr,
+            dev_name_len
+    ) {
+        Some(path) => path,
+        None => return Response::leave_userspace(ThreadStatus::Terminated) // Part of the argument is unmapped.
+    };
+    let _dev_userspace_addr = match DEVICES.claim_device(dev_path, thread.exec_image.page_table()) {
+        Ok(addr) => addr,
+        // FIXME: If the thread doesn't have permission to own the device, ask the user whether it should.
+        Err(()) => 0
+    };
+
+    // TODO: Return a future to userspace, populating it with the device info if we have it.
+    unimplemented!("device_claim");
+}
 
 
 // TODO: Remove these temporary system calls.

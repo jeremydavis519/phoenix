@@ -18,14 +18,15 @@
 
 //! This module defines a function to encapsulate each system call the Phoenix kernel understands.
 
-use {
-    core::num::NonZeroUsize,
-    super::thread::Thread
+use crate::{
+    future::OsFuture,
+    thread::Thread
 };
 
-/*macro_rules! define_async_syscall {
-    (@func $name:ident() -> $ret_type:ty { $syscall_num:tt }) => {
-        pub fn $name<'future>() -> Future<'future, $ret_type> {
+macro_rules! define_async_syscall {
+    (@func $(#[$attr:meta])* pub async fn $name:ident() -> $ret_type:ty => $syscall_num:tt;) => {
+        $(#[$attr])*
+        pub async fn $name() -> $ret_type {
             let addr: usize;
             unsafe {
                 asm!(
@@ -34,120 +35,129 @@ use {
                     options(nomem, preserves_flags)
                 );
             }
-            Future { promised: unsafe { &mut *(addr as *mut _) } }
+            unsafe { OsFuture::new(addr) }.await as $ret_type
         }
     };
 
-    (@func $name:ident(
-            $arg1:ident: $type1:ty $(=> $($conv1:tt)*)?
-    ) -> $ret_type:ty { $syscall_num:tt }) => {
-        pub fn $name<'future>(
-                $arg1: $type1
-        ) -> Future<'future, $ret_type> {
+    (@func $(#[$attr:meta])* pub async fn $name:ident(
+            $($arg1:ident: $type1:ty)? $(=> {$($conv1:tt)*})?
+    ) -> $ret_type:ty => $syscall_num:tt;) => {
+        $(#[$attr])*
+        pub async fn $name(
+                $($arg1: $type1)?
+        ) -> $ret_type {
             let addr: usize;
             unsafe {
                 asm!(
                     concat!("svc ", $syscall_num),
-                    in("x2") $arg1 $($($conv1:tt)*)?,
+                    in("x2") $($arg1)? $($($conv1)*)?,
                     lateout("x0") addr,
                     options(nomem, preserves_flags)
                 );
             }
-            Future { promised: unsafe { &mut *(addr as *mut _) } }
+            unsafe { OsFuture::new(addr) }.await as $ret_type
         }
     };
 
-    (@func $name:ident(
-        $arg1:ident: $type1:ty $(=> $($conv1:tt)*)?,
-        $arg2:ident: $type2:ty $(=> $($conv2:tt)*)?
-    ) -> $ret_type:ty { $syscall_num:tt }) => {
-        pub fn $name<'future>(
-                $arg1: $type1,
-                $arg2: $type2
-        ) -> Future<'future, $ret_type> {
+    (@func $(#[$attr:meta])* pub async fn $name:ident(
+        $($arg1:ident: $type1:ty)? $(=> {$($conv1:tt)*})?,
+        $($arg2:ident: $type2:ty)? $(=> {$($conv2:tt)*})?
+    ) -> $ret_type:ty => $syscall_num:tt;) => {
+        $(#[$attr])*
+        pub async fn $name(
+                $($arg1: $type1,)?
+                $($arg2: $type2)?
+        ) -> $ret_type {
             let addr: usize;
             unsafe {
                 asm!(
                     concat!("svc ", $syscall_num),
-                    in("x2") $arg1 $($($conv1:tt)*)?,
-                    in("x3") $arg2 $($($conv2:tt)*)?,
+                    in("x2") $($arg1)? $($($conv1)*)?,
+                    in("x3") $($arg2)? $($($conv2)*)?,
                     lateout("x0") addr,
                     options(nomem, preserves_flags)
                 );
             }
-            Future { promised: unsafe { &mut *(addr as *mut _) } }
+            unsafe { OsFuture::new(addr) }.await as $ret_type
         }
     };
 
-    (@func $name:ident(
-        $arg1:ident: $type1:ty $(=> $($conv1:tt)*)?,
-        $arg2:ident: $type2:ty $(=> $($conv2:tt)*)?,
-        $arg3:ident: $type3:ty $(=> $($conv3:tt)*)?
-    ) -> $ret_type:ty { $syscall_num:tt }) => {
-        pub fn $name<'future>(
-                $arg1: $type1,
-                $arg2: $type2,
-                $arg3: $type3
-        ) -> Future<'future, $ret_type> {
+    (@func $(#[$attr:meta])* pub async fn $name:ident(
+        $($arg1:ident: $type1:ty)? $(=> {$($conv1:tt)*})?,
+        $($arg2:ident: $type2:ty)? $(=> {$($conv2:tt)*})?,
+        $($arg3:ident: $type3:ty)? $(=> {$($conv3:tt)*})?
+    ) -> $ret_type:ty => $syscall_num:tt;) => {
+        $(#[$attr])*
+        pub async fn $name(
+                $($arg1: $type1,)?
+                $($arg2: $type2,)?
+                $($arg3: $type3)?
+        ) -> $ret_type {
             let addr: usize;
             unsafe {
                 asm!(
                     concat!("svc ", $syscall_num),
-                    in("x2") $arg1 $($($conv1:tt)*)?,
-                    in("x3") $arg2 $($($conv2:tt)*)?,
-                    in("x4") $arg3 $($($conv3:tt)*)?,
+                    in("x2") $($arg1)? $($($conv1)*)?,
+                    in("x3") $($arg2)? $($($conv2)*)?,
+                    in("x4") $($arg3)? $($($conv3)*)?,
                     lateout("x0") addr,
                     options(nomem, preserves_flags)
                 );
             }
-            Future { promised: unsafe { &mut *(addr as *mut _) } }
+            unsafe { OsFuture::new(addr) }.await as $ret_type
         }
     };
 
-    (@func $name:ident(
-        $arg1:ident: $type1:ty $(=> $($conv1:tt)*)?,
-        $arg2:ident: $type2:ty $(=> $($conv2:tt)*)?,
-        $arg3:ident: $type3:ty $(=> $($conv3:tt)*)?,
-        $arg4:ident: $type4:ty $(=> $($conv4:tt)*)?
-    ) -> $ret_type:ty { $syscall_num:tt }) => {
-        pub fn $name<'future>(
-                $arg1: $type1,
-                $arg2: $type2,
-                $arg3: $type3,
-                $arg4: $type4
-        ) -> Future<'future, $ret_type> {
+    (@func $(#[$attr:meta])* pub async fn $name:ident(
+        $($arg1:ident: $type1:ty)? $(=> {$($conv1:tt)*})?,
+        $($arg2:ident: $type2:ty)? $(=> {$($conv2:tt)*})?,
+        $($arg3:ident: $type3:ty)? $(=> {$($conv3:tt)*})?,
+        $($arg4:ident: $type4:ty)? $(=> {$($conv4:tt)*})?
+    ) -> $ret_type:ty => $syscall_num:tt;) => {
+        $(#[$attr])*
+        pub async fn $name(
+                $($arg1: $type1,)?
+                $($arg2: $type2,)?
+                $($arg3: $type3,)?
+                $($arg4: $type4)?
+        ) -> $ret_type {
             let addr: usize;
             unsafe {
                 asm!(
                     concat!("svc ", $syscall_num),
-                    in("x2") $arg1 $($($conv1:tt)*)?,
-                    in("x3") $arg2 $($($conv2:tt)*)?,
-                    in("x4") $arg3 $($($conv3:tt)*)?,
-                    in("x5") $arg4 $($($conv4:tt)*)?,
+                    in("x2") $($arg1)? $($($conv1)*)?,
+                    in("x3") $($arg2)? $($($conv2)*)?,
+                    in("x4") $($arg3)? $($($conv3)*)?,
+                    in("x5") $($arg4)? $($($conv4)*)?,
                     lateout("x0") addr,
                     options(nomem, preserves_flags)
                 );
             }
-            Future { promised: unsafe { &mut *(addr as *mut _) } }
+            unsafe { OsFuture::new(addr) }.await as $ret_type
         }
     };
 
-    ($name:ident($($arg:ident: $typ:ty $(=> $($conv:tt)*)?),*) -> $ret_type:ty { $syscall_num:tt }) => {
+    ($(#[$attr:meta])* pub async fn $name:ident(
+$($($arg:ident: $typ:ty)? $(=> {$($conv:tt)*})?),*
+    ) -> $ret_type:ty => $syscall_num:tt;) => {
         define_async_syscall! {
             @func
-            $name($($arg: $typ $(=> $($conv)*)?),*) -> $ret_type { $syscall_num }
+            $(#[$attr])*
+            pub async fn $name($($($arg: $typ)? $(=> {$($conv)*})?),*) -> $ret_type => $syscall_num;
         }
     };
 }
 
 macro_rules! define_async_syscalls {
-    ($($(#[$attr:meta])* $name:ident($($args:tt)*) -> $ret_type:ty { $syscall_num:tt })+) => {
+    ($($(#[$attr:meta])* pub async fn $name:ident($($args:tt)*) -> $ret_type:ty => $syscall_num:tt;)+) => {
         $(
-            $(#[$attr])*
-            define_async_syscall!($name($($args)*) -> $ret_type { $syscall_num });
+            define_async_syscall! {
+                $(#[$attr])*
+                pub async fn $name($($args)*) -> $ret_type => $syscall_num;
+            }
         )+
     };
-}*/
+}
 
 /// Ends the currently running thread with the given status.
 ///
@@ -207,7 +217,10 @@ pub fn thread_sleep(milliseconds: usize) {
 
 /// Spawns a new thread with the given entry point, priority, and stack size.
 ///
-/// This function is not marked as public because the [`Thread`] class provides a more idiomatic
+/// Note that this is considered an asynchronous system call for the purposes of [`thread_wait`].
+/// The delayed return value is the spawned thread's status code.
+///
+/// This function is not marked as public because the [`Thread`] type provides a more idiomatic
 /// way to call it.
 ///
 /// # Returns
@@ -267,29 +280,19 @@ pub fn process_exit(status: i32) -> ! {
     }
 }
 
-/// Looks up a physical device by name and claims ownership of it if it exists.
-///
-/// This function is intended for use only by `libdriver`, which builds further abstractions on top
-/// of it.
-///
-/// # Returns
-/// The address of the object describing the device, or `None` if the device doesn't exist.
-///
-/// # Required permissions
-/// * `own device <name>`
-pub fn device_claim(name: &str) -> Option<NonZeroUsize> {
-    let dev_addr: usize;
-    unsafe {
-        asm!(
-            "svc 0x0300",
-            in("x2") name as *const str as *const u8 as usize,
-            in("x3") name.len(),
-            lateout("x0") dev_addr,
-            options(nostack, preserves_flags)
-        );
-    }
-    NonZeroUsize::new(dev_addr)
+define_async_syscalls! {
+    /// Looks up a physical device by name and claims ownership of it if it exists.
+    ///
+    /// This function is intended for use only by `libdriver`, which builds further abstractions on
+    /// top of it.
+    ///
+    /// # Returns
+    /// The address of the object describing the device, or `None` if (a) the device doesn't exist
+    /// or (b) this process doesn't have permission to claim it.
+    ///
+    /// # Required permissions
+    /// * `own device <name>`
+    pub async fn device_claim(
+        name: &str => {as *const str as *const u8 as usize}, => {name.len()}
+    ) -> usize => 0x0200;
 }
-
-/*define_async_syscalls! {
-}*/

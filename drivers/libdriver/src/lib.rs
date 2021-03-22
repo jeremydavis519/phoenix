@@ -22,7 +22,10 @@
 #![no_std]
 #![deny(warnings, missing_docs)]
 
-use core::ops::Deref;
+use core::{
+    num::NonZeroUsize,
+    ops::Deref
+};
 
 /// Represents a physical device owned by this process.
 #[derive(Debug)]
@@ -44,19 +47,18 @@ pub struct Device<'a> {
 impl<'a> Device<'a> {
     /// Retrieves the named device from the kernel.
     ///
-    /// Multiple names can be specified. If they are, each is attempted in order, and the first one
-    /// that matches a device that is present is returned.
-    pub fn claim(names: &'_ [&str]) -> Option<Device<'a>> {
-        // PERF: Run these system calls as a batch to avoid jumping into and out of the kernel
-        //       repeatedly.
-        for name in names {
-            if let Some(device_addr) = libphoenix::syscall::device_claim(name) {
-                return Some(Device {
+    /// Note that the "name" of a device varies depending on the bus it's found on. See the Phoenix
+    /// wiki for details on how devices are named on each bus.
+    // TODO: Change this API to return a `SystemCall` object. Such an object will represent a chain
+    //       of system calls to be made all at once, using an internal DSL for control flow, to
+    //       avoid having to return to userspace between them.
+    pub async fn claim(name: &str) -> Option<Device<'a>> {
+        match NonZeroUsize::new(libphoenix::syscall::device_claim(name).await) {
+            Some(device_addr) => Some(Device {
                     contents: unsafe { &*(device_addr.get() as *const _) }
-                });
-            }
+                }),
+            None => None
         }
-        None
     }
 }
 

@@ -33,8 +33,6 @@ pub mod process;
 pub mod syscall;
 pub mod thread;
 
-pub use future::Future;
-
 /// Defines the entry point of the program.
 ///
 /// Since Phoenix isn't officially supported by Rust, the runtime has a really hard time understanding
