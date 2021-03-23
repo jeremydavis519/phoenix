@@ -19,6 +19,9 @@
 //! This crate is a sort of "standard library" of functions and types that are generally useful to
 //! all userspace programs written for the Phoenix operating system.
 
+// FIXME: This is only here to allow compiling on an x86-64 host.
+#![cfg(target_arch = "aarch64")]
+
 #![no_std]
 #![deny(warnings, missing_docs)]
 

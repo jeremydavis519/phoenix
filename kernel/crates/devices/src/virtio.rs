@@ -20,7 +20,6 @@
 
 use {
     alloc::{
-        collections::TryReserveError,
         vec::Vec,
         string::String,
     },
@@ -29,21 +28,21 @@ use {
         mem,
         sync::atomic::AtomicBool
     },
+    libdriver::BusType,
     shared::{
         ffi_enum,
         ffi::{Endian, Le}
     },
     crate::{
         DeviceTree,
-        bus::Bus,
-        resource::Resource
+        bus::Bus
     }
 };
 
 const MMIO_MAGIC_NUMBER: u32 = 0x74726976; // Little-endian "virt"
 
 /// Inserts all the VirtIO devices into the given device tree.
-pub fn enumerate(device_tree: &mut DeviceTree) -> Result<(), TryReserveError> {
+pub fn enumerate(device_tree: &mut DeviceTree) -> Result<(), ()> {
     match *device_tree {
         DeviceTree::Root { ref mut children } => {
             // Look for VirtIO devices on every bus.
@@ -67,22 +66,27 @@ pub fn enumerate(device_tree: &mut DeviceTree) -> Result<(), TryReserveError> {
             use temp::*;
 
             for i in 0 .. MMIO_MAX_DEVICES {
-                match bus.reserve(MMIO_BASE + i * MMIO_SIZE_PER_DEVICE, MMIO_SIZE_PER_DEVICE) {
-                    Ok(Resource::Mmio(registers)) => {
+                let resource = bus.reserve(MMIO_BASE + i * MMIO_SIZE_PER_DEVICE, MMIO_SIZE_PER_DEVICE)
+                    .map_err(|_| ())?;
+                match resource.bus {
+                    BusType::Mmio => {
                         unsafe {
-                            if (*(registers.index(0) as *const Le<u32>)).into_native() == MMIO_MAGIC_NUMBER {
-                                let device_id = (*(registers.index(8) as *const Le<u32>)).into_native();
+                            if (*(resource.base as *const Le<u32>)).into_native() == MMIO_MAGIC_NUMBER {
+                                let device_id = (*(resource.base.wrapping_add(8) as *const Le<u32>)).into_native();
                                 if device_id != 0 {
                                     // It seems we've found a VirtIO device. Add it to the tree.
                                     let mut name = String::new();
-                                    name.try_reserve(mem::size_of_val("virtio-4294967295"))?;
+                                    name.try_reserve(mem::size_of_val("virtio-4294967295"))
+                                        .map_err(|_| ())?;
                                     write!(name, "virtio-{}", device_id).unwrap();
 
                                     let mut resources = Vec::new();
-                                    resources.try_reserve(1)?;
-                                    resources.push(Resource::Mmio(registers));
+                                    resources.try_reserve(1)
+                                        .map_err(|_| ())?;
+                                    resources.push(resource);
 
-                                    children.try_reserve(1)?;
+                                    children.try_reserve(1)
+                                        .map_err(|_| ())?;
                                     children.push(DeviceTree::Device {
                                         name,
                                         claimed: AtomicBool::new(false),
@@ -92,8 +96,7 @@ pub fn enumerate(device_tree: &mut DeviceTree) -> Result<(), TryReserveError> {
                             }
                         }
                     },
-                    // Ok(resource) => panic!("unexpected resource type: {:?}", resource),
-                    Err(_) => {}
+                    // bus => panic!("unexpected bus type for VirtIO resource: {:?}", bus),
                 };
             }
         },

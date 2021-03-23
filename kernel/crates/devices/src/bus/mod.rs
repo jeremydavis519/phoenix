@@ -22,18 +22,15 @@
 pub mod mmio;
 
 use {
-    alloc::collections::TryReserveError,
     core::fmt,
+    libdriver::Resource,
     error::Error,
     i18n::Text,
-    crate::{
-        DeviceTree,
-        resource::Resource
-    }
+    crate::DeviceTree
 };
 
 /// Enumerates all the buses under the given level of the device tree.
-pub fn enumerate(device_tree: &mut DeviceTree) -> Result<(), TryReserveError> {
+pub fn enumerate(device_tree: &mut DeviceTree) -> Result<(), ()> {
     mmio::enumerate(device_tree)
     // TODO: pci::enumerate(device_tree);
 }

@@ -40,13 +40,13 @@
                 _virt_base: Option<usize>,
                 _size: NonZeroUsize,
                 _reg_type: RegionType
-        ) -> Result<(), ()> {
+        ) -> Result<usize, ()> {
             unimplemented!()
         }
         pub fn map_zeroed(&self, _virt_base: usize, _size: NonZeroUsize) -> Result<(), ()> {
             unimplemented!()
         }
-        pub fn map_exe_file(&self, _virt_base: Option<usize>, _size: NonZeroUsize) -> Result<(), ()> {
+        pub fn map_exe_file(&self, _virt_base: Option<usize>, _size: NonZeroUsize) -> Result<usize, ()> {
             unimplemented!()
         }
         pub fn map_from_exe_file(

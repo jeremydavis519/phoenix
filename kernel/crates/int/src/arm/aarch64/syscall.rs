@@ -172,14 +172,14 @@ fn device_claim(
         Some(path) => path,
         None => return Response::leave_userspace(ThreadStatus::Terminated) // Part of the argument is unmapped.
     };
-    let _dev_userspace_addr = match DEVICES.claim_device(dev_path, thread.exec_image.page_table()) {
+    let dev_userspace_addr = match DEVICES.claim_device(dev_path, thread.exec_image.page_table()) {
         Ok(addr) => addr,
         // FIXME: If the thread doesn't have permission to own the device, ask the user whether it should.
         Err(()) => 0
     };
 
     // TODO: Return a future to userspace, populating it with the device info if we have it.
-    unimplemented!("device_claim");
+    unimplemented!("device_claim (address to return in a future = {:#x})", dev_userspace_addr);
 }
 
 

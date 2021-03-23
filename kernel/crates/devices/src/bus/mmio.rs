@@ -21,25 +21,23 @@
 //! on this bus.
 
 use {
-    alloc::{
-        collections::TryReserveError,
-        vec::Vec
-    },
-    
+    alloc::vec::Vec,
+    core::mem,
+
+    libdriver::{BusType, Resource},
+
     memory::allocator::AllMemAlloc,
 
     super::{Bus, ReserveError},
-    crate::{
-        DeviceTree,
-        resource::Resource
-    }
+    crate::DeviceTree
 };
 
 /// Enumerates any MMIO buses present at the given level of the device tree.
-pub fn enumerate(device_tree: &mut DeviceTree) -> Result<(), TryReserveError> {
+pub fn enumerate(device_tree: &mut DeviceTree) -> Result<(), ()> {
     match *device_tree {
         DeviceTree::Root { children: ref mut subtrees } => {
-            subtrees.try_reserve(1)?;
+            subtrees.try_reserve(1)
+                .map_err(|_| ())?;
             subtrees.push(DeviceTree::Mmio { bus: MmioBus, children: Vec::new() });
         },
         _ => {} // The MMIO bus is found only at the root.
@@ -53,8 +51,15 @@ pub struct MmioBus;
 
 impl Bus for MmioBus {
     fn reserve(&self, base: usize, size: usize) -> Result<Resource, ReserveError> {
-        AllMemAlloc.mmio_mut(base, size)
-            .map(|block| Resource::Mmio(block))
-            .map_err(|_| ReserveError { bus_type: "mmio", base, size })
+        let block = AllMemAlloc.mmio_mut(base, size)
+            .map_err(|_| ReserveError { bus_type: "mmio", base, size })?;
+        let base: *mut u8 = block.base().as_virt_unchecked();
+        let size = block.size();
+        mem::forget(block);
+        Ok(Resource {
+            bus: BusType::Mmio,
+            base: base as usize,
+            size
+        })
     }
 }

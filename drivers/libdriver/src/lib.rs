@@ -22,11 +22,17 @@
 #![no_std]
 #![deny(warnings, missing_docs)]
 
+// FIXME: These `cfg` lines are here only to allow compiling on an x86-64 host.
+#[cfg(target_arch = "aarch64")]
 use core::{
+    mem,
     num::NonZeroUsize,
     ops::Deref
 };
+#[cfg(not(target_arch = "aarch64"))]
+use core::{mem};
 
+#[cfg(target_arch = "aarch64")]
 /// Represents a physical device owned by this process.
 #[derive(Debug)]
 pub struct Device<'a> {
@@ -44,6 +50,7 @@ pub struct Device<'a> {
     pub contents: &'a DeviceContents
 }
 
+#[cfg(target_arch = "aarch64")]
 impl<'a> Device<'a> {
     /// Retrieves the named device from the kernel.
     ///
@@ -62,12 +69,14 @@ impl<'a> Device<'a> {
     }
 }
 
+#[cfg(target_arch = "aarch64")]
 impl<'a> Drop for Device<'a> {
     fn drop(&mut self) {
         // FIXME: Use a system call to relinquish control of the device.
     }
 }
 
+#[cfg(target_arch = "aarch64")]
 impl<'a> Deref for Device<'a> {
     type Target = DeviceContents;
 
@@ -78,8 +87,46 @@ impl<'a> Deref for Device<'a> {
 
 /// Information about a device.
 ///
-/// An object of this type should only be accessed through a [`Device`] object.
+/// An object of this type should only be accessed through a [`Device`] object. Any object of this
+/// type returned by the kernel will be write-protected.
 #[repr(C)]
 #[derive(Debug)]
 pub struct DeviceContents {
+    /// The number of elements in `resources`.
+    pub resources_count: usize,
+
+    /// Describes the resources owned by the device.
+    ///
+    /// (This array has a size of 0 only because of Rust's limitations regarding DSTs. The real size
+    /// is stored in `resources_count`.
+    pub resources: [Resource; 0]
+}
+
+impl DeviceContents {
+    /// Returns the size of a `DeviceContents` object with the given number of resources.
+    pub const fn size_with_resources(resources_count: usize) -> usize {
+        mem::size_of::<DeviceContents>() + resources_count * mem::size_of::<Resource>()
+    }
+}
+
+/// A description of a resource (i.e. a block of registers) owned by a device.
+#[repr(C)]
+#[derive(Debug)]
+pub struct Resource {
+    /// The bus on which this resource can be found.
+    pub bus: BusType,
+
+    /// The lowest address on the bus that this resource uses.
+    pub base: usize,
+
+    /// The number of addresses that this resource uses.
+    pub size: usize
+}
+
+/// An enumeration of bus types for the purpose of locating resources.
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BusType {
+    /// Memory-mapped I/O (registers are accessed just like RAM)
+    Mmio = 0
 }

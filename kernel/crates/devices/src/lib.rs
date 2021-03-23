@@ -32,19 +32,26 @@ extern crate alloc;
 
 use {
     alloc::{
-        collections::TryReserveError,
         string::String,
         vec::Vec
     },
-    core::sync::atomic::{AtomicBool, Ordering},
-    memory::virt::paging::RootPageTable,
+    core::{
+        mem,
+        num::NonZeroUsize,
+        slice,
+        sync::atomic::{AtomicBool, Ordering}
+    },
+    libdriver::{BusType, DeviceContents, Resource},
+    memory::{
+        allocator::AllMemAlloc,
+        phys::RegionType,
+        virt::paging::{self, RootPageTable}
+    },
     shared::lazy_static,
-    userspace::UserspaceStr,
-    self::resource::Resource
+    userspace::UserspaceStr
 };
 
 pub mod bus;
-pub mod resource;
 pub mod virtio;
 
 lazy_static! {
@@ -52,12 +59,12 @@ lazy_static! {
         /// The device tree.
         pub static ref DEVICES: DeviceTree = match devices() {
             Ok(x) => x,
-            Err(e) => panic!("failed to construct the device tree: {}", e)
+            Err(()) => panic!("failed to construct the device tree") // FIXME: Show the reason for failure.
         };
     }
 }
 
-fn devices() -> Result<DeviceTree, TryReserveError> {
+fn devices() -> Result<DeviceTree, ()> {
     let mut devices = DeviceTree::new();
 
     bus::enumerate(&mut devices)?;
@@ -132,9 +139,9 @@ impl DeviceTree {
     ///   process's address space.
     ///
     /// # Returns
-    /// * `Ok(addr)` if the device exists, and the process has permission to claim it, and it has
-    ///   not already been claimed. `addr` is the userspace address of the constructed
-    ///   `DeviceContents` object.
+    /// * `Ok(addr)` if the device exists, the process has permission to claim it, it has not
+    ///   already been claimed, and we successfully gave the process access to the device's
+    ///   resources. `addr` is the userspace address of the constructed `DeviceContents` object.
     /// * `Err(())` otherwise.
     pub fn claim_device(&self, path: UserspaceStr, root_page_table: &RootPageTable) -> Result<usize, ()> {
         // FIXME: Check the process's permissions during this tree walk. (We need to do it carefully,
@@ -163,19 +170,97 @@ impl DeviceTree {
             DeviceTree::Device {
                 ref name,
                 ref claimed,
-                resources: _
+                ref resources
             } => {
                 if let Some(name_tail) = path.match_and_advance(name) {
                     if !name_tail.is_empty() {
                         // The device name is only a prefix of the requested name.
                         return Err(());
                     }
+                    // FIXME: Fail here if the process doesn't have permission to claim this device.
                     if claimed.swap(true, Ordering::AcqRel) {
                         // Another driver has already claimed this device.
                         return Err(());
                     }
-                    panic!("Successfully claimed device `{}`! Now finish the job.", name);
-                    // TODO
+
+                    let page_size = paging::page_size();
+
+                    // Construct the `DeviceContents` object that will tell the userspace process
+                    // how to access this device's resources.
+                    // TODO: We could save some memory by putting multiple `DeviceContents` objects
+                    //       in one page.
+                    let device_contents_size = DeviceContents::size_with_resources(resources.len());
+                    let device_contents_block = AllMemAlloc.malloc::<u8>(
+                        device_contents_size.wrapping_add(page_size - 1) / page_size * page_size,
+                        NonZeroUsize::new(usize::max(mem::align_of::<DeviceContents>(), page_size)).unwrap()
+                    )
+                        .map_err(|_| ())?;
+
+                    let device_contents = unsafe {
+                        &mut *(device_contents_block.index(0) as *mut DeviceContents)
+                    };
+                    let device_contents_resources = unsafe {
+                        slice::from_raw_parts_mut(
+                            &mut device_contents.resources as *mut [Resource; 0] as *mut Resource,
+                            resources.len()
+                        )
+                    };
+
+                    mem::forget(mem::replace(&mut device_contents.resources_count, resources.len()));
+
+                    // Give the process access to the device's resources.
+                    for (i, resource) in resources.iter().enumerate() {
+                        match resource.bus {
+                            BusType::Mmio => {
+                                // FIXME: If the resource is not page-aligned and page-sized and
+                                //        the device doesn't have a certain permission
+                                //        ("unsafe direct unaligned mmio"?), map it into the
+                                //        process's address space in a new way. The ONE bit should
+                                //        be unset so any access will cause a fault, and the other
+                                //        bits should indicate to the kernel that the page grants
+                                //        access to this resource. (Any pages in the middle,
+                                //        however, can be mapped normally.) The kernel can then
+                                //        perform any attempted access on behalf of the process
+                                //        after checking that it is within the bounds of the
+                                //        resource. (Note that multiple resources might use the same
+                                //        page.)
+                                //
+                                //        The current implementation allows a process to access
+                                //        registers of devices that are mapped near the one to which
+                                //        it has requested access without requesting access to them.
+
+                                let end_phys = resource.base.wrapping_add(resource.size).wrapping_add(page_size - 1)
+                                    / page_size * page_size;
+                                let base_phys = resource.base / page_size * page_size;
+                                if let Some(size) = NonZeroUsize::new(end_phys.wrapping_sub(base_phys)) {
+                                    let userspace_addr = root_page_table.map(
+                                        base_phys,
+                                        None,
+                                        size,
+                                        RegionType::Mmio
+                                    )?;
+                                    mem::forget(mem::replace(&mut device_contents_resources[i], Resource {
+                                        bus: resource.bus,
+                                        base: userspace_addr,
+                                        size: resource.size
+                                    }));
+                                }
+                            }
+                        };
+                    }
+
+                    // Map the `DeviceContents` into the process's address space and tell the
+                    // process where to find it.
+                    let userspace_addr = root_page_table.map(
+                        device_contents_block.base().as_addr_phys(),
+                        None,
+                        NonZeroUsize::new(device_contents_block.size()).unwrap(),
+                        RegionType::Rom
+                    )?;
+                    // FIXME: Instead of forgetting the block, transfer ownership of it to the process,
+                    // so that it will be freed when the process is terminated.
+                    mem::forget(device_contents_block);
+                    return Ok(userspace_addr);
                 }
                 Err(())
             }
