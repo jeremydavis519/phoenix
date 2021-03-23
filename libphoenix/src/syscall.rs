@@ -19,7 +19,7 @@
 //! This module defines a function to encapsulate each system call the Phoenix kernel understands.
 
 use crate::{
-    future::OsFuture,
+    future::SysCallFuture,
     thread::Thread
 };
 
@@ -35,7 +35,7 @@ macro_rules! define_async_syscall {
                     options(nomem, preserves_flags)
                 );
             }
-            unsafe { OsFuture::new(addr) }.await as $ret_type
+            unsafe { SysCallFuture::new(addr) }.await as $ret_type
         }
     };
 
@@ -55,7 +55,7 @@ macro_rules! define_async_syscall {
                     options(nomem, preserves_flags)
                 );
             }
-            unsafe { OsFuture::new(addr) }.await as $ret_type
+            unsafe { SysCallFuture::new(addr) }.await as $ret_type
         }
     };
 
@@ -78,7 +78,7 @@ macro_rules! define_async_syscall {
                     options(nomem, preserves_flags)
                 );
             }
-            unsafe { OsFuture::new(addr) }.await as $ret_type
+            unsafe { SysCallFuture::new(addr) }.await as $ret_type
         }
     };
 
@@ -104,7 +104,7 @@ macro_rules! define_async_syscall {
                     options(nomem, preserves_flags)
                 );
             }
-            unsafe { OsFuture::new(addr) }.await as $ret_type
+            unsafe { SysCallFuture::new(addr) }.await as $ret_type
         }
     };
 
@@ -133,7 +133,7 @@ macro_rules! define_async_syscall {
                     options(nomem, preserves_flags)
                 );
             }
-            unsafe { OsFuture::new(addr) }.await as $ret_type
+            unsafe { SysCallFuture::new(addr) }.await as $ret_type
         }
     };
 

@@ -16,9 +16,9 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-//! This module defines the [`OsFuture`] type, which represents a value that the kernel has promised
-//! to give us but may not have provided yet. This type is a core part of the Phoenix system call
-//! model, since almost every system call is asynchronous.
+//! This module defines the [`SysCallFuture`] type, which represents a value that the kernel has
+//! promised to give us but may not have provided yet. This type is a core part of the Phoenix
+//! system call model, since almost every system call is asynchronous.
 
 use {
     alloc::{
@@ -116,18 +116,18 @@ impl<'a> SysCallExecutor<'a> {
 // A promised but possibly not-yet-available return value from a system call.
 #[derive(Debug)]
 #[repr(C)]
-pub(crate) struct OsFuture {
+pub(crate) struct SysCallFuture {
     finished: AtomicBool,
     value:    usize
 }
 
-impl OsFuture {
-    pub(crate) unsafe fn new(addr: usize) -> Pin<&'static mut OsFuture> {
+impl SysCallFuture {
+    pub(crate) unsafe fn new(addr: usize) -> Pin<&'static mut SysCallFuture> {
         Pin::new_unchecked(&mut *(addr as *mut _))
     }
 }
 
-impl Future for OsFuture {
+impl Future for SysCallFuture {
     type Output = usize;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<usize> {
@@ -140,7 +140,7 @@ impl Future for OsFuture {
     }
 }
 
-impl Drop for OsFuture {
+impl Drop for SysCallFuture {
     fn drop(&mut self) {
         // FIXME: Tell the kernel it can free this future.
     }
