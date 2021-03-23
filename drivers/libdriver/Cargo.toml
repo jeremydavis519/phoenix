@@ -5,7 +5,7 @@ authors = ["Jeremy Davis <jeremydavis519@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-libphoenix = { path = "../../libphoenix" }
+libphoenix = { path = "../../libphoenix", default-features = false }
 
 [features]
 default = ["global-allocator"]
