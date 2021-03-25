@@ -2003,8 +2003,8 @@ fn resolve_write_fault_byte(root: &RootPageTable, exc_level: ExceptionLevel, tra
                                 *block.index(i) = *src.add(i);
                             }
                         }
-                        let new_page = page & !PageEntry::COW & !PageEntry::NOT_DIRTY | PageEntry::DBM
-                            & !PageEntry::ADDRESS | PageEntry::from_bits(block.get_ptr_phys(0).as_addr_phys().try_into().unwrap()).unwrap();
+                        let new_page = page & !PageEntry::COW & !PageEntry::NOT_DIRTY & !PageEntry::ADDRESS
+                            | PageEntry::DBM | PageEntry::from_bits(block.base().as_addr_phys().try_into().unwrap()).unwrap();
                         match table1.entries[index1].compare_exchange(
                             Descriptor { page: temp_unmapped },
                             Descriptor { page: new_page },
@@ -2100,8 +2100,8 @@ fn resolve_write_fault_byte(root: &RootPageTable, exc_level: ExceptionLevel, tra
                                 *block.index(i) = *src.add(i);
                             }
                         }
-                        let new_page = page & !PageEntry::COW & !PageEntry::NOT_DIRTY | PageEntry::DBM
-                            & !PageEntry::ADDRESS | PageEntry::from_bits(block.get_ptr_phys(0).as_addr_phys().try_into().unwrap()).unwrap();
+                        let new_page = page & !PageEntry::COW & !PageEntry::NOT_DIRTY & !PageEntry::ADDRESS
+                            | PageEntry::DBM | PageEntry::from_bits(block.base().as_addr_phys().try_into().unwrap()).unwrap();
                         match table2.entries[index2].compare_exchange(
                             Descriptor { page: temp_unmapped },
                             Descriptor { page: new_page },
@@ -2193,8 +2193,8 @@ fn resolve_write_fault_byte(root: &RootPageTable, exc_level: ExceptionLevel, tra
                                 *block.index(i) = *src.add(i);
                             }
                         }
-                        let new_entry = entry & !PageEntry::COW & !PageEntry::NOT_DIRTY | PageEntry::DBM
-                            & !PageEntry::ADDRESS | PageEntry::from_bits(block.get_ptr_phys(0).as_addr_phys().try_into().unwrap()).unwrap();
+                        let new_entry = entry & !PageEntry::COW & !PageEntry::NOT_DIRTY & !PageEntry::ADDRESS
+                            | PageEntry::DBM | PageEntry::from_bits(block.base().as_addr_phys().try_into().unwrap()).unwrap();
                         match table3.entries[index3].compare_exchange(
                             temp_unmapped,
                             new_entry,
