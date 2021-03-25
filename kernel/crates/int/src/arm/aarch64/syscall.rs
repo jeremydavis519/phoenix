@@ -23,6 +23,7 @@ use {
         convert::{TryFrom, TryInto},
         time::Duration
     },
+    libphoenix::future::SysCallFuture,
     devices::DEVICES,
     fs::File,
     io::{println, Read},
@@ -160,12 +161,14 @@ fn device_claim(
         thread: Option<&mut Thread<File>>,
         dev_name_userspace_addr: usize,
         dev_name_len: usize,
-        _future_userspace_addr: &mut usize
+        future_userspace_addr: &mut usize
 ) -> Response {
     let thread = thread.expect("kernel thread attempted to get a device");
 
+    let root_page_table = thread.exec_image.page_table();
+
     let dev_path = match UserspaceStr::from_raw_parts(
-            thread.exec_image.page_table(),
+            root_page_table,
             dev_name_userspace_addr,
             dev_name_len
     ) {
@@ -178,8 +181,31 @@ fn device_claim(
         Err(()) => 0
     };
 
-    // TODO: Return a future to userspace, populating it with the device info if we have it.
-    unimplemented!("device_claim (address to return in a future = {:#x})", dev_userspace_addr);
+    // FIXME: Use a dedicated slab allocator, owned by the process, to allocate many futures in the
+    //        same page.
+    let page_size = memory::virt::paging::page_size();
+    *future_userspace_addr = match memory::allocator::AllMemAlloc.malloc(
+                page_size,
+                core::num::NonZeroUsize::new(page_size).unwrap()
+            ) {
+        Ok(future_block) => {
+            core::mem::forget(core::mem::replace(
+                unsafe { &mut *future_block.index(0) },
+                SysCallFuture::ready(dev_userspace_addr)
+            ));
+            let phys_base = future_block.base().as_addr_phys();
+            let size = core::num::NonZeroUsize::new(page_size).unwrap();
+            core::mem::forget(future_block); // FIXME: This should be retained so it can be freed later.
+            match root_page_table.map(phys_base, None, size, memory::phys::RegionType::Rom) {
+                Ok(addr) => addr,
+                // FIXME: If we fail here, deallocate the `DeviceContents` that we've already made.
+                Err(()) => 0
+            }
+        },
+        Err(_) => 0
+    };
+
+    Response::eret()
 }
 
 

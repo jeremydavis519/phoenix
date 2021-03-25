@@ -113,17 +113,25 @@ impl<'a> SysCallExecutor<'a> {
     }
 }
 
-// A promised but possibly not-yet-available return value from a system call.
+/// A promised but possibly not-yet-available return value from a system call.
 #[derive(Debug)]
 #[repr(C)]
-pub(crate) struct SysCallFuture {
+pub struct SysCallFuture {
     finished: AtomicBool,
     value:    usize
 }
 
 impl SysCallFuture {
-    pub(crate) unsafe fn new(addr: usize) -> Pin<&'static mut SysCallFuture> {
+    pub(crate) unsafe fn from_addr(addr: usize) -> Pin<&'static mut SysCallFuture> {
         Pin::new_unchecked(&mut *(addr as *mut _))
+    }
+
+    /// Returns a future that already has its value.
+    pub fn ready(value: usize) -> SysCallFuture {
+        SysCallFuture {
+            finished: AtomicBool::new(true),
+            value
+        }
     }
 }
 

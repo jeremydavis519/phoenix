@@ -10,6 +10,8 @@ name = "int"
 [dependencies]
 bitflags = "1.0"
 
+libphoenix = { path = "../../../libphoenix", default-features = false }
+
 phoenix-kernel-devices = { path = "../devices" }
 phoenix-kernel-fs = { path = "../fs" }
 phoenix-kernel-io = { path = "../io" }

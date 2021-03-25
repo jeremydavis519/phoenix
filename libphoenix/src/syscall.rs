@@ -35,7 +35,9 @@ macro_rules! define_async_syscall {
                     options(nomem, preserves_flags)
                 );
             }
-            unsafe { SysCallFuture::new(addr) }.await as $ret_type
+            // FIXME: Offer some recourse if the kernel returns null (which indicates running out of
+            //        memory).
+            unsafe { SysCallFuture::from_addr(addr) }.await as $ret_type
         }
     };
 
@@ -55,7 +57,9 @@ macro_rules! define_async_syscall {
                     options(nomem, preserves_flags)
                 );
             }
-            unsafe { SysCallFuture::new(addr) }.await as $ret_type
+            // FIXME: Offer some recourse if the kernel returns null (which indicates running out of
+            //        memory).
+            unsafe { SysCallFuture::from_addr(addr) }.await as $ret_type
         }
     };
 
@@ -78,7 +82,9 @@ macro_rules! define_async_syscall {
                     options(nomem, preserves_flags)
                 );
             }
-            unsafe { SysCallFuture::new(addr) }.await as $ret_type
+            // FIXME: Offer some recourse if the kernel returns null (which indicates running out of
+            //        memory).
+            unsafe { SysCallFuture::from_addr(addr) }.await as $ret_type
         }
     };
 
@@ -104,7 +110,9 @@ macro_rules! define_async_syscall {
                     options(nomem, preserves_flags)
                 );
             }
-            unsafe { SysCallFuture::new(addr) }.await as $ret_type
+            // FIXME: Offer some recourse if the kernel returns null (which indicates running out of
+            //        memory).
+            unsafe { SysCallFuture::from_addr(addr) }.await as $ret_type
         }
     };
 
@@ -133,7 +141,9 @@ macro_rules! define_async_syscall {
                     options(nomem, preserves_flags)
                 );
             }
-            unsafe { SysCallFuture::new(addr) }.await as $ret_type
+            // FIXME: Offer some recourse if the kernel returns null (which indicates running out of
+            //        memory).
+            unsafe { SysCallFuture::from_addr(addr) }.await as $ret_type
         }
     };
 
