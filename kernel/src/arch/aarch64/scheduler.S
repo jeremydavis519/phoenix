@@ -112,7 +112,7 @@ enter_userspace:
 // X0 = the `ThreadStatus` that was passed in through X30
 leave_userspace:
     cmp x19, 255
-    b.eq .Lthread_save_done // Don't bother saving the registers when terminating a thread.
+    b.eq .Lskip_saving // Don't bother saving the registers when terminating a thread.
 
     // Save the thread's registers.
     mov x20, x0 // X20 = the value the thread left in X0
@@ -159,9 +159,11 @@ leave_userspace:
     ldr x30, [sp], 16
     mrs x9, SP_EL0 // X9 = the value the thread left in SP
     stp x30, x9, [x0, 0xf0]
+    b .Lthread_save_done
+.Lskip_saving:
+    add sp, sp, 32
 .Lthread_save_done:
 
-    // Remove the thread's registers from the stack, and also retrieve the argument.
     mov x0, x19 // X0 = return value
 
     // Return to where we were on the main stack before entering userspace.
