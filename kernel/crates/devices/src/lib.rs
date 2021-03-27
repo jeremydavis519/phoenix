@@ -238,7 +238,7 @@ impl DeviceTree {
                                         None,
                                         size,
                                         RegionType::Mmio
-                                    )?;
+                                    )? + resource.base % page_size;
                                     mem::forget(mem::replace(&mut device_contents_resources[i], Resource {
                                         bus: resource.bus,
                                         base: userspace_addr,
