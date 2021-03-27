@@ -26,6 +26,7 @@
 #![deny(warnings, missing_docs)]
 
 #![feature(asm)]
+#![feature(panic_info_message)]
 
 extern crate alloc;
 

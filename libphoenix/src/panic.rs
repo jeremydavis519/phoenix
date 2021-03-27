@@ -18,19 +18,44 @@
 
 //! This module defines what happens when a program linked to `libphoenix` panics.
 
-use core::panic::PanicInfo;
+use {
+    core::{
+        fmt::Write,
+        panic::PanicInfo
+    },
+    crate::syscall
+};
 
 // FIXME: #[panic_handler], and not `pub`
 //        Using this attribute here causes a linker error. If it's not fixed soon, we should try to
 //        find a minimal example and submit an issue to the Rust repository.
 #[doc(hidden)] // TODO: Not needed once this becomes private.
 #[cold]
-pub fn panic_handler(_: &PanicInfo) -> ! {
-    // FIXME: Print some debug information and close the program using a defined system call.
+pub fn panic_handler(panic_info: &PanicInfo) -> ! {
+    let _ = write!(PanicWriter, "Unexpected error: {}\n", panic_info);
+    syscall::thread_exit(255) // TODO: Use a named constant for the exit status.
+}
+
+// TODO: Get rid of this temporary writer.
+struct PanicWriter;
+
+impl core::fmt::Write for PanicWriter {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        for c in s.chars() {
+            temp_putchar(c);
+        }
+        Ok(())
+    }
+}
+
+// TODO: This is only a temporary system call. Get rid of it when we have a more robust way to print
+//       strings.
+fn temp_putchar(c: char) {
     unsafe {
         asm!(
-            "svc 0xaaaa", // Undefined system call
-            options(nomem, nostack, preserves_flags, noreturn)
+            "svc 0xff00",
+            in("x2") c as usize,
+            options(nomem, nostack, preserves_flags)
         );
     }
 }
