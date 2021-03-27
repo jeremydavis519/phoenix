@@ -27,7 +27,8 @@
 use core::{
     mem,
     num::NonZeroUsize,
-    ops::Deref
+    ops::Deref,
+    slice
 };
 #[cfg(not(target_arch = "aarch64"))]
 use core::{mem};
@@ -65,6 +66,16 @@ impl<'a> Device<'a> {
                     contents: unsafe { &*(device_addr.get() as *const _) }
                 }),
             None => None
+        }
+    }
+
+    /// Returns the device's slice of resource descriptors.
+    pub fn resources(&self) -> &[Resource] {
+        unsafe {
+            slice::from_raw_parts(
+                &self.contents.resources as *const [Resource; 0] as *const Resource,
+                self.contents.resources_count
+            )
         }
     }
 }

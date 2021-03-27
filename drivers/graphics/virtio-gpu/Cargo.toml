@@ -11,5 +11,8 @@ panic = "abort"
 panic = "abort"
 
 [dependencies]
+bitflags = "1.2"
+
 libdriver = { path = "../../libdriver" }
 libphoenix = { path = "../../../libphoenix" }
+virtio = { path = "../../virtio" }
