@@ -2184,7 +2184,10 @@ fn resolve_write_fault_byte(root: &RootPageTable, exc_level: ExceptionLevel, tra
                                 invalidate_tlb(addr, root.asid);
                                 dsb_sy();
                             },
-                            Err(x) => entry = x
+                            Err(x) => {
+                                entry = x;
+                                continue;
+                            }
                         };
                         // Now that we've temporarily unmapped the page, we should have exclusive
                         // access to its entry. Allocate, initialize, and map the new memory.
