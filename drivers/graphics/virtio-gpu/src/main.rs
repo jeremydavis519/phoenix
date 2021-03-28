@@ -58,7 +58,10 @@ phoenix_main! {
         let _device_details = match virtio::init(
                     &device,
                     DEVICE_TYPE_GPU,
-                    mem::size_of::<ConfigurationSpace>()
+                    mem::size_of::<ConfigurationSpace>(),
+                    QueueIndex::Count as u32,
+                    Features::empty().bits(),
+                    (Features::ANY_LAYOUT | Features::VERSION_1 | Features::ORDER_PLATFORM).bits()
                 ) {
             Ok(x) => x,
             Err(e) => panic!("failed to initialize the VirtIO GPU: {}", e)
@@ -71,6 +74,13 @@ phoenix_main! {
             return;
         }
     }
+}
+
+#[repr(u32)]
+enum QueueIndex {
+    // Control = 0,
+    // Cursor  = 1,
+    Count   = 2
 }
 
 struct ConfigurationSpace<'a> {

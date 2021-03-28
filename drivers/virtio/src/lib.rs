@@ -37,7 +37,10 @@ use {
 pub fn init<'a>(
         device:            &'a Device,
         device_type:       u32,
-        config_space_size: usize
+        config_space_size: usize,
+        queues_count:      u32,
+        required_features: u64,
+        optional_features: u64
 ) -> Result<DeviceDetails<'a>, VirtIOInitError> {
     let resources = device.resources();
     if resources.len() == 0 {
@@ -46,14 +49,24 @@ pub fn init<'a>(
     let resource = &resources[0];
 
     match resource.bus {
-        BusType::Mmio => init_mmio(resource, device_type, config_space_size)
+        BusType::Mmio => init_mmio(
+            resource,
+            device_type,
+            config_space_size,
+            queues_count,
+            required_features,
+            optional_features
+        )
     }
 }
 
 fn init_mmio<'a>(
         resource:          &'a Resource,
         device_type:       u32,
-        config_space_size: usize
+        config_space_size: usize,
+        queues_count:      u32,
+        required_features: u64,
+        optional_features: u64
 ) -> Result<DeviceDetails<'a>, VirtIOInitError> {
     assert_eq!(resource.bus, BusType::Mmio);
     if resource.size < 0x100 {
@@ -70,15 +83,79 @@ fn init_mmio<'a>(
             )
         }
     };
-    validate_mmio(&mut regs, device_type, config_space_size)?;
+    let configuration_space = unsafe {
+        slice::from_raw_parts_mut(
+            resource.base.wrapping_add(0x100) as *mut u8,
+            resource.size - 0x100
+        )
+    };
+    validate_mmio(&mut regs, device_type)?;
 
-    todo!("finish initialization");
+    // Reset and acknowledge the device.
+    regs.set_status(DeviceStatus::empty())
+        .or_status(DeviceStatus::ACKNOWLEDGE)
+        .or_status(DeviceStatus::DRIVER);
+
+    // Negotiate features.
+    let device_features = regs.device_features();
+    if required_features & !device_features != 0 {
+        return Err(VirtIOInitError::MissingRequiredFeatures(required_features, device_features));
+    }
+    let mut features = device_features & (required_features | optional_features);
+    regs.set_driver_features(features);
+
+    let legacy = features & GenericFeatures::VERSION_1.bits() == 0;
+    if !legacy { // Legacy devices didn't have the FEATURES_OK bit.
+        regs.or_status(DeviceStatus::FEATURES_OK);
+        if !regs.status().contains(DeviceStatus::FEATURES_OK) {
+            // The device apparently didn't like that combination. Try again with just the required features.
+            features = required_features;
+            regs.set_driver_features(features)
+                .or_status(DeviceStatus::FEATURES_OK);
+            if !regs.status().contains(DeviceStatus::FEATURES_OK) {
+                // The device isn't accepting any set of features that we can use.
+                regs.or_status(DeviceStatus::FAILED);
+                return Err(VirtIOInitError::FeatureNegotiationFailed);
+            }
+        }
+    }
+
+    // Initialize the virtqueues.
+    for queue_index in 0 .. queues_count {
+        regs.select_queue(queue_index);
+        if legacy {
+            assert_eq!(regs.legacy_queue_page_number(), 0, "virtqueue {} already in use", queue_index);
+        } else {
+            assert!(!regs.queue_ready(), "virtqueue {} already in use", queue_index);
+        }
+        let max_queue_len = regs.queue_len_max();
+        if max_queue_len == 0 {
+            // Assume for now that this virtqueue isn't necessary. If the driver needs this queue, it can
+            // panic after we finish.
+            continue;
+        }
+        let queue_len = u32::min(max_queue_len, 0x8000);
+        // TODO: Allow the driver to specify the VirtqDriverFlags for each virtqueue.
+        // TODO: let queue = VirtQueue::new(queue_index, queue_len as u16, VirtqDriverFlags::empty());
+        regs.set_queue_len(queue_len);
+        todo!("finish setting up the virtqueue");
+        if legacy {
+        } else {
+        }
+    }
+
+    regs.or_status(DeviceStatus::DRIVER_OK);
+
+    Ok(DeviceDetails {
+        legacy,
+        features,
+        configuration_space
+    })
 }
 
 fn validate_mmio<'a>(
-        regs:              &'a mut MmioRegisters<'a>,
-        device_type:       u32,
-        config_space_size: usize
+        regs:              &mut MmioRegisters<'a>,
+        device_type:       u32
 ) -> Result<(), VirtIOInitError> {
     const MAGIC_NUMBER:    u32 = 0x74726976; // Little-endian "virt"
     const CURRENT_VERSION: u32 = 1;
@@ -120,34 +197,36 @@ impl<'a> MmioRegisters<'a> {
         unsafe { u32::from_le((&self.slice[0x03] as *const u32).read_volatile()) }
     }
 
-    fn device_features(&mut self, selection: FeaturesSelection) -> u32 {
+    fn device_features(&mut self) -> u64 {
         unsafe {
-            // Tell the device which features to return.
-            (&mut self.slice[0x05] as *mut u32).write_volatile(selection as u32);
+            (&mut self.slice[0x05] as *mut u32).write_volatile(FeaturesSelection::Low as u32);
+            let low = u32::from_le((&self.slice[0x04] as *const u32).read_volatile());
 
-            // Read the features.
-            u32::from_le((&self.slice[0x04] as *const u32).read_volatile())
+            (&mut self.slice[0x05] as *mut u32).write_volatile(FeaturesSelection::High as u32);
+            let high = u32::from_le((&self.slice[0x04] as *const u32).read_volatile());
+
+            u64::from(low) | (u64::from(high) << 32)
         }
     }
 
-    fn set_driver_features(&mut self, selection: FeaturesSelection, features: u32) -> &Self {
+    fn set_driver_features(&mut self, features: u64) -> &mut Self {
         unsafe {
-            // Tell the device which features we're setting.
-            (&mut self.slice[0x09] as *mut u32).write_volatile(selection as u32);
+            (&mut self.slice[0x09] as *mut u32).write_volatile(FeaturesSelection::Low as u32);
+            (&mut self.slice[0x08] as *mut u32).write_volatile((features as u32).to_le());
 
-            // Set the features.
-            (&mut self.slice[0x08] as *mut u32).write_volatile(features.to_le());
+            (&mut self.slice[0x09] as *mut u32).write_volatile(FeaturesSelection::High as u32);
+            (&mut self.slice[0x08] as *mut u32).write_volatile(((features >> 32) as u32).to_le());
 
             self
         }
     }
 
-    fn legacy_set_guest_page_size(&mut self, page_size: u32) -> &Self {
+    fn legacy_set_guest_page_size(&mut self, page_size: u32) -> &mut Self {
         unsafe { (&mut self.slice[0x0a] as *mut u32).write_volatile(page_size.to_le()); }
         self
     }
 
-    fn select_queue(&mut self, queue_index: u32) -> &Self {
+    fn select_queue(&mut self, queue_index: u32) -> &mut Self {
         unsafe { (&mut self.slice[0x0c] as *mut u32).write_volatile(queue_index.to_le()); }
         self
     }
@@ -156,12 +235,12 @@ impl<'a> MmioRegisters<'a> {
         unsafe { u32::from_le((&self.slice[0x0d] as *const u32).read_volatile()) }
     }
 
-    fn set_queue_len(&mut self, len: u32) -> &Self {
+    fn set_queue_len(&mut self, len: u32) -> &mut Self {
         unsafe { (&mut self.slice[0x0e] as *mut u32).write_volatile(len.to_le()); }
         self
     }
 
-    fn legacy_set_device_ring_align(&mut self, align: u32) -> &Self {
+    fn legacy_set_device_ring_align(&mut self, align: u32) -> &mut Self {
         unsafe { (&mut self.slice[0x0f] as *mut u32).write_volatile(align.to_le()); }
         self
     }
@@ -170,7 +249,7 @@ impl<'a> MmioRegisters<'a> {
         unsafe { u32::from_le((&self.slice[0x10] as *const u32).read_volatile()) }
     }
 
-    fn legacy_set_queue_page_number(&mut self, page_number: u32) -> &Self {
+    fn legacy_set_queue_page_number(&mut self, page_number: u32) -> &mut Self {
         unsafe { (&mut self.slice[0x10] as *mut u32).write_volatile(page_number.to_le()); }
         self
     }
@@ -183,12 +262,12 @@ impl<'a> MmioRegisters<'a> {
         }
     }
 
-    fn set_queue_ready(&mut self, ready: bool) -> &Self {
+    fn set_queue_ready(&mut self, ready: bool) -> &mut Self {
         unsafe { (&mut self.slice[0x11] as *mut u32).write_volatile(u32::to_le(if ready { 1 } else { 0 })); }
         self
     }
 
-    fn queue_notify(&mut self, notification: u32) -> &Self {
+    fn queue_notify(&mut self, notification: u32) -> &mut Self {
         // NOTE: If VIRTIO_F_NOTIFICATION_DATA has been negotiated, `notification` contains more than
         //       just a queue index.
         unsafe { (&mut self.slice[0x14] as *mut u32).write_volatile(notification.to_le()); }
@@ -199,7 +278,7 @@ impl<'a> MmioRegisters<'a> {
         unsafe { Interrupts::from_bits_unchecked((&self.slice[0x18] as *const u32).read_volatile()) }
     }
 
-    fn acknowledge_interrupt(&mut self, interrupts: Interrupts) -> &Self {
+    fn acknowledge_interrupt(&mut self, interrupts: Interrupts) -> &mut Self {
         unsafe { (&mut self.slice[0x19] as *mut u32).write_volatile(interrupts.bits()); }
         self
     }
@@ -208,12 +287,17 @@ impl<'a> MmioRegisters<'a> {
         unsafe { DeviceStatus::from_bits_unchecked((&self.slice[0x1c] as *const u32).read_volatile()) }
     }
 
-    fn set_status(&mut self, status: DeviceStatus) -> &Self {
+    fn set_status(&mut self, status: DeviceStatus) -> &mut Self {
         unsafe { (&mut self.slice[0x1c] as *mut u32).write_volatile(status.bits()); }
         self
     }
 
-    fn set_queue_descriptor_area(&mut self, phys_addr: u64) -> &Self {
+    fn or_status(&mut self, mut status: DeviceStatus) -> &mut Self {
+        status |= self.status();
+        self.set_status(status)
+    }
+
+    fn set_queue_descriptor_area(&mut self, phys_addr: u64) -> &mut Self {
         unsafe {
             (&mut self.slice[0x20] as *mut u32).write_volatile((phys_addr as u32).to_le());
             (&mut self.slice[0x21] as *mut u32).write_volatile(((phys_addr >> 32) as u32).to_le());
@@ -221,7 +305,7 @@ impl<'a> MmioRegisters<'a> {
         self
     }
 
-    fn set_queue_driver_area(&mut self, phys_addr: u64) -> &Self {
+    fn set_queue_driver_area(&mut self, phys_addr: u64) -> &mut Self {
         unsafe {
             (&mut self.slice[0x24] as *mut u32).write_volatile((phys_addr as u32).to_le());
             (&mut self.slice[0x25] as *mut u32).write_volatile(((phys_addr >> 32) as u32).to_le());
@@ -229,7 +313,7 @@ impl<'a> MmioRegisters<'a> {
         self
     }
 
-    fn set_queue_device_area(&mut self, phys_addr: u64) -> &Self {
+    fn set_queue_device_area(&mut self, phys_addr: u64) -> &mut Self {
         unsafe {
             (&mut self.slice[0x28] as *mut u32).write_volatile((phys_addr as u32).to_le());
             (&mut self.slice[0x29] as *mut u32).write_volatile(((phys_addr >> 32) as u32).to_le());
@@ -315,10 +399,17 @@ bitflags! {
     }
 }
 
+bitflags! {
+    struct VirtqDriverFlags: u16 {
+        const NO_INTERRUPT = 0x0001;
+    }
+}
+
 /// A collection of VirtIO-specific information about a device, returned by [`init`].
 #[derive(Debug)]
 pub struct DeviceDetails<'a> {
     legacy:              bool,
+    features:            u64,
     configuration_space: &'a mut [u8]
 }
 
@@ -395,7 +486,11 @@ pub enum VirtIOInitError {
     /// The device uses a version of the VirtIO specification that we don't support.
     UnsupportedVersion(u32, u32),
     /// The device isn't of the type (e.g. GPU, network card, block device) that we expected.
-    WrongDeviceType(u32, u32)
+    WrongDeviceType(u32, u32),
+    /// The device doesn't support all of the features that the driver requires.
+    MissingRequiredFeatures(u64, u64),
+    /// The device didn't accept our requested set of features.
+    FeatureNegotiationFailed
 }
 
 impl fmt::Display for VirtIOInitError {
@@ -412,7 +507,11 @@ impl fmt::Display for VirtIOInitError {
             Self::UnsupportedVersion(expected, actual)
                 => write!(f, "VirtIO version {} not supported (we only support up to version {})", actual, expected),
             Self::WrongDeviceType(expected, actual)
-                => write!(f, "wrong device type found: expected {}, found {}", expected, actual)
+                => write!(f, "wrong device type found: expected {}, found {}", expected, actual),
+            Self::MissingRequiredFeatures(required, found)
+                => write!(f, "driver requires feature set {:#x}, but device only supports {:#x}", required, found),
+            Self::FeatureNegotiationFailed
+                => write!(f, "feature negotiation failed")
         }
     }
 }
