@@ -503,7 +503,8 @@ macro_rules! define_root_page_table {
                                 Some(RegionType::Ram) => PageEntry::normal_memory() | PageEntry::UXN | PageEntry::PXN
                                     | if page_flags.contains(PageEntry::COW) { PageEntry::empty() } else { PageEntry::DBM },
                                 Some(RegionType::Rom) => PageEntry::normal_memory(),
-                                Some(RegionType::Mmio) => PageEntry::device_memory(),
+                                Some(RegionType::Mmio) => PageEntry::device_memory() | PageEntry::UXN | PageEntry::PXN
+                                    | PageEntry::DBM,
                                 None => PageEntry::empty()
                             } | match self.exception_level {
                                 ExceptionLevel::El0 => PageEntry::PXN | PageEntry::EL0,
