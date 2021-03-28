@@ -2019,6 +2019,9 @@ fn resolve_write_fault_byte(root: &RootPageTable, exc_level: ExceptionLevel, tra
                             },
                             Err(_) => panic!("interference while working on temporarily unmapped page at {:#018x}", addr)
                         };
+                    } else {
+                        // The thread tried to access a read-only page.
+                        return Err(());
                     }
                 }
             }
@@ -2116,6 +2119,9 @@ fn resolve_write_fault_byte(root: &RootPageTable, exc_level: ExceptionLevel, tra
                             },
                             Err(_) => panic!("interference while working on temporarily unmapped page at {:#018x}", addr)
                         };
+                    } else {
+                        // The thread tried to access a read-only page.
+                        return Err(());
                     }
                 }
             }
@@ -2209,6 +2215,9 @@ fn resolve_write_fault_byte(root: &RootPageTable, exc_level: ExceptionLevel, tra
                             },
                             Err(_) => panic!("interference while working on temporarily unmapped page at {:#018x}", addr)
                         };
+                    } else {
+                        // The thread tried to access a read-only page.
+                        return Err(());
                     }
                 }
             }
