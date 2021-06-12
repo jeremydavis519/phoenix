@@ -56,13 +56,13 @@ phoenix_main! {
             .block_on_all();
         let device = device.expect("no VirtIO GPU found");
         let _device_details = match virtio::init(
-                    &device,
-                    DEVICE_TYPE_GPU,
-                    mem::size_of::<ConfigurationSpace>(),
-                    QueueIndex::Count as u32,
-                    Features::empty().bits(),
-                    (Features::ANY_LAYOUT | Features::VERSION_1 | Features::ORDER_PLATFORM).bits()
-                ) {
+                &device,
+                DEVICE_TYPE_GPU,
+                mem::size_of::<ConfigurationSpace>(),
+                QueueIndex::Count as u32,
+                Features::empty().bits(),
+                (Features::ANY_LAYOUT | Features::VERSION_1 | Features::ORDER_PLATFORM).bits()
+        ) {
             Ok(x) => x,
             Err(e) => panic!("failed to initialize the VirtIO GPU: {}", e)
         };
