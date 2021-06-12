@@ -27,6 +27,7 @@ use {
     },
     core::{
         future::Future,
+        mem,
         pin::Pin,
         ptr,
         sync::atomic::{AtomicBool, Ordering},
@@ -114,33 +115,50 @@ impl<'a> SysCallExecutor<'a> {
 }
 
 /// A promised but possibly not-yet-available return value from a system call.
+pub type SysCallFuture = SysCallFutureInternal<[u8]>;
+
+// This implementation detail is necessary for being able to instantiate `SysCallFuture` as a DST.
 #[derive(Debug)]
 #[repr(C)]
-pub struct SysCallFuture {
-    finished: AtomicBool,
-    value:    usize
+#[doc(hidden)]
+pub struct SysCallFutureInternal<T: ?Sized> {
+    finished:  AtomicBool,
+    value_len: usize,
+    value:     T
 }
 
 impl SysCallFuture {
-    pub(crate) unsafe fn from_addr(addr: usize) -> Pin<&'static mut SysCallFuture> {
-        Pin::new_unchecked(&mut *(addr as *mut _))
+    pub(crate) unsafe fn from_addr<const VALUE_LEN: usize>(addr: usize) -> Pin<&'static mut SysCallFuture> {
+        let future = Pin::new_unchecked(
+            &mut *(addr as *mut SysCallFutureInternal<[u8; VALUE_LEN]>) as &mut SysCallFuture
+        );
+        assert_eq!(future.value_len, VALUE_LEN);
+        future
+    }
+}
+
+impl<T: Sized> SysCallFutureInternal<T> {
+    /// Marks this future as pending and initializes its size.
+    pub fn init_pending(&mut self) {
+        self.finished.store(false, Ordering::Release);
+        self.value_len = mem::size_of::<T>();
     }
 
-    /// Returns a future that already has its value.
-    pub fn ready(value: usize) -> SysCallFuture {
-        SysCallFuture {
-            finished: AtomicBool::new(true),
-            value
-        }
+    /// Marks this future as ready, with the given value, and initializes its size.
+    pub fn init_ready(&mut self, value: T) {
+        self.value = value;
+        self.value_len = mem::size_of::<T>();
+        self.finished.store(true, Ordering::Release);
     }
 }
 
 impl Future for SysCallFuture {
-    type Output = usize;
+    type Output = Vec<u8>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<usize> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Vec<u8>> {
         if self.finished.load(Ordering::Acquire) {
-            Poll::Ready(self.value)
+            // TODO: This is probably pretty inefficient. Can we optimize it by using a faster allocator?
+            Poll::Ready(self.value.to_vec())
         } else {
             cx.waker().wake_by_ref();
             Poll::Pending
@@ -148,7 +166,7 @@ impl Future for SysCallFuture {
     }
 }
 
-impl Drop for SysCallFuture {
+impl<T: ?Sized> Drop for SysCallFutureInternal<T> {
     fn drop(&mut self) {
         // FIXME: Tell the kernel it can free this future.
     }

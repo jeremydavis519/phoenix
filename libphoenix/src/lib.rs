@@ -27,6 +27,7 @@
 
 #![feature(asm)]
 #![feature(panic_info_message)]
+#![feature(slice_as_chunks)]
 
 extern crate alloc;
 

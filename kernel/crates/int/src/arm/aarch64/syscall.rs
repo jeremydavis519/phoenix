@@ -21,12 +21,21 @@
 use {
     core::{
         convert::{TryFrom, TryInto},
+        mem,
+        num::NonZeroUsize,
         time::Duration
     },
-    libphoenix::future::SysCallFuture,
+    libphoenix::{
+        future::SysCallFutureInternal,
+        syscall::VirtPhysAddr
+    },
     devices::DEVICES,
     fs::File,
     io::{println, Read},
+    memory::{
+        allocator::AllMemAlloc,
+        virt::paging
+    },
     scheduler::{Thread, ThreadStatus},
     shared::ffi_enum,
     time::SystemTime,
@@ -183,19 +192,18 @@ fn device_claim(
 
     // FIXME: Use a dedicated slab allocator, owned by the process, to allocate many futures in the
     //        same page.
-    let page_size = memory::virt::paging::page_size();
-    *future_userspace_addr = match memory::allocator::AllMemAlloc.malloc(
-                page_size,
-                core::num::NonZeroUsize::new(page_size).unwrap()
-            ) {
+    let page_size = paging::page_size();
+    *future_userspace_addr = match AllMemAlloc.malloc::<SysCallFutureInternal<usize>>(
+            page_size,
+            NonZeroUsize::new(page_size).unwrap()
+    ) {
         Ok(future_block) => {
-            core::mem::forget(core::mem::replace(
-                unsafe { &mut *future_block.index(0) },
-                SysCallFuture::ready(dev_userspace_addr)
-            ));
+            unsafe {
+                (*future_block.index(0)).init_ready(dev_userspace_addr);
+            }
             let phys_base = future_block.base().as_addr_phys();
-            let size = core::num::NonZeroUsize::new(page_size).unwrap();
-            core::mem::forget(future_block); // FIXME: This should be retained so it can be freed later.
+            let size = NonZeroUsize::new(page_size).unwrap();
+            mem::forget(future_block); // FIXME: This should be retained so it can be freed later.
             match root_page_table.map(phys_base, None, size, memory::phys::RegionType::Rom) {
                 Ok(addr) => addr,
                 // FIXME: If we fail here, deallocate the `DeviceContents` that we've already made.

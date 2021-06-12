@@ -18,9 +18,12 @@
 
 //! This module defines a function to encapsulate each system call the Phoenix kernel understands.
 
-use crate::{
-    future::SysCallFuture,
-    thread::Thread
+use {
+    core::mem,
+    crate::{
+        future::SysCallFuture,
+        thread::Thread
+    }
 };
 
 macro_rules! define_async_syscall {
@@ -37,7 +40,14 @@ macro_rules! define_async_syscall {
             }
             // FIXME: Offer some recourse if the kernel returns null (which indicates running out of
             //        memory).
-            unsafe { SysCallFuture::from_addr(addr) }.await as $ret_type
+            unsafe {
+                const N: usize = mem::size_of::<$ret_type>();
+                let retval_vec = SysCallFuture::from_addr::<N>(addr).await;
+                let (retval_arrays, remainder) = retval_vec.as_chunks::<N>();
+                assert_eq!(retval_arrays.len(), 1, "syscall {}: return value has the wrong size", stringify!($name));
+                assert_eq!(remainder.len(), 0, "syscall {}: return value has the wrong size", stringify!($name));
+                mem::transmute(retval_arrays[0])
+            }
         }
     };
 
@@ -59,7 +69,14 @@ macro_rules! define_async_syscall {
             }
             // FIXME: Offer some recourse if the kernel returns null (which indicates running out of
             //        memory).
-            unsafe { SysCallFuture::from_addr(addr) }.await as $ret_type
+            unsafe {
+                const N: usize = mem::size_of::<$ret_type>();
+                let retval_vec = SysCallFuture::from_addr::<N>(addr).await;
+                let (retval_arrays, remainder) = retval_vec.as_chunks::<N>();
+                assert_eq!(retval_arrays.len(), 1, "syscall {}: return value has the wrong size", stringify!($name));
+                assert_eq!(remainder.len(), 0, "syscall {}: return value has the wrong size", stringify!($name));
+                mem::transmute(retval_arrays[0])
+            }
         }
     };
 
@@ -84,7 +101,14 @@ macro_rules! define_async_syscall {
             }
             // FIXME: Offer some recourse if the kernel returns null (which indicates running out of
             //        memory).
-            unsafe { SysCallFuture::from_addr(addr) }.await as $ret_type
+            unsafe {
+                const N: usize = mem::size_of::<$ret_type>();
+                let retval_vec = SysCallFuture::from_addr::<N>(addr).await;
+                let (retval_arrays, remainder) = retval_vec.as_chunks::<N>();
+                assert_eq!(retval_arrays.len(), 1, "syscall {}: return value has the wrong size", stringify!($name));
+                assert_eq!(remainder.len(), 0, "syscall {}: return value has the wrong size", stringify!($name));
+                mem::transmute(retval_arrays[0])
+            }
         }
     };
 
@@ -112,7 +136,14 @@ macro_rules! define_async_syscall {
             }
             // FIXME: Offer some recourse if the kernel returns null (which indicates running out of
             //        memory).
-            unsafe { SysCallFuture::from_addr(addr) }.await as $ret_type
+            unsafe {
+                const N: usize = mem::size_of::<$ret_type>();
+                let retval_vec = SysCallFuture::from_addr::<N>(addr).await;
+                let (retval_arrays, remainder) = retval_vec.as_chunks::<N>();
+                assert_eq!(retval_arrays.len(), 1, "syscall {}: return value has the wrong size", stringify!($name));
+                assert_eq!(remainder.len(), 0, "syscall {}: return value has the wrong size", stringify!($name));
+                mem::transmute(retval_arrays[0])
+            }
         }
     };
 
@@ -143,12 +174,19 @@ macro_rules! define_async_syscall {
             }
             // FIXME: Offer some recourse if the kernel returns null (which indicates running out of
             //        memory).
-            unsafe { SysCallFuture::from_addr(addr) }.await as $ret_type
+            unsafe {
+                const N: usize = mem::size_of::<$ret_type>();
+                let retval_vec = SysCallFuture::from_addr::<N>(addr).await;
+                let (retval_arrays, remainder) = retval_vec.as_chunks::<N>();
+                assert_eq!(retval_arrays.len(), 1, "syscall {}: return value has the wrong size", stringify!($name));
+                assert_eq!(remainder.len(), 0, "syscall {}: return value has the wrong size", stringify!($name));
+                mem::transmute(retval_arrays[0])
+            }
         }
     };
 
     ($(#[$attr:meta])* pub async fn $name:ident(
-$($($arg:ident: $typ:ty)? $(=> {$($conv:tt)*})?),*
+        $($($arg:ident: $typ:ty)? $(=> {$($conv:tt)*})?),*
     ) -> $ret_type:ty => $syscall_num:tt;) => {
         define_async_syscall! {
             @func
@@ -188,7 +226,7 @@ macro_rules! define_async_syscalls {
 /// fn do_work() {
 ///     thread_exit(42);
 ///     # #[allow(dead_code)]
-///     panic!("This code will never be reached.");
+///     panic!("This line will never be reached.");
 /// }
 /// ```
 pub fn thread_exit(status: i32) -> ! {
@@ -297,7 +335,7 @@ define_async_syscalls! {
     /// top of it.
     ///
     /// # Returns
-    /// The address of the object describing the device, or `None` if (a) the device doesn't exist
+    /// The address of the object describing the device, or `0` if (a) the device doesn't exist
     /// or (b) this process doesn't have permission to claim it.
     ///
     /// # Required permissions
