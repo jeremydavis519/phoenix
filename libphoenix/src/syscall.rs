@@ -343,4 +343,74 @@ define_async_syscalls! {
     pub async fn device_claim(
         name: &str => {as *const str as *const u8 as usize}, => {name.len()}
     ) -> usize => 0x0200;
+
+    /// Frees a block of memory that was allocated by a system call.
+    ///
+    /// # Panics
+    /// If the given address is not the address of the first byte of an allocated block. (The most
+    /// likely reason for this to happen is that the memory has already been freed.)
+    pub async fn memory_free(
+        addr: usize
+    ) -> () => 0x0300;
+
+    /// Allocates a new block of virtual memory with the given size and alignment.
+    ///
+    /// This is only meant for use by the global allocator. Other userspace code should allocate
+    /// through that allocator.
+    ///
+    /// # Returns
+    /// The address of the allocated block, or `0` if the allocation failed.
+    pub async fn memory_alloc(
+        size: usize,
+        align: usize
+    ) -> usize => 0x0301;
+
+    /// Allocates a new block of memory with the given size and alignment. The memory is guaranteed
+    /// to remain resident at the same address in physical memory until it is freed, and it is
+    /// guaranteed that the highest physical address in the block fits within a `max_bits`-bit
+    /// unsigned integer.
+    ///
+    /// The purpose of this system call is to allow a driver to allocate a buffer and hand that
+    /// buffer to its device.
+    ///
+    /// # Returns
+    /// A struct containing the virtual and physical addresses of the allocated block. If allocation
+    /// fails, both addresses are `0`. Otherwise, neither is `0`.
+    ///
+    /// # Example
+    /// ```
+    /// # async {
+    /// let addr = memory_alloc_phys(0x1000, 0x1000, 20).await;
+    /// assert!(addr.phys < 1 << 20);
+    /// if addr.is_null() {
+    ///     println!("Allocation failed");
+    /// } else {
+    ///     println!("Allocated 0x1000 bytes at virtual address {:#x}, physical address {:#x}", addr.virt, addr.phys);
+    /// }
+    /// # }
+    /// ```
+    pub async fn memory_alloc_phys(
+        size: usize,
+        align: usize,
+        max_bits: usize
+    ) -> VirtPhysAddr => 0x0302;
+}
+
+
+/// Used for packaging a virtual address and a physical address into a single return value.
+#[derive(Debug)]
+#[repr(C)]
+pub struct VirtPhysAddr {
+    /// The virtual address.
+    pub virt: usize,
+    /// The physical address.
+    pub phys: usize
+}
+
+impl VirtPhysAddr {
+    /// Returns `true` if the address is null.
+    pub fn is_null(&self) -> bool {
+        assert_eq!(self.virt == 0, self.phys == 0);
+        self.virt == 0
+    }
 }

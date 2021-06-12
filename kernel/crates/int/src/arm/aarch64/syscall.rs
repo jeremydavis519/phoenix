@@ -20,6 +20,7 @@
 
 use {
     core::{
+        alloc::AllocError,
         convert::{TryFrom, TryInto},
         mem,
         num::NonZeroUsize,
@@ -59,6 +60,10 @@ pub(crate) fn handle_system_call(
 
         Ok(SystemCall::Device_Claim) => device_claim(thread, args[0], args[1], result),
 
+        Ok(SystemCall::Memory_Free) => memory_free(thread, args[0], result),
+        Ok(SystemCall::Memory_Alloc) => memory_alloc(thread, args[0], args[1], result),
+        Ok(SystemCall::Memory_AllocPhys) => memory_alloc_phys(thread, args[0], args[1], args[2], result),
+
         // TODO: Remove all of these temporary system calls.
         Ok(SystemCall::Temp_PutChar) => temp_putchar(args[0]),
         Ok(SystemCall::Temp_GetChar) => temp_getchar(result),
@@ -76,17 +81,21 @@ ffi_enum! {
     #[repr(u16)]
     #[allow(non_camel_case_types)]
     enum SystemCall {
-        Thread_Exit  = 0x0000,
-        Thread_Sleep = 0x0001,
-        Thread_Spawn = 0x0002,
-        Thread_Wait  = 0x0003,
+        Thread_Exit      = 0x0000,
+        Thread_Sleep     = 0x0001,
+        Thread_Spawn     = 0x0002,
+        Thread_Wait      = 0x0003,
 
-        Process_Exit = 0x0100,
+        Process_Exit     = 0x0100,
 
-        Device_Claim = 0x0200,
+        Device_Claim     = 0x0200,
 
-        Temp_PutChar = 0xff00,
-        Temp_GetChar = 0xff01
+        Memory_Free      = 0x0300,
+        Memory_Alloc     = 0x0301,
+        Memory_AllocPhys = 0x0302,
+
+        Temp_PutChar     = 0xff00,
+        Temp_GetChar     = 0xff01
     }
 }
 
@@ -212,6 +221,198 @@ fn device_claim(
         },
         Err(_) => 0
     };
+
+    Response::eret()
+}
+
+
+// Asynchronously frees a block of memory starting at the given address that was allocated by a
+// system call. Kills the thread if the address doesn't refer to such a block.
+fn memory_free(
+    thread: Option<&mut Thread<File>>,
+    userspace_addr: usize,
+    future_userspace_addr: &mut usize
+) -> Response {
+    let thread = thread.expect("kernel thread attempted to free memory with a system call");
+    let root_page_table = thread.exec_image.page_table();
+
+    let _kernel_addr = match root_page_table.userspace_addr_to_kernel_addr(userspace_addr) {
+        Some(addr) => addr,
+        None => return Response::leave_userspace(ThreadStatus::Terminated)
+    };
+    // TODO: Locate the block with this address that is owned by this thread's process. If this can't
+    //       be done in constant time, do it asynchronously.
+    // TODO: Drop that block.
+
+    // FIXME: Use a dedicated slab allocator, owned by the process, to allocate many futures in the
+    //        same page.
+    let page_size = paging::page_size();
+    *future_userspace_addr = match memory::allocator::AllMemAlloc.malloc::<SysCallFutureInternal<()>>(
+            page_size,
+            NonZeroUsize::new(page_size).unwrap()
+    ) {
+        Ok(future_block) => {
+            unsafe {
+                (*future_block.index(0)).init_ready(());
+            }
+            let phys_base = future_block.base().as_addr_phys();
+            let size = NonZeroUsize::new(page_size).unwrap();
+            mem::forget(future_block); // FIXME: This should be retained so it can be freed later.
+            match root_page_table.map(phys_base, None, size, memory::phys::RegionType::Rom) {
+                Ok(addr) => addr,
+                Err(()) => 0
+            }
+        },
+        Err(_) => 0
+    };
+
+    Response::eret()
+}
+
+// Asynchronously allocates a block of memory containing at least `size` bytes with at least the
+// given alignment. Returns a future containing the userspace address of the block. On failure, the
+// future contains null.
+fn memory_alloc(
+    thread: Option<&mut Thread<File>>,
+    size: usize,
+    align: usize,
+    future_userspace_addr: &mut usize
+) -> Response {
+    let thread = thread.expect("kernel thread attempted to allocate memory with a system call");
+    let page_size = paging::page_size();
+
+    // FIXME: Do this asynchronously. Memory allocation has unbounded time complexity, and we can't
+    //        pre-empt the thread during a system call.
+    let mut maybe_block = match AllMemAlloc.malloc::<u8>(
+            size,
+            NonZeroUsize::new(usize::max(align, page_size)).unwrap()
+    ) {
+        Ok(block) => Some(block),
+        Err(AllocError) => None
+    };
+
+    let root_page_table = thread.exec_image.page_table();
+
+    let block_userspace_addr = match maybe_block {
+        Some(ref block) => {
+            match root_page_table.map(
+                    block.base().as_addr_phys(),
+                    None,
+                    NonZeroUsize::new(block.size()).unwrap(),
+                    memory::phys::RegionType::Ram
+            ) {
+                Ok(addr) => addr,
+                Err(()) => {
+                    maybe_block = None;
+                    0
+                }
+            }
+        },
+        None => 0
+    };
+
+    // FIXME: Use a dedicated slab allocator, owned by the process, to allocate many futures in the
+    //        same page.
+    *future_userspace_addr = match memory::allocator::AllMemAlloc.malloc::<SysCallFutureInternal<usize>>(
+            page_size,
+            NonZeroUsize::new(page_size).unwrap()
+    ) {
+        Ok(future_block) => {
+            unsafe {
+                (*future_block.index(0)).init_ready(block_userspace_addr);
+            }
+            let phys_base = future_block.base().as_addr_phys();
+            let size = NonZeroUsize::new(page_size).unwrap();
+            mem::forget(future_block); // FIXME: This should be retained so it can be freed later.
+            match root_page_table.map(phys_base, None, size, memory::phys::RegionType::Rom) {
+                Ok(addr) => addr,
+                Err(()) => 0
+            }
+        },
+        Err(_) => 0
+    };
+
+    // FIXME: Instead of forgetting the block, attach it to the process.
+    mem::forget(maybe_block);
+
+    Response::eret()
+}
+
+// Asynchronously allocates a physically contiguous block of memory containing at least `size` bytes
+// with at least the given alignment. Returns a future containing both the physical and the virtual
+// addresses of the block. This memory is guaranteed to stay resident until it is freed. On failure,
+// both addresses in the future are null.
+//
+// The physical address of every byte in the allocated block is guaranteed not to overflow an
+// unsigned binary number of length `max_bits`.
+fn memory_alloc_phys(
+    thread: Option<&mut Thread<File>>,
+    size: usize,
+    align: usize,
+    max_bits: usize,
+    future_userspace_addr: &mut usize
+) -> Response {
+    let thread = thread.expect("kernel thread attempted to allocate memory with a system call");
+    let page_size = paging::page_size();
+
+    // FIXME: Do this asynchronously. Memory allocation has unbounded time complexity, and we can't
+    //        pre-empt the thread during a system call.
+    let mut maybe_block = match AllMemAlloc.malloc_low::<u8>(
+            size,
+            NonZeroUsize::new(usize::max(align, page_size)).unwrap(),
+            max_bits
+    ) {
+        Ok(block) => Some(block),
+        Err(AllocError) => None
+    };
+
+    let root_page_table = thread.exec_image.page_table();
+
+    let (block_userspace_addr, block_phys_addr) = match maybe_block {
+        Some(ref block) => {
+            let phys_addr = block.base().as_addr_phys();
+            match root_page_table.map(
+                    phys_addr,
+                    None,
+                    NonZeroUsize::new(block.size()).unwrap(),
+                    memory::phys::RegionType::Ram
+            ) {
+                Ok(addr) => (addr, phys_addr),
+                Err(()) => {
+                    maybe_block = None;
+                    (0, 0)
+                }
+            }
+        },
+        None => (0, 0)
+    };
+
+    // FIXME: Use a dedicated slab allocator, owned by the process, to allocate many futures in the
+    //        same page.
+    *future_userspace_addr = match memory::allocator::AllMemAlloc.malloc::<SysCallFutureInternal<VirtPhysAddr>>(
+            page_size,
+            NonZeroUsize::new(page_size).unwrap()
+    ) {
+        Ok(future_block) => {
+            unsafe {
+                (*future_block.index(0)).init_ready(VirtPhysAddr {
+                    virt: block_userspace_addr,
+                    phys: block_phys_addr
+                });
+            }
+            let phys_base = future_block.base().as_addr_phys();
+            let size = NonZeroUsize::new(page_size).unwrap();
+            mem::forget(future_block); // FIXME: This should be retained so it can be freed later.
+            match root_page_table.map(phys_base, None, size, memory::phys::RegionType::Rom) {
+                Ok(addr) => addr,
+                Err(()) => 0
+            }
+        },
+        Err(_) => 0
+    };
+
+    // FIXME: Instead of forgetting the block, attach it to the process.
+    mem::forget(maybe_block);
 
     Response::eret()
 }

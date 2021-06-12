@@ -168,12 +168,10 @@ fn reserve_mmio_with_map(base: PhysPtr<u8, *mut u8>, size: NonZeroUsize, map: &M
 }
 
 /// Finds and reserves a block of RAM that is `size` bytes long and aligned on an `align`-byte boundary.
-/// Maps the block to virtual pages if `should_map` is `true`.
 ///
 /// # Returns
 ///   * `Ok((ptr, allocation))` if the memory was reserved, where `ptr` is a physical pointer to the
-///     first byte in the block and `allocation` is an object that frees the
-///     block when it is dropped
+///     first byte in the block and `allocation` is an object that frees the block when it is dropped
 ///   * `Err(AllocErr)`
 pub(crate) fn malloc(size: NonZeroUsize, align: NonZeroUsize) -> Result<(PhysPtr<u8, *mut u8>, Allocation), AllocError> {
     malloc_with_map(size, align, &*MEMORY_MAP)
@@ -193,6 +191,29 @@ fn malloc_with_map(size: NonZeroUsize, align: NonZeroUsize, map: &MemoryMap) -> 
             return Ok((PhysPtr::<_, *mut _>::from_addr_phys(base), allocation));
         }
     }
+}
+
+/// Finds and reserves a block of RAM that is `size` bytes long and aligned on an `align`-byte boundary.
+/// Does not reserve any memory with a physical address that uses more than `max_bits` bits.
+///
+/// # Returns
+///   * `Ok((ptr, allocation))` if the memory was reserved, where `ptr` is a physical pointer to the
+///     first byte in the block and `allocation` is an object that frees the block when it is dropped
+///   * `Err(AllocErr)`
+pub(crate) fn malloc_low(size: NonZeroUsize, align: NonZeroUsize, max_bits: usize) -> Result<(PhysPtr<u8, *mut u8>, Allocation), AllocError> {
+    if max_bits >= mem::size_of::<usize>() * 8 {
+        return malloc(size, align);
+    }
+
+    let max_addr = 1 << max_bits;
+    let mut map = MEMORY_MAP.clone();
+    let _ = map.remove_region(max_addr, NonZeroUsize::new(0_usize.wrapping_sub(max_addr)).unwrap());
+    let (ptr, allocation) = malloc_with_map(size, align, &map)?;
+    if ptr.as_addr_phys() >= max_addr {
+        // This can only happen if removing the region from the map failed.
+        return Err(AllocError);
+    }
+    Ok((ptr, allocation))
 }
 
 /// Deallocates the block of memory starting at the given base address. Dropping the allocated

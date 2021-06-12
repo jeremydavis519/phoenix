@@ -68,7 +68,7 @@ impl AllMemAlloc {
         } else {
             None
         };
-        Ok(Block::<T>::new(PhysPtr::<_, *const _>::from_addr_phys(base), size / core::mem::size_of::<T>(), node))
+        Ok(Block::<T>::new(PhysPtr::<_, *const _>::from_addr_phys(base), size / mem::size_of::<T>(), node))
     }
 
     /// Mutably reserves the given number of bytes (`size`) of physical memory, starting at physical memory
@@ -87,7 +87,7 @@ impl AllMemAlloc {
         } else {
             None
         };
-        Ok(BlockMut::<T>::new(PhysPtr::<_, *mut _>::from_addr_phys(base), size / core::mem::size_of::<T>(), node))
+        Ok(BlockMut::<T>::new(PhysPtr::<_, *mut _>::from_addr_phys(base), size / mem::size_of::<T>(), node))
     }
 
     /// Mutably reserves the given number of bytes (`size`) of memory-mapped I/O space, starting at
@@ -106,7 +106,7 @@ impl AllMemAlloc {
         } else {
             None
         };
-        Ok(Mmio::<T>::new(PhysPtr::<_, *mut _>::from_addr_phys(base), size / core::mem::size_of::<T>(), node))
+        Ok(Mmio::<T>::new(PhysPtr::<_, *mut _>::from_addr_phys(base), size / mem::size_of::<T>(), node))
     }
 
     /// Finds and mutably reserves the given number of bytes (`size`) of physical memory, aligned on an
@@ -127,7 +127,35 @@ impl AllMemAlloc {
             // No need to touch the heap if we're allocating zero bytes.
             (align.get(), None)
         };
-        Ok(BlockMut::<T>::new(PhysPtr::<_, *mut _>::from_addr_phys(base), size / core::mem::size_of::<T>(), node))
+        Ok(BlockMut::<T>::new(PhysPtr::<_, *mut _>::from_addr_phys(base), size / mem::size_of::<T>(), node))
+    }
+
+    /// Finds and mutably reserves the given number of bytes (`size`) of physical memory, aligned on an
+    /// `align`-byte boundary and only using up to `max_bits` bits for the address. (For instance, if
+    /// `max_bits` is equal to 20, only the first 1 MiB of physical memory will be considered for
+    /// allocation.)
+    ///
+    /// # Returns
+    ///   * `Ok(block)` if the block was successfully reserved, where `block` is a `BlockMut` representing
+    ///         the reserved block.
+    ///   * `Err(AllocErr)` on failure.
+    pub fn malloc_low<T>(&self, size: usize, align: NonZeroUsize, max_bits: usize) -> Result<BlockMut<T>, AllocError> {
+        assert_eq!(align.get() % mem::align_of::<T>(), 0);
+        assert_eq!(size % mem::size_of::<T>(), 0);
+
+        if max_bits < mem::size_of::<usize>() * 8 && align.get() > (1 << max_bits) {
+            // There's nothing we could return with this alignment besides null!
+            return Err(AllocError);
+        }
+
+        let (base, node) = if let Some(size) = NonZeroUsize::new(size) {
+            let (ptr, node) = heap::malloc_low(size, align, max_bits)?;
+            (ptr.as_addr_phys(), Some(node))
+        } else {
+            // No need to touch the heap if we're allocating zero bytes.
+            (align.get(), None)
+        };
+        Ok(BlockMut::<T>::new(PhysPtr::<_, *mut _>::from_addr_phys(base), size / mem::size_of::<T>(), node))
     }
 
     /// Frees the allocated block at the virtual address that the given pointer indicates. This
