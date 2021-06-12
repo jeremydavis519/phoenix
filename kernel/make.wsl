@@ -1,0 +1,10 @@
+#!/bin/sh -x
+
+#PHOENIX_LINKER="aarch64-none-elf-ld" \
+#PHOENIX_LINKER_PARAMS="-n --gc-sections" \
+#PHOENIX_LINKER_SCRIPT="src/arch/$PHOENIX_TARGET/linker.ld" \
+PHOENIX_TARGET="aarch64/qemu-virt" \
+PHOENIX_ASSEMBLER="aarch64-none-elf-as" \
+PHOENIX_CPU="cortex-a53" \
+PHOENIX_ARCHIVER="aarch64-none-elf-ar" \
+    make
