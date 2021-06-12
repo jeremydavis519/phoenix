@@ -408,6 +408,14 @@ pub struct VirtPhysAddr {
 }
 
 impl VirtPhysAddr {
+    /// Returns a null virtual and physical address.
+    pub const fn null() -> Self {
+        Self {
+            virt: 0,
+            phys: 0
+        }
+    }
+
     /// Returns `true` if the address is null.
     pub fn is_null(&self) -> bool {
         assert_eq!(self.virt == 0, self.phys == 0);

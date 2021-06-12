@@ -25,7 +25,9 @@
 #![no_std]
 #![deny(warnings, missing_docs)]
 
+#![feature(allocator_api)]
 #![feature(asm)]
+#![feature(layout_for_ptr)]
 #![feature(panic_info_message)]
 #![feature(slice_as_chunks)]
 
