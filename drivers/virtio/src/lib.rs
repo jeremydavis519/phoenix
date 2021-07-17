@@ -22,6 +22,8 @@
 //! This library provides a generic API for communicating with VirtIO devices. Every VirtIO device
 //! driver should link to this library to avoid duplicating code.
 
+extern crate alloc;
+
 use {
     core::{
         fmt,
@@ -30,8 +32,11 @@ use {
         sync::atomic::{AtomicU32, Ordering}
     },
     bitflags::bitflags,
-    libdriver::{BusType, Device, Resource}
+    libdriver::{BusType, Device, Resource},
+    self::virtqueue::{VirtQueue, DriverFlags}
 };
+
+mod virtqueue;
 
 /// Initializes the given device.
 pub fn init<'a>(
@@ -135,8 +140,8 @@ fn init_mmio<'a>(
             continue;
         }
         let queue_len = u32::min(max_queue_len, 0x8000);
-        // TODO: Allow the driver to specify the VirtqDriverFlags for each virtqueue.
-        // TODO: let queue = VirtQueue::new(queue_index, queue_len as u16, VirtqDriverFlags::empty());
+        // TODO: Allow the driver to specify the DriverFlags for each virtqueue.
+        let queue = VirtQueue::new(resource, features, legacy, queue_index, queue_len as u16, DriverFlags::empty());
         regs.set_queue_len(queue_len);
         todo!("finish setting up the virtqueue");
         if legacy {
@@ -399,12 +404,6 @@ bitflags! {
     }
 }
 
-bitflags! {
-    struct VirtqDriverFlags: u16 {
-        const NO_INTERRUPT = 0x0001;
-    }
-}
-
 /// A collection of VirtIO-specific information about a device, returned by [`init`].
 #[derive(Debug)]
 pub struct DeviceDetails<'a> {
@@ -429,6 +428,27 @@ impl<'a> DeviceDetails<'a> {
     pub fn configuration_space(&mut self) -> &mut [u8] {
         self.configuration_space
     }
+}
+
+fn notify_device<'a>(resource: &'a Resource, notification: u32) {
+    match resource.bus {
+        BusType::Mmio => notify_mmio(resource, notification)
+    }
+}
+
+fn notify_mmio<'a>(resource: &'a Resource, notification: u32) {
+    assert_eq!(resource.bus, BusType::Mmio);
+    assert!(resource.size >= 0x100);
+    let mut regs = MmioRegisters {
+        slice: unsafe {
+            slice::from_raw_parts_mut(
+                resource.base as *mut u32,
+                0x100 / mem::size_of::<u32>()
+            )
+        }
+    };
+
+    regs.queue_notify(notification);
 }
 
 /// Defines how to convert an integer from "device-endian" to the CPU's endianness.
@@ -471,6 +491,8 @@ impl_device_endian!(u16);
 impl_device_endian!(i16);
 impl_device_endian!(u32);
 impl_device_endian!(i32);
+impl_device_endian!(u64);
+impl_device_endian!(i64);
 
 /// An error that might occur when trying to initialize a VirtIO device.
 #[derive(Debug)]

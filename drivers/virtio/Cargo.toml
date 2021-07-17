@@ -8,8 +8,9 @@ edition = "2018"
 bitflags = "1.2"
 
 libdriver = { path = "../libdriver", default-features = false }
+libphoenix = { path = "../../libphoenix", default-features = false }
 
 [features]
 default = ["global-allocator"]
 
-global-allocator = ["libdriver/global-allocator"]
+global-allocator = ["libdriver/global-allocator", "libphoenix/global-allocator"]
