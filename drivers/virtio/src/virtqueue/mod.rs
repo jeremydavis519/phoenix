@@ -40,8 +40,11 @@ use {
     },
     bitflags::bitflags,
     libdriver::Resource,
-    libphoenix::allocator::{Allocator, PhysBox},
-    crate::DeviceEndian,
+    libphoenix::{
+        allocator::{Allocator, PhysBox},
+        syscall
+    },
+    crate::{DeviceEndian, VirtIoError},
     self::future::ResponseFuture
 };
 
@@ -60,9 +63,8 @@ pub struct VirtQueue<'a> {
 }
 
 impl<'a> VirtQueue<'a> {
-    const PAGE_SIZE: usize = 0x10000 /* FIXME: Get the page size from the kernel. */;
     // FIXME: This depends on the transport, so it may not always be 0x1000.
-    const LEGACY_DEVICE_RING_ALIGN: usize = 0x1000;
+    pub(crate) const LEGACY_DEVICE_RING_ALIGN: usize = 0x1000;
 
     pub fn new(
             resource: &'a Resource,
@@ -73,6 +75,10 @@ impl<'a> VirtQueue<'a> {
             driver_flags: DriverFlags
     ) -> Self {
         let len = len as usize;
+        let page_size = syscall::memory_page_size();
+
+        // Base-2 logarithm, rounded down
+        let log_2 = |x: usize| mem::size_of_val(&x) * 8 - x.leading_zeros() as usize + 1;
 
         let descriptors;
         let driver_ring;
@@ -86,8 +92,8 @@ impl<'a> VirtQueue<'a> {
             let align = |x| (x + Self::LEGACY_DEVICE_RING_ALIGN) % Self::LEGACY_DEVICE_RING_ALIGN;
             let block = Allocator.malloc_phys_bytes(
                 align(size_of_descriptors + size_of_driver_ring) + align(size_of_device_ring),
-                usize::max(Self::LEGACY_DEVICE_RING_ALIGN, Self::PAGE_SIZE),
-                44 // TODO: should be 32 + log_2(Self::PAGE_SIZE))
+                usize::max(Self::LEGACY_DEVICE_RING_ALIGN, page_size),
+                32 + log_2(page_size)
             )
                 .expect("failed to allocate a virtqueue");
             unsafe {
@@ -120,6 +126,18 @@ impl<'a> VirtQueue<'a> {
 
     pub const fn len(&self) -> usize {
         self.descriptors.len
+    }
+
+    pub fn descriptors_addr_phys(&self) -> usize {
+        self.descriptors.base_addr_phys()
+    }
+
+    pub fn driver_ring_addr_phys(&self) -> usize {
+        self.driver_ring.base_addr_phys()
+    }
+
+    pub fn device_ring_addr_phys(&self) -> usize {
+        self.device_ring.base_addr_phys()
     }
 
     /// Asynchronously sends a message to the device and returns its response.
@@ -264,6 +282,13 @@ impl DescriptorTable {
             ));
         }
         self
+    }
+
+    fn base_addr_phys(&self) -> usize {
+        match self.descriptors {
+            DescriptorTableInternal::Legacy(ref phys_box) => phys_box.addr_phys(),
+            DescriptorTableInternal::Modern(ref phys_box) => phys_box.addr_phys()
+        }
     }
 
     // Disconnects and returns a chain of descriptors from the list of free descriptors. These
@@ -500,6 +525,13 @@ impl DriverRing {
         }
     }
 
+    fn base_addr_phys(&self) -> usize {
+        match *self {
+            Self::Legacy { .. } => panic!("tried to get the base address of a legacy driver ring"),
+            Self::Modern { ref internal, .. } => internal.addr_phys()
+        }
+    }
+
     fn flags(&self) -> u16 {
         u16::from_device_endian(self.internal()[Self::FLAGS_OFFSET].load(Ordering::Acquire), self.legacy())
     }
@@ -634,6 +666,13 @@ impl DeviceRing {
         }
     }
 
+    fn base_addr_phys(&self) -> usize {
+        match *self {
+            Self::Legacy(_) => panic!("tried to get the base address of a legacy device ring"),
+            Self::Modern(ref internal) => internal.addr_phys()
+        }
+    }
+
     fn flags(&self) -> DeviceFlags {
         DeviceFlags::from_bits_truncate(u16::from_device_endian(
             unsafe { (&self.internal()[Self::FLAGS_OFFSET] as *const u16).read_volatile() },
@@ -681,22 +720,5 @@ impl UsedElem {
 
     fn len(&self, legacy: bool) -> u32 {
         u32::from_device_endian(unsafe { (&self.len as *const u32).read_volatile() }, legacy)
-    }
-}
-
-#[derive(Debug)]
-struct VirtIoError {
-    desc: &'static str
-}
-
-impl VirtIoError {
-    fn new(desc: &'static str) -> VirtIoError {
-        VirtIoError { desc }
-    }
-}
-
-impl fmt::Display for VirtIoError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.desc)
     }
 }

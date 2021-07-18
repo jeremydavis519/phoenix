@@ -26,6 +26,7 @@ extern crate alloc;
 
 use {
     core::{
+        convert::TryInto,
         fmt,
         mem,
         slice,
@@ -33,6 +34,7 @@ use {
     },
     bitflags::bitflags,
     libdriver::{BusType, Device, Resource},
+    libphoenix::syscall,
     self::virtqueue::{VirtQueue, DriverFlags}
 };
 
@@ -126,6 +128,15 @@ fn init_mmio<'a>(
     }
 
     // Initialize the virtqueues.
+    let page_size;
+    if legacy {
+        page_size = syscall::memory_page_size();
+        regs.legacy_set_guest_page_size(
+            page_size.try_into().expect("page size exceeds 32 bits")
+        );
+    } else {
+        page_size = 0; // This isn't used here except in legacy devices.
+    }
     for queue_index in 0 .. queues_count {
         regs.select_queue(queue_index);
         if legacy {
@@ -143,9 +154,18 @@ fn init_mmio<'a>(
         // TODO: Allow the driver to specify the DriverFlags for each virtqueue.
         let queue = VirtQueue::new(resource, features, legacy, queue_index, queue_len as u16, DriverFlags::empty());
         regs.set_queue_len(queue_len);
-        todo!("finish setting up the virtqueue");
         if legacy {
+            regs.legacy_set_device_ring_align(
+                VirtQueue::LEGACY_DEVICE_RING_ALIGN.try_into().expect("device ring alignment exceeds 32 bits")
+            );
+            let page_number = (queue.descriptors_addr_phys() / page_size).try_into()
+                .expect("virtqueue address is too high");
+            regs.legacy_set_queue_page_number(page_number);
         } else {
+            regs.set_queue_descriptor_area(queue.descriptors_addr_phys().try_into().unwrap());
+            regs.set_queue_driver_area(queue.driver_ring_addr_phys().try_into().unwrap());
+            regs.set_queue_device_area(queue.device_ring_addr_phys().try_into().unwrap());
+            regs.set_queue_ready(true);
         }
     }
 
@@ -535,5 +555,23 @@ impl fmt::Display for VirtIOInitError {
             Self::FeatureNegotiationFailed
                 => write!(f, "feature negotiation failed")
         }
+    }
+}
+
+/// An error that might occur while communicating with a VirtIO device.
+#[derive(Debug)]
+pub struct VirtIoError {
+    desc: &'static str
+}
+
+impl VirtIoError {
+    fn new(desc: &'static str) -> VirtIoError {
+        VirtIoError { desc }
+    }
+}
+
+impl fmt::Display for VirtIoError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.desc)
     }
 }
