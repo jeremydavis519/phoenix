@@ -85,6 +85,9 @@ impl<'a> SysCallExecutor<'a> {
     /// # Returns
     /// The number of futures that finished executing.
     pub fn block_on_any(&mut self) -> usize {
+        if self.futures.len() == 0 {
+            return 0;
+        }
         loop {
             let futures_finished = self.poll();
             if futures_finished > 0 {
