@@ -63,6 +63,7 @@ pub(crate) fn handle_system_call(
         Ok(SystemCall::Memory_Free) => memory_free(thread, args[0], result),
         Ok(SystemCall::Memory_Alloc) => memory_alloc(thread, args[0], args[1], result),
         Ok(SystemCall::Memory_AllocPhys) => memory_alloc_phys(thread, args[0], args[1], args[2], result),
+        Ok(SystemCall::Memory_PageSize) => memory_page_size(result),
 
         // TODO: Remove all of these temporary system calls.
         Ok(SystemCall::Temp_PutChar) => temp_putchar(args[0]),
@@ -93,6 +94,7 @@ ffi_enum! {
         Memory_Free      = 0x0300,
         Memory_Alloc     = 0x0301,
         Memory_AllocPhys = 0x0302,
+        Memory_PageSize  = 0x0380,
 
         Temp_PutChar     = 0xff00,
         Temp_GetChar     = 0xff01
@@ -414,6 +416,14 @@ fn memory_alloc_phys(
     // FIXME: Instead of forgetting the block, attach it to the process.
     mem::forget(maybe_block);
 
+    Response::eret()
+}
+
+// Returns the size of a page.
+fn memory_page_size(
+    result: &mut usize
+) -> Response {
+    *result = paging::page_size();
     Response::eret()
 }
 

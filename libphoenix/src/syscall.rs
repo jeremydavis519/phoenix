@@ -312,6 +312,7 @@ pub fn thread_wait() {
 /// # Returns
 /// Never returns.
 ///
+/// # Example
 /// ```no_run
 /// println!("Successful exit from the process");
 /// process_exit(0);
@@ -326,6 +327,28 @@ pub fn process_exit(status: i32) -> ! {
             options(nomem, nostack, preserves_flags, noreturn)
         );
     }
+}
+
+/// Returns the number of bytes in a page.
+///
+/// A page is the smallest unit of memory that the kernel will allocate for a userspace program, and
+/// page size and alignment also sometimes matter for drivers. Most programs don't need to worry
+/// about it at all.
+///
+/// # Example
+/// ```norun
+/// println!("The size of a page is {} bytes.", memory_page_size());
+/// ```
+pub fn memory_page_size() -> usize {
+    let page_size: usize;
+    unsafe {
+        asm!(
+            "svc 0x0380",
+            lateout("x0") page_size,
+            options(nomem, nostack, preserves_flags)
+        );
+    }
+    page_size
 }
 
 define_async_syscalls! {
