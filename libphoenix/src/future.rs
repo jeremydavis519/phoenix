@@ -47,8 +47,8 @@ pub struct SysCallExecutor<'a> {
 
 impl<'a> SysCallExecutor<'a> {
     /// Makes a new executor with no futures.
-    pub fn new() -> SysCallExecutor<'a> {
-        SysCallExecutor { futures: Vec::new() }
+    pub fn new() -> Self<'a> {
+        Self { futures: Vec::new() }
     }
 
     /// Adds a future to this executor.
