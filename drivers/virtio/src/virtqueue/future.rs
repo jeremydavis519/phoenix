@@ -19,18 +19,159 @@
 //! This module defines a type that represents a response that the device will place in a virtqueue.
 
 use {
-    alloc::vec::Vec,
+    alloc::{
+        boxed::Box,
+        sync::Arc,
+        vec::Vec
+    },
     core::{
-        sync::atomic::Ordering,
+        cell::RefCell,
         future::Future,
         mem,
         pin::Pin,
-        task::{Context, Poll}
+        sync::atomic::{AtomicBool, Ordering},
+        task::{Context, Poll, RawWaker, RawWakerVTable, Waker}
     },
     libphoenix::allocator::PhysBox,
     crate::{DeviceEndian, GenericFeatures},
     super::VirtQueue
 };
+
+/// An executor that can run most futures without return values, including `async` blocks that run
+/// [`VirtQueue::send_recv`]. Specifically, the futures must not rely on being woken up by the
+/// executor but must instead use the provided `Waker`s themselves.
+pub struct Executor<'a> {
+    futures: Vec<Pin<Arc<WakeableFuture<'a>>>>
+}
+
+struct WakeableFuture<'a> {
+    future: RefCell<Pin<Box<dyn 'a+Future<Output = ()>>>>,
+    awake: AtomicBool
+}
+
+impl<'a> Executor<'a> {
+    /// Makes a new executor with no futures.
+    pub fn new() -> Self {
+        Self { futures: Vec::new() }
+    }
+
+    /// Adds a future to this executor.
+    ///
+    /// # Returns
+    /// `self`, so that multiple function calls can be chained.
+    pub fn spawn<F: 'a+Future<Output = ()>>(&mut self, future: F) -> &mut Self {
+        self.futures.push(Arc::pin(WakeableFuture {
+            future: RefCell::new(Box::pin(future)),
+            awake: AtomicBool::new(true)
+        }));
+        self
+    }
+
+    /// Polls each awake future at least once.
+    ///
+    /// NB: There is no guarantee that a future is polled _only_ once, but this function does
+    /// guarantee that the number of polls is bounded and that no future is polled after it has
+    /// already finished. There is also no guarantee about the order in which futures are polled.
+    ///
+    /// # Panics
+    /// If there is at least one future and all the futures are asleep.
+    ///
+    /// # Returns
+    /// The number of futures that finished executing.
+    pub fn poll(&mut self) -> usize {
+        if self.futures.len() == 0 {
+            return 0;
+        }
+
+        let mut futures_finished = 0;
+        let mut some_awake = false;
+
+        for i in (0 .. self.futures.len()).rev() {
+            if self.futures[i].awake.swap(false, Ordering::AcqRel) {
+                some_awake = true;
+                let waker = unsafe { Waker::from_raw(Self::raw_waker(self.futures[i].clone())) };
+                let mut cx = Context::from_waker(&waker);
+                let mut future = self.futures[i].future.borrow_mut();
+                match future.as_mut().poll(&mut cx) {
+                    Poll::Ready(()) => {
+                        futures_finished += 1;
+                        drop(future);
+                        self.futures.swap_remove(i);
+                    },
+                    Poll::Pending => {}
+                }
+            }
+        }
+
+        assert!(some_awake, "all polled futures are asleep");
+
+        futures_finished
+    }
+
+    /// Blocks until at least one future finishes.
+    ///
+    /// # Panics
+    /// If, before one of the futures has finished, they are all asleep.
+    ///
+    /// # Returns
+    /// The number of futures that finished executing.
+    pub fn block_on_any(&mut self) -> usize {
+        loop {
+            let futures_finished = self.poll();
+            if futures_finished > 0 {
+                return futures_finished;
+            }
+        }
+    }
+
+    /// Blocks until all the futures in this executor finish.
+    ///
+    /// # Panics
+    /// If, before all the futures have finished, they are all asleep.
+    pub fn block_on_all(&mut self) {
+        while self.futures.len() > 0 {
+            self.block_on_any();
+        }
+    }
+
+    fn raw_waker(future: Pin<Arc<WakeableFuture<'a>>>) -> RawWaker {
+        let data = unsafe {
+            Arc::into_raw(Pin::into_inner_unchecked(future))
+        } as *const ();
+        RawWaker::new(
+            data,
+            &RawWakerVTable::new(
+                Self::raw_waker_clone,
+                Self::raw_waker_wake,
+                Self::raw_waker_wake_by_ref,
+                Self::raw_waker_drop
+            )
+        )
+    }
+
+    unsafe fn raw_waker_clone(data: *const ()) -> RawWaker {
+        let future = Arc::from_raw(data as *const WakeableFuture<'a>);
+        let clone = Self::raw_waker(Pin::new(future.clone()));
+        drop(Arc::into_raw(future)); // Avoid dropping the Arc.
+        clone
+    }
+
+    unsafe fn raw_waker_wake(data: *const ()) {
+        Self::raw_waker_wake_by_ref(data);
+        Self::raw_waker_drop(data);
+    }
+
+    unsafe fn raw_waker_wake_by_ref(data: *const ()) {
+        let future = Arc::from_raw(data as *const WakeableFuture<'a>);
+        future.awake.store(true, Ordering::Release);
+        drop(Arc::into_raw(future)); // Avoid dropping the Arc.
+    }
+
+    unsafe fn raw_waker_drop(data: *const ()) {
+        let future = Arc::from_raw(data as *const WakeableFuture<'a>);
+        drop(future);
+    }
+}
 
 #[derive(Debug)]
 pub struct ResponseFuture<'a, T: ?Sized> {
