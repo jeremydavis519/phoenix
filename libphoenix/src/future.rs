@@ -108,7 +108,7 @@ impl<'a> SysCallExecutor<'a> {
         RawWaker::new(
             ptr::null(),
             &RawWakerVTable::new(
-                |_| Self::raw_waker(), // fn clone(_: *const ())
+                |_| Self::raw_waker(), // fn clone(_: *const ()) -> RawWaker
                 |_| {},                // fn wake(_: *const ())
                 |_| {},                // unsafe fn wake_by_ref(_: *const ())
                 |_| {}                 // fn drop(_: *const ())
