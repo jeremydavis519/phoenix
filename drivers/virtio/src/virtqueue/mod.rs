@@ -29,7 +29,6 @@ use {
     core::{
         cell::RefCell,
         convert::TryInto,
-        fmt,
         iter,
         mem,
         ops::{Index, IndexMut},
@@ -572,8 +571,8 @@ impl DriverRing {
     fn set_next_entry(&self, val: u16) {
         let (internal, state) = self.internal_and_state();
 
-        let mut this_idx = self.state().next_idx.fetch_add(1, Ordering::AcqRel);
-        let entries_updated = &self.state().entries_updated;
+        let mut this_idx = state.next_idx.fetch_add(1, Ordering::AcqRel);
+        let entries_updated = &state.entries_updated;
         internal[Self::RING_OFFSET + this_idx as usize % self.len()].store(val, Ordering::AcqRel);
 
         // `self.idx()` must never skip over an entry that hasn't actually been updated yet. If we
