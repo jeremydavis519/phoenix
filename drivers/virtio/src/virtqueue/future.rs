@@ -34,7 +34,7 @@ use {
     },
     libphoenix::allocator::PhysBox,
     crate::{DeviceEndian, GenericFeatures},
-    super::VirtQueue
+    super::{Response, VirtQueue}
 };
 
 /// An executor that can run most futures without return values, including `async` blocks that run
@@ -173,6 +173,7 @@ impl<'a> Executor<'a> {
     }
 }
 
+/// A future that evaluates to a [`Response`].
 #[derive(Debug)]
 pub struct ResponseFuture<'a, T: ?Sized> {
     virtq: Option<&'a VirtQueue<'a>>,
@@ -184,7 +185,7 @@ pub struct ResponseFuture<'a, T: ?Sized> {
 }
 
 impl<'a, T: ?Sized> ResponseFuture<'a, T> {
-    pub fn new(
+    pub(crate) fn new(
         virtq: &'a VirtQueue<'a>,
         desc_head_idx: u16,
         desc_tail_idx: u16,
@@ -202,7 +203,7 @@ impl<'a, T: ?Sized> ResponseFuture<'a, T> {
         }
     }
 
-    pub fn new_immediate(buffer: PhysBox<T>) -> Self {
+    pub(crate) fn new_immediate(buffer: PhysBox<T>) -> Self {
         let legacy_response_len = Some(mem::size_of_val(&*buffer));
         Self {
             virtq: None,
@@ -213,12 +214,6 @@ impl<'a, T: ?Sized> ResponseFuture<'a, T> {
             legacy_response_len
         }
     }
-}
-
-#[derive(Debug)]
-pub struct Response<T: ?Sized> {
-    buffer: PhysBox<T>,
-    valid_bytes: usize // The number of bytes from the beginning of `*buffer` that are defined
 }
 
 impl<'a, T: ?Sized> Future for ResponseFuture<'a, T> {

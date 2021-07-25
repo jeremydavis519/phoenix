@@ -19,7 +19,7 @@
 //! This module defines a generic virtqueue data structure, as described by the VirtIO specification.
 //! It is the core data structure underlying the entire VirtIO communication protocol.
 
-mod future;
+pub mod future;
 
 use {
     alloc::{
@@ -47,6 +47,8 @@ use {
     self::future::ResponseFuture
 };
 
+/// A virtqueue, as defined in the VirtIO specification. This queue is the primary means of
+/// communication between the device and its driver.
 #[derive(Debug)]
 pub struct VirtQueue<'a> {
     resource: &'a Resource,
@@ -65,7 +67,7 @@ impl<'a> VirtQueue<'a> {
     // FIXME: This depends on the transport, so it may not always be 0x1000.
     pub(crate) const LEGACY_DEVICE_RING_ALIGN: usize = 0x1000;
 
-    pub fn new(
+    pub(crate) fn new(
             resource: &'a Resource,
             device_features: u64,
             legacy: bool,
@@ -123,19 +125,19 @@ impl<'a> VirtQueue<'a> {
         }
     }
 
-    pub const fn len(&self) -> usize {
+    pub(crate) const fn len(&self) -> usize {
         self.descriptors.len
     }
 
-    pub fn descriptors_addr_phys(&self) -> usize {
+    pub(crate) fn descriptors_addr_phys(&self) -> usize {
         self.descriptors.base_addr_phys()
     }
 
-    pub fn driver_ring_addr_phys(&self) -> usize {
+    pub(crate) fn driver_ring_addr_phys(&self) -> usize {
         self.driver_ring.base_addr_phys()
     }
 
-    pub fn device_ring_addr_phys(&self) -> usize {
+    pub(crate) fn device_ring_addr_phys(&self) -> usize {
         self.device_ring.base_addr_phys()
     }
 
@@ -217,15 +219,24 @@ impl<'a> VirtQueue<'a> {
     }
 }
 
+/// The type returned by [`VirtQueue::send_recv`]. This is distinct from the usual `Result` type in
+/// that it allows for a middle ground between success and failure, where the caller should just
+/// retry the operation at a later time.
 #[derive(Debug)]
 pub enum SendRecvResult<O, R, E> {
+    /// Indicates success.
     Ok(O),
+    /// Indicates a recoverable failure.
     Retry(R),
+    /// Indicates an unrecoverable failure.
     Err(E)
 }
 
 bitflags! {
+    /// The flags that can be stored in the driver ring.
     pub struct DriverFlags: u16 {
+        /// Indicates that the driver does not require an interrupt from the device to notify it
+        /// when buffers are consumed.
         const NO_INTERRUPT = 0x0001;
     }
 }
@@ -719,5 +730,30 @@ impl UsedElem {
 
     fn len(&self, legacy: bool) -> u32 {
         u32::from_device_endian(unsafe { (&self.len as *const u32).read_volatile() }, legacy)
+    }
+}
+
+/// A response from the device.
+#[derive(Debug)]
+pub struct Response<T: ?Sized> {
+    buffer: PhysBox<T>,
+    valid_bytes: usize // The number of bytes from the beginning of `*buffer` that are defined
+}
+
+impl<T: ?Sized> Response<T> {
+    /// Returns the contents of the response. Note that some bytes at the end may be undefined.
+    pub fn buffer(&self) -> &PhysBox<T> {
+        &self.buffer
+    }
+
+    /// Returns the contents of the response. Note that some bytes at the end may be undefined.
+    pub fn buffer_mut(&mut self) -> &mut PhysBox<T> {
+        &mut self.buffer
+    }
+
+    /// Returns the number of bytes that were actually written by the device. Any bytes after these
+    /// are undefined.
+    pub const fn valid_bytes(&self) -> usize {
+        self.valid_bytes
     }
 }

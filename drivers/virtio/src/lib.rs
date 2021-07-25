@@ -25,6 +25,7 @@
 extern crate alloc;
 
 use {
+    alloc::vec::Vec,
     core::{
         convert::TryInto,
         fmt,
@@ -38,7 +39,7 @@ use {
     self::virtqueue::{VirtQueue, DriverFlags}
 };
 
-mod virtqueue;
+pub mod virtqueue;
 
 /// Initializes the given device.
 pub fn init<'a>(
@@ -129,6 +130,7 @@ fn init_mmio<'a>(
 
     // Initialize the virtqueues.
     let page_size;
+    let mut virtqueues = Vec::new();
     if legacy {
         page_size = syscall::memory_page_size();
         regs.legacy_set_guest_page_size(
@@ -167,6 +169,7 @@ fn init_mmio<'a>(
             regs.set_queue_device_area(queue.device_ring_addr_phys().try_into().unwrap());
             regs.set_queue_ready(true);
         }
+        virtqueues.push(queue);
     }
 
     regs.or_status(DeviceStatus::DRIVER_OK);
@@ -174,7 +177,8 @@ fn init_mmio<'a>(
     Ok(DeviceDetails {
         legacy,
         features,
-        configuration_space
+        configuration_space,
+        virtqueues
     })
 }
 
@@ -429,7 +433,8 @@ bitflags! {
 pub struct DeviceDetails<'a> {
     legacy:              bool,
     features:            u64,
-    configuration_space: &'a mut [u8]
+    configuration_space: &'a mut [u8],
+    virtqueues:          Vec<VirtQueue<'a>>
 }
 
 impl<'a> DeviceDetails<'a> {
@@ -447,6 +452,11 @@ impl<'a> DeviceDetails<'a> {
     /// byte slice.
     pub fn configuration_space(&mut self) -> &mut [u8] {
         self.configuration_space
+    }
+
+    /// Transfers ownership of the device's virtqueues. This can only be done once.
+    pub fn virtqueues(&mut self) -> Vec<VirtQueue<'a>> {
+        mem::replace(&mut self.virtqueues, Vec::new())
     }
 }
 
