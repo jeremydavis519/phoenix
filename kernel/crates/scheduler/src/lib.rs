@@ -133,7 +133,7 @@ pub fn run(mut thread_queue: ThreadQueue<File>) -> ! {
                 },
                 ThreadStatus::Terminated => {
                     // Remove the terminated thread.
-                    printlndebug!("Terminating thread {:x}", thread_queue[i].id());
+                    printlndebug!("Terminating thread {:#x}", thread_queue[i].id());
                     priority_sum -= u32::from(thread_queue.swap_remove(i).priority);
                 }
             };
