@@ -34,6 +34,7 @@
 use {
     core::{
         alloc::{Layout, Allocator, AllocError},
+        any::type_name,
         mem,
         num::NonZeroUsize,
         ptr::{self, NonNull}
@@ -60,8 +61,14 @@ impl AllMemAlloc {
     ///         the reserved block.
     ///   * `Err(AllocErr)` on failure.
     pub fn reserve<T>(&self, base: usize, size: usize) -> Result<Block<T>, AllocError> {
-        assert_eq!(base % mem::align_of::<T>(), 0);
-        assert_eq!(size % mem::size_of::<T>(), 0);
+        assert_eq!(
+            base % mem::align_of::<T>(), 0,
+            "base = {:#x}, align of {} = {:#x}", base, type_name::<T>(), mem::align_of::<T>()
+        );
+        assert_eq!(
+            size % mem::size_of::<T>(), 0,
+            "size = {:#x}, size of {} = {:#x}", size, type_name::<T>(), mem::size_of::<T>()
+        );
 
         let node = if let Some(size) = NonZeroUsize::new(size) {
             Some(heap::reserve(PhysPtr::<u8, *const _>::from_addr_phys(base), size)?)
@@ -79,8 +86,14 @@ impl AllMemAlloc {
     ///         the reserved block.
     ///   * `Err(AllocErr)` on failure.
     pub fn reserve_mut<T>(&self, base: usize, size: usize) -> Result<BlockMut<T>, AllocError> {
-        assert_eq!(base % mem::align_of::<T>(), 0);
-        assert_eq!(size % mem::size_of::<T>(), 0);
+        assert_eq!(
+            base % mem::align_of::<T>(), 0,
+            "base = {:#x}, align of {} = {:#x}", base, type_name::<T>(), mem::align_of::<T>()
+        );
+        assert_eq!(
+            size % mem::size_of::<T>(), 0,
+            "size = {:#x}, size of {} = {:#x}", size, type_name::<T>(), mem::size_of::<T>()
+        );
 
         let node = if let Some(size) = NonZeroUsize::new(size) {
             Some(heap::reserve_mut(PhysPtr::<u8, *mut _>::from_addr_phys(base), size)?)
@@ -98,8 +111,14 @@ impl AllMemAlloc {
     ///         the reserved block.
     ///   * `Err(AllocErr)` on failure.
     pub fn mmio_mut<T>(&self, base: usize, size: usize) -> Result<Mmio<T>, AllocError> {
-        assert_eq!(base % mem::align_of::<T>(), 0);
-        assert_eq!(size % mem::size_of::<T>(), 0);
+        assert_eq!(
+            base % mem::align_of::<T>(), 0,
+            "base = {:#x}, align of {} = {:#x}", base, type_name::<T>(), mem::align_of::<T>()
+        );
+        assert_eq!(
+            size % mem::size_of::<T>(), 0,
+            "size = {:#x}, size of {} = {:#x}", size, type_name::<T>(), mem::size_of::<T>()
+        );
 
         let node = if let Some(size) = NonZeroUsize::new(size) {
             Some(heap::reserve_mmio(PhysPtr::<u8, *mut _>::from_addr_phys(base), size)?)
@@ -117,8 +136,14 @@ impl AllMemAlloc {
     ///         the reserved block.
     ///   * `Err(AllocErr)` on failure.
     pub fn malloc<T>(&self, size: usize, align: NonZeroUsize) -> Result<BlockMut<T>, AllocError> {
-        assert_eq!(align.get() % mem::align_of::<T>(), 0);
-        assert_eq!(size % mem::size_of::<T>(), 0);
+        assert_eq!(
+            align.get() % mem::align_of::<T>(), 0,
+            "align = {:#x}, align of {} = {:#x}", align.get(), type_name::<T>(), mem::align_of::<T>()
+        );
+        assert_eq!(
+            size % mem::size_of::<T>(), 0,
+            "size = {:#x}, size of {} = {:#x}", size, type_name::<T>(), mem::size_of::<T>()
+        );
 
         let (base, node) = if let Some(size) = NonZeroUsize::new(size) {
             let (ptr, node) = heap::malloc(size, align)?;
@@ -140,8 +165,14 @@ impl AllMemAlloc {
     ///         the reserved block.
     ///   * `Err(AllocErr)` on failure.
     pub fn malloc_low<T>(&self, size: usize, align: NonZeroUsize, max_bits: usize) -> Result<BlockMut<T>, AllocError> {
-        assert_eq!(align.get() % mem::align_of::<T>(), 0);
-        assert_eq!(size % mem::size_of::<T>(), 0);
+        assert_eq!(
+            align.get() % mem::align_of::<T>(), 0,
+            "align = {:#x}, align of {} = {:#x}", align.get(), type_name::<T>(), mem::align_of::<T>()
+        );
+        assert_eq!(
+            size % mem::size_of::<T>(), 0,
+            "size = {:#x}, size of {} = {:#x}", size, type_name::<T>(), mem::size_of::<T>()
+        );
 
         if max_bits < mem::size_of::<usize>() * 8 && align.get() > (1 << max_bits) {
             // There's nothing we could return with this alignment besides null!
