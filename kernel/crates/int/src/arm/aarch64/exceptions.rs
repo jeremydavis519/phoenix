@@ -409,6 +409,11 @@ fn handle_permission_fault(thread: Option<&Thread<File>>, exc_level: ExceptionLe
     // TODO: Send a signal or something instead of just directly printing this message (although we
     // might want to keep printing this from the kernel anyway).
     // TODO: Internationalize.
+    let sp_el0: u64;
+    unsafe {
+        asm!("mrs {}, SP_EL0", out(reg) sp_el0, options(nomem, preserves_flags, nostack));
+    }
     printlndebug!("killing thread: permission fault occurred accessing address {:#018x}: ISS = {:#010x}", fault_address, iss.bits());
+    printlndebug!("  SP_EL0 = {:#010x}", sp_el0);
     Response::leave_userspace(ThreadStatus::Terminated)
 }
