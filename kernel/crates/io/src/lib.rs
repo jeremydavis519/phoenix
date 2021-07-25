@@ -22,7 +22,6 @@
 #![no_std]
 
 #![feature(allocator_api)]
-#![feature(const_fn)]
 
 #![deny(warnings, missing_docs)]
 

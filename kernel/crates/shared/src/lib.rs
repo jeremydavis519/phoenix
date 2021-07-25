@@ -30,10 +30,9 @@
 #![feature(asm)]
 #![feature(unsize)]
 #![feature(coerce_unsized)]
-#![feature(const_fn)]
+#![feature(const_fn_trait_bound)]
 #![feature(const_ptr_offset)]
 #![feature(const_raw_ptr_deref)]
-#![feature(const_str_from_utf8_unchecked)]
 
 #![deny(warnings, missing_docs)]
 

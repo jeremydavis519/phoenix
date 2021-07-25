@@ -24,7 +24,7 @@
 #![deny(warnings, missing_docs)]
 
 #![feature(allocator_api)]
-#![feature(const_fn)]
+#![feature(const_fn_trait_bound)]
 
 extern crate alloc;
 

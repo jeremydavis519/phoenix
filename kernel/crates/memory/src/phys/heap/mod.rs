@@ -844,7 +844,7 @@ mod tests {
             );
 
             // Initialize the map now so we get proper output on stdout.
-            &*MAP;
+            let _ = &*MAP;
 
             // Set up the pseudorandom number generator.
             let seed = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)

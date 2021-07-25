@@ -16,10 +16,15 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-use core::convert::TryFrom;
-use core::mem::size_of;
-use i18n::Text;
-use super::error::ElfParseError;
+use {
+    core::{
+        convert::TryFrom,
+        mem::size_of,
+        ptr
+    },
+    i18n::Text,
+    super::error::ElfParseError
+};
 
 //
 // ---------- ELF Header ----------
@@ -132,12 +137,12 @@ impl From<ElfHeaderEx32> for ElfHeaderEx64 {
 
 impl ElfHeaderEx32 {
     pub(crate) fn validate(&self) -> Result<(), ElfParseError> {
-        ElfType::validate(unsafe { *(&self.file_type as *const _ as *const u16) })?;
-        Arch::validate(unsafe { *(&self.target_arch as *const _ as *const u16) })?;
+        ElfType::validate(unsafe { *(ptr::addr_of!(self.file_type) as *const u16) })?;
+        Arch::validate(unsafe { *(ptr::addr_of!(self.target_arch) as *const u16) })?;
         if self.elf_version != 1 {
             return Err(ElfParseError::new(Text::ElfUnsupportedVersion(self.elf_version)));
         }
-        ElfFlags::validate(unsafe { *(&self.flags as *const _ as *const u32) })?;
+        ElfFlags::validate(unsafe { *(ptr::addr_of!(self.flags) as *const u32) })?;
         if (self.eh_size as usize) < 16 + size_of::<ElfHeaderEx32>() {
             return Err(ElfParseError::new(Text::ElfHeaderTooSmall(16 + size_of::<ElfHeaderEx32>(), self.eh_size)));
         }
@@ -154,12 +159,12 @@ impl ElfHeaderEx32 {
 
 impl ElfHeaderEx64 {
     pub(crate) fn validate(&self) -> Result<(), ElfParseError> {
-        ElfType::validate(unsafe { *(&self.file_type as *const _ as *const u16) })?;
-        Arch::validate(unsafe { *(&self.target_arch as *const _ as *const u16) })?;
+        ElfType::validate(unsafe { *(ptr::addr_of!(self.file_type) as *const u16) })?;
+        Arch::validate(unsafe { *(ptr::addr_of!(self.target_arch) as *const u16) })?;
         if self.elf_version != 1 {
             return Err(ElfParseError::new(Text::ElfUnsupportedVersion(self.elf_version)));
         }
-        ElfFlags::validate(unsafe { *(&self.flags as *const _ as *const u32) })?;
+        ElfFlags::validate(unsafe { *(ptr::addr_of!(self.flags) as *const u32) })?;
         if (self.eh_size as usize) < 16 + size_of::<ElfHeaderEx64>() {
             return Err(ElfParseError::new(Text::ElfHeaderTooSmall(16 + size_of::<ElfHeaderEx64>(), self.eh_size)));
         }
@@ -453,8 +458,8 @@ impl From<ProgramHeaderEntry32> for ProgramHeaderEntry64 {
 
 impl ProgramHeaderEntry32 {
     pub(crate) fn validate(&self) -> Result<(), ElfParseError> {
-        SegmentType::validate(unsafe { *(&self.seg_type as *const _ as *const u32) })?;
-        SegmentFlags::validate(unsafe { *(&self.flags as *const _ as *const u32) })?;
+        SegmentType::validate(unsafe { *(ptr::addr_of!(self.seg_type) as *const u32) })?;
+        SegmentFlags::validate(unsafe { *(ptr::addr_of!(self.flags) as *const u32) })?;
 
         // The alignment should be 0 or a power of 2.
         if self.align.count_ones() > 1 {
@@ -475,8 +480,8 @@ impl ProgramHeaderEntry32 {
 
 impl ProgramHeaderEntry64 {
     pub(crate) fn validate(&self) -> Result<(), ElfParseError> {
-        SegmentType::validate(unsafe { *(&self.seg_type as *const _ as *const u32) })?;
-        SegmentFlags::validate(unsafe { *(&self.flags as *const _ as *const u32) })?;
+        SegmentType::validate(unsafe { *(ptr::addr_of!(self.seg_type) as *const u32) })?;
+        SegmentFlags::validate(unsafe { *(ptr::addr_of!(self.flags) as *const u32) })?;
 
         // The alignment should be 0 or a power of 2.
         if self.align.count_ones() > 1 {

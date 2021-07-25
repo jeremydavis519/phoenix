@@ -7,6 +7,5 @@
     "target-c-int-width": "32",
     "arch": "aarch64",
     "os": "none",
-    "panic-strategy": "abort",
-    "eliminate-frame-pointer": "false"
+    "panic-strategy": "abort"
 }
