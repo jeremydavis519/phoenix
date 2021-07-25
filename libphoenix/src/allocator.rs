@@ -31,14 +31,14 @@
 use {
     alloc::alloc::{Layout, GlobalAlloc, AllocError},
     core::{
+        future::Future,
         mem,
         ops::{Deref, DerefMut},
-        ptr
+        pin::Pin,
+        ptr,
+        task::{Context, Poll, RawWaker, RawWakerVTable, Waker}
     },
-    crate::{
-        future::SysCallExecutor,
-        syscall::{self, VirtPhysAddr}
-    }
+    crate::syscall
 };
 
 #[cfg(feature = "global-allocator")]
@@ -54,16 +54,13 @@ impl Allocator {
     ///
     /// See [`memory_alloc_phys`](crate::syscall::memory_alloc_phys) for more details.
     pub fn malloc_phys<T>(&self, max_bits: usize) -> Result<PhysBox<T>, AllocError> {
-        let mut addr = VirtPhysAddr::null();
-        SysCallExecutor::new()
-            .spawn(async {
-                addr = syscall::memory_alloc_phys(
-                    mem::size_of::<T>(),
-                    mem::align_of::<T>(),
-                    max_bits
-                ).await;
-            })
-            .block_on_all();
+        let addr = eval_syscall_future(
+            syscall::memory_alloc_phys(
+                mem::size_of::<T>(),
+                mem::align_of::<T>(),
+                max_bits
+            )
+        );
 
         if addr.is_null() {
             Err(AllocError)
@@ -79,16 +76,13 @@ impl Allocator {
     ///
     /// See [`memory_alloc_phys`](crate::syscall::memory_alloc_phys) for more details.
     pub fn malloc_phys_array<T>(&self, len: usize, max_bits: usize) -> Result<PhysBox<[T]>, AllocError> {
-        let mut addr = VirtPhysAddr::null();
-        SysCallExecutor::new()
-            .spawn(async {
-                addr = syscall::memory_alloc_phys(
-                    mem::size_of::<T>() * len,
-                    mem::align_of::<T>(),
-                    max_bits
-                ).await;
-            })
-            .block_on_all();
+        let addr = eval_syscall_future(
+            syscall::memory_alloc_phys(
+                mem::size_of::<T>() * len,
+                mem::align_of::<T>(),
+                max_bits
+            )
+        );
 
         if addr.is_null() {
             Err(AllocError)
@@ -104,16 +98,13 @@ impl Allocator {
     ///
     /// See [`memory_alloc_phys`](crate::syscall::memory_alloc_phys) for more details.
     pub fn malloc_phys_bytes(&self, size: usize, align: usize, max_bits: usize) -> Result<PhysBox<[u8]>, AllocError> {
-        let mut addr = VirtPhysAddr::null();
-        SysCallExecutor::new()
-            .spawn(async {
-                addr = syscall::memory_alloc_phys(
-                    size,
-                    align,
-                    max_bits
-                ).await;
-            })
-            .block_on_all();
+        let addr = eval_syscall_future(
+            syscall::memory_alloc_phys(
+                size,
+                align,
+                max_bits
+            )
+        );
 
         if addr.is_null() {
             Err(AllocError)
@@ -131,24 +122,17 @@ unsafe impl GlobalAlloc for Allocator {
         // FIXME: This is extremely wasteful, as the kernel can't give us anything smaller than
         // a page, and it can also take a while. Instead, allocate a buffer from the kernel and use
         // that for multiple allocations until it's full.
-        let mut addr = 0;
-        SysCallExecutor::new()
-            .spawn(async {
-                addr = syscall::memory_alloc(
-                    layout.size(),
-                    layout.align()
-                ).await;
-            })
-            .block_on_all();
+        let addr = eval_syscall_future(
+            syscall::memory_alloc(
+                layout.size(),
+                layout.align()
+            )
+        );
         addr as *mut u8
     }
     
     unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
-        SysCallExecutor::new()
-            .spawn(async {
-                syscall::memory_free(ptr as usize).await;
-            })
-            .block_on_all();
+        eval_syscall_future(syscall::memory_free(ptr as usize));
     }
 }
 
@@ -205,4 +189,28 @@ impl<T: ?Sized> Drop for PhysBox<T> {
             Allocator.dealloc(self.ptr as *mut u8, Layout::for_value_raw(self.ptr));
         }
     }
+}
+
+fn eval_syscall_future<F, T>(mut future: F) -> T
+        where F: Future<Output = T> {
+    let waker = unsafe { Waker::from_raw(raw_waker()) };
+    let mut cx = Context::from_waker(&waker);
+    loop {
+        match unsafe { Pin::new_unchecked(&mut future).poll(&mut cx) } {
+            Poll::Ready(val) => return val,
+            Poll::Pending => syscall::thread_wait()
+        };
+    }
+}
+
+fn raw_waker() -> RawWaker {
+    RawWaker::new(
+        ptr::null(),
+        &RawWakerVTable::new(
+            |_| raw_waker(), // unsafe fn clone(_: *const ()) -> RawWaker
+            |_| {},          // unsafe fn wake(_: *const ())
+            |_| {},          // unsafe fn wake_by_ref(_: *const ())
+            |_| {}           // unsafe fn drop(_: *const ())
+        )
+    )
 }
