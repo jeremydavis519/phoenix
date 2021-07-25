@@ -167,6 +167,22 @@ impl<T: ?Sized> PhysBox<T> {
     pub fn addr_phys(&self) -> usize {
         self.phys
     }
+
+    /// Consumes the box without freeing any memory and returns a raw pointer to the boxed value and
+    /// its physical address. These should be passed to [`from_raw`] later in order to avoid a
+    /// memory leak.
+    pub fn into_raw(boxed: Self) -> (*mut T, usize) {
+        let raw = (boxed.ptr, boxed.phys);
+        mem::forget(boxed);
+        raw
+    }
+
+    /// Takes a raw pointer and physical address previously returned by [`into_raw`] and converts
+    /// them back into a box. It is undefined behavior to dereference the raw pointer after calling
+    /// this method.
+    pub fn from_raw(ptr: *mut T, phys: usize) -> Self {
+        Self { ptr, phys }
+    }
 }
 
 impl<T: ?Sized> Deref for PhysBox<T> {
