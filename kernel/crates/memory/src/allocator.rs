@@ -65,8 +65,8 @@ impl AllMemAlloc {
             base % mem::align_of::<T>(), 0,
             "base = {:#x}, align of {} = {:#x}", base, type_name::<T>(), mem::align_of::<T>()
         );
-        assert_eq!(
-            size % mem::size_of::<T>(), 0,
+        assert!(
+            size >= mem::size_of::<T>(),
             "size = {:#x}, size of {} = {:#x}", size, type_name::<T>(), mem::size_of::<T>()
         );
 
@@ -90,8 +90,8 @@ impl AllMemAlloc {
             base % mem::align_of::<T>(), 0,
             "base = {:#x}, align of {} = {:#x}", base, type_name::<T>(), mem::align_of::<T>()
         );
-        assert_eq!(
-            size % mem::size_of::<T>(), 0,
+        assert!(
+            size >= mem::size_of::<T>(),
             "size = {:#x}, size of {} = {:#x}", size, type_name::<T>(), mem::size_of::<T>()
         );
 
@@ -115,8 +115,8 @@ impl AllMemAlloc {
             base % mem::align_of::<T>(), 0,
             "base = {:#x}, align of {} = {:#x}", base, type_name::<T>(), mem::align_of::<T>()
         );
-        assert_eq!(
-            size % mem::size_of::<T>(), 0,
+        assert!(
+            size >= mem::size_of::<T>(),
             "size = {:#x}, size of {} = {:#x}", size, type_name::<T>(), mem::size_of::<T>()
         );
 
@@ -140,8 +140,8 @@ impl AllMemAlloc {
             align.get() % mem::align_of::<T>(), 0,
             "align = {:#x}, align of {} = {:#x}", align.get(), type_name::<T>(), mem::align_of::<T>()
         );
-        assert_eq!(
-            size % mem::size_of::<T>(), 0,
+        assert!(
+            size >= mem::size_of::<T>(),
             "size = {:#x}, size of {} = {:#x}", size, type_name::<T>(), mem::size_of::<T>()
         );
 
@@ -169,8 +169,8 @@ impl AllMemAlloc {
             align.get() % mem::align_of::<T>(), 0,
             "align = {:#x}, align of {} = {:#x}", align.get(), type_name::<T>(), mem::align_of::<T>()
         );
-        assert_eq!(
-            size % mem::size_of::<T>(), 0,
+        assert!(
+            size >= mem::size_of::<T>(),
             "size = {:#x}, size of {} = {:#x}", size, type_name::<T>(), mem::size_of::<T>()
         );
 
