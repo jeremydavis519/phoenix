@@ -177,7 +177,7 @@ pub enum ExitAction {
     // Execute an ERET instruction as would normally be done.
     Eret = 0,
     // Leave userspace and execute a context switch. This action is meaningless if the exception
-    // wasn't taken from userspace, so returning it is undefined behavior.
+    // wasn't taken from userspace, so returning it is undefined behavior in that case.
     LeaveUserspace = 1
 }
 
