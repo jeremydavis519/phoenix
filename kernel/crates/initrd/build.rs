@@ -23,8 +23,9 @@
 use std::{
     collections::HashMap,
     env,
+    fmt,
     fs,
-    io::{self, BufWriter, Error, ErrorKind, Read, Write},
+    io::{self, BufWriter, Error, ErrorKind, Write},
     path::PathBuf
 };
 
@@ -53,15 +54,18 @@ fn main() {
     };
 }
 
-fn make_initrd(target: &str) -> io::Result<InitRDDirBuilder> {
+fn make_initrd(target: &str) -> io::Result<InitrdDirBuilder> {
     let mut path = PathBuf::from(CONTENTS_PATH);
+    let blob_path = PathBuf::from(env::var("OUT_DIR")
+        .expect("unknown output directory (OUT_DIR is not set)"))
+        .join("initrd.blob");
 
     let subpath = path.join("initrd");
     let subpath_str = subpath.to_str().expect("non-UTF-8 path");
     println!("cargo:rerun-if-changed={}", subpath_str);
     let mut root = if let Ok(initrd_dir) = subpath.read_dir() {
         // Handle the most general layer before narrowing down on a target.
-        make_initrd_piece(initrd_dir)?
+        make_initrd_piece(initrd_dir, blob_path.clone())?
     } else {
         // This directory doesn't exist yet. Make it so Cargo can keep track of its changes.
         // (Otherwise, it will assume the directory was deleted and will run this build script
@@ -72,7 +76,7 @@ fn make_initrd(target: &str) -> io::Result<InitRDDirBuilder> {
             Ok(()) => {},
             Err(e) => println!("cargo:warning=failed to create directory `{}`: {}", subpath_str, e)
         };
-        InitRDDirBuilder::new()
+        InitrdDirBuilder::new(blob_path.clone())
     };
     for target_piece in target.split('/') {
         path.push(target_piece);
@@ -81,7 +85,7 @@ fn make_initrd(target: &str) -> io::Result<InitRDDirBuilder> {
         let subpath_str = subpath.to_str().expect("non-UTF-8 path");
         println!("cargo:rerun-if-changed={}", subpath_str);
         if let Ok(initrd_dir) = subpath.read_dir() {
-            root = merge_initrd_pieces(root, make_initrd_piece(initrd_dir)?);
+            root = merge_initrd_pieces(root, make_initrd_piece(initrd_dir, blob_path.clone())?);
         } else {
             // This directory doesn't exist yet. Make it so Cargo can keep track of its changes.
             // (Otherwise, it will assume the directory was deleted and will run this build script
@@ -98,13 +102,13 @@ fn make_initrd(target: &str) -> io::Result<InitRDDirBuilder> {
     Ok(root)
 }
 
-fn make_initrd_piece(dir: fs::ReadDir) -> io::Result<InitRDDirBuilder> {
-    let mut root = InitRDDirBuilder::new();
+fn make_initrd_piece(dir: fs::ReadDir, blob_path: PathBuf) -> io::Result<InitrdDirBuilder> {
+    let mut root = InitrdDirBuilder::new(blob_path.clone());
 
     for entry in dir {
         let entry = entry?;
         if entry.file_type()?.is_dir() {
-            let mut subdir = make_initrd_piece(entry.path().read_dir()?)?;
+            let mut subdir = make_initrd_piece(entry.path().read_dir()?, blob_path.clone())?;
             subdir.name = entry.file_name().into_string()
                 .map_err(|name| Error::new(ErrorKind::InvalidData,
                     format!("filename `{}` cannot be converted to UTF-8", name.to_string_lossy())))?;
@@ -120,7 +124,7 @@ fn make_initrd_piece(dir: fs::ReadDir) -> io::Result<InitRDDirBuilder> {
     Ok(root)
 }
 
-fn merge_initrd_pieces(general: InitRDDirBuilder, mut specific: InitRDDirBuilder) -> InitRDDirBuilder {
+fn merge_initrd_pieces(general: InitrdDirBuilder, mut specific: InitrdDirBuilder) -> InitrdDirBuilder {
     let mut merged = general;
 
     for (name, subdir_spec) in specific.subdirs.drain() {
@@ -141,8 +145,11 @@ fn merge_initrd_pieces(general: InitRDDirBuilder, mut specific: InitRDDirBuilder
     merged
 }
 
-fn write_initrd(file: fs::File, root: InitRDDirBuilder) -> io::Result<()> {
+fn write_initrd(file: fs::File, root: InitrdDirBuilder) -> io::Result<()> {
     let mut writer = BufWriter::new(file);
+
+    // Make sure the blob file is empty before appending to it.
+    fs::File::create(root.blob_path.clone())?;
 
     write!(writer,
 r#"// This file was automatically generated and should *not* be modified by hand. Instead, modify the
@@ -151,35 +158,40 @@ r#"// This file was automatically generated and should *not* be modified by hand
 /// The root directory of the initial RAM disk. See the module documentation for details on how to
 /// use it.
 pub static ROOT: Directory = {};
-"#, root.build_directory_code()?)
+"#, root)
 }
 
-struct InitRDDirBuilder {
+struct InitrdDirBuilder {
     name: String,
-    subdirs: HashMap<String, InitRDDirBuilder>,
-    files: HashMap<String, fs::DirEntry>
+    subdirs: HashMap<String, InitrdDirBuilder>,
+    files: HashMap<String, fs::DirEntry>,
+    blob_path: PathBuf
 }
 
-impl InitRDDirBuilder {
-    pub fn new() -> Self {
-        Self { name: String::from(""), subdirs: HashMap::new(), files: HashMap::new() }
+impl InitrdDirBuilder {
+    fn new(blob_path: PathBuf) -> Self {
+        Self { name: String::from(""), subdirs: HashMap::new(), files: HashMap::new(), blob_path }
     }
+}
 
-    /// Finishes building the directory by reading all the files it should contain and returns the
+impl fmt::Display for InitrdDirBuilder {
+    /// Finishes building the directory by reading all the files it should contain and outputs the
     /// Rust code that will represent it.
-    fn build_directory_code(&self) -> io::Result<String> {
-        Ok(format!("Directory{{name:\"{}\",subdirs:&[{}],files:&[{}]}}",
-            self.name.chars().flat_map(|c| c.escape_default()).collect::<String>(),
-            self.subdirs.values().map(|d| d.build_directory_code()).collect::<io::Result<String>>()?,
-            self.files.iter().map(|(name, dir_entry)| {
-                let mut file = fs::File::open(dir_entry.path())?;
-                let mut contents = Vec::new();
-                file.read_to_end(&mut contents)?;
-                Ok(format!("File{{name:\"{}\",contents:&[{}]}},",
-                    name,
-                    contents.iter().map(|b| format!("{},", b)).collect::<String>()
-                ))
-            }).collect::<io::Result<String>>()?
-        ))
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Directory{{name:\"{}\",subdirs:&[", self.name)?;
+        for subdir in self.subdirs.values() {
+            write!(f, "{},", subdir)?;
+        }
+        write!(f, "],files:&[")?;
+        for (name, dir_entry) in self.files.iter() {
+            write!(f, "File{{name:\"{}\",contents:include_bytes!(\"{}\")}},",
+                name,
+                dir_entry.path()
+                    .canonicalize()
+                    .map_err(|_| fmt::Error)?
+                    .display()
+            )?;
+        }
+        write!(f, "]}}")
     }
 }
