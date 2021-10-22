@@ -32,8 +32,8 @@ use {
 pub struct File {
     handle: Field,
     cursor: u64,
-    is_tty: bool,
-    mode: FileMode
+    _is_tty: bool,
+    _mode: FileMode
 }
 
 /// The mode under which a file is to be opened.
@@ -90,8 +90,8 @@ impl File {
             handle => Ok(File {
                 handle,
                 cursor: 0,
-                is_tty: path == c_str!(":tt"),
-                mode
+                _is_tty: path == c_str!(":tt"),
+                _mode: mode
             })
         }
     }

@@ -166,7 +166,7 @@ fn read_interpreter(mut file: File, interpreted: Option<File>) -> io::Result<Exe
 
     Ok(ExecImage {
         reader: Mutex::new(file),
-        interpreted,
+        _interpreted: interpreted,
         entry_point,
         page_table,
         segments

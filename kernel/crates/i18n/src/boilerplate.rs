@@ -140,7 +140,7 @@ macro_rules! boilerplate {
     ) => {
         unreachable_debug!(
             "This is the unconditional branch after an exhaustive series of conditional branches on text variants."
-        );
+        )
     };
 
     (
@@ -184,7 +184,7 @@ macro_rules! boilerplate {
     ) => {
         unreachable_debug!(
             "This is the unconditional branch after an exhaustive series of conditional branches on language variants."
-        );
+        )
     };
 
     (

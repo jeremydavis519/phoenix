@@ -285,7 +285,7 @@ pub(crate) fn thread_spawn(entry_point: fn(), priority: u8, stack_size: usize) -
             options(nomem, nostack, preserves_flags)
         );
     }
-    Thread { handle }
+    Thread { _handle: handle }
 }
 
 /// Waits until an asynchronous system call is finished.

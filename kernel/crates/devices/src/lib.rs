@@ -26,8 +26,6 @@
 
 #![deny(warnings, missing_docs)]
 
-#![feature(try_reserve)]
-
 extern crate alloc;
 
 use {

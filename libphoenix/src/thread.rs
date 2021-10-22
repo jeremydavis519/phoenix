@@ -23,7 +23,7 @@ use super::syscall;
 /// An object that represents a thread.
 #[derive(Debug)]
 pub struct Thread {
-    pub(crate) handle: usize
+    pub(crate) _handle: usize
 }
 
 impl Thread {

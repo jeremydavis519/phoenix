@@ -46,7 +46,7 @@ pub struct Block<T> {
     size: usize,
 
     /// An object that will free this block when dropped, or `None` for a zero-sized block.
-    allocation: Option<Allocation>
+    _allocation: Option<Allocation>
 }
 
 /// The same as `Block`, except that the contents of the block are mutable.
@@ -60,7 +60,7 @@ pub struct BlockMut<T> {
     size: usize,
 
     /// An object that will free this block when dropped, or `None` for a zero-sized block.
-    allocation: Option<Allocation>
+    _allocation: Option<Allocation>
 }
 
 /// A block of physical memory that is specifically for memory-mapped I/O rather than actual
@@ -78,7 +78,7 @@ pub struct Mmio<T> {
     size: usize,
 
     /// An object that will free this block when dropped, or `None` for a zero-sized block.
-    allocation: Option<Allocation>
+    _allocation: Option<Allocation>
 }
 
 unsafe impl<T> Sync for Block<T> {}
@@ -99,7 +99,7 @@ macro_rules! impl_phys_block_common {
                 $generic {
                     base,
                     size,
-                    allocation
+                    _allocation: allocation
                 }
             }
 
@@ -142,7 +142,7 @@ impl_phys_block_common!(Mmio, mut);
 
 impl<T> From<BlockMut<T>> for Block<T> {
     fn from(mut block: BlockMut<T>) -> Block<T> {
-        let allocation = mem::replace(&mut block.allocation, None);
+        let allocation = mem::replace(&mut block._allocation, None);
         Block::new(PhysPtr::<_, *const _>::from_addr_phys(block.base.as_addr_phys()), block.size, allocation)
     }
 }

@@ -266,8 +266,8 @@ pub struct Thread<T: Read+Seek> {
 
     priority: u8,              // The thread's priority. A higher value means longer time slices.
 
-    stack_empty_ptr: usize,    // The highest address on the stack (i.e. the value of SP when the stack is empty)
-    max_stack_size: usize,     // The stack's logical size, even though we initially allocate less
+    _stack_empty_ptr: usize,   // The highest address on the stack (i.e. the value of SP when the stack is empty)
+    _max_stack_size: usize,    // The stack's logical size, even though we initially allocate less
     spsr: u64,                 // Saved Program Status Register (a snapshot of PSTATE)
     elr: usize,                // Exception Link Register (where the thread will start or continue running)
 
@@ -346,8 +346,8 @@ impl<T: Read+Seek> Thread<T> {
             wake_time: SystemTime::UNIX_EPOCH,
             exec_image,
             priority,
-            stack_empty_ptr,
-            max_stack_size,
+            _stack_empty_ptr: stack_empty_ptr,
+            _max_stack_size: max_stack_size,
             spsr: 0, // TODO: This might not be 0 for a new Aarch32 thread.
             elr: entry_point,
             register_store: Self::initial_register_store(stack_empty_ptr)

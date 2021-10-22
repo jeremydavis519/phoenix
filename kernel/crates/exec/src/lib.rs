@@ -65,7 +65,7 @@ pub use segment::*;
 #[derive(Debug)]
 pub struct ExecImage<T: Read+Seek> {
     reader: Mutex<T>,
-    interpreted: Option<T>, // If `Some`, this file is an interpreter and needs to be given this reader.
+    _interpreted: Option<T>, // If `Some`, this file is an interpreter and needs to be given this reader.
     /// The virtual address of the program's entry point.
     pub entry_point: usize,
     page_table: Arc<BlockMut<RootPageTable>>,

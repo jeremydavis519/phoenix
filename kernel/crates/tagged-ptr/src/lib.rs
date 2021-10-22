@@ -24,8 +24,6 @@
 
 #![deny(warnings, missing_docs)]
 
-#![feature(const_panic)]
-
 use {
     core::{
         marker::PhantomData,
