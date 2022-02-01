@@ -32,9 +32,8 @@ use memory::virt::paging::{self, RootPageTable};
 ///   be well-behaved. As such, it *must never be assumed* that two bytes read from the string at
 ///   the same index but at different times will be identical.
 /// * Because we can't make that assumption, any parsing of the string has to be done one byte at a
-///   time. An API is provided to facilitate that. (If we just allowed undefined behavior when a
-///   system call argument changed its value, it would be possible for a thread to bypass our
-///   permissions checks.)
+///   time. An API is provided to facilitate that. (Trying to get around this by declaring undefined
+///   behavior would be a nightmare from a security perspective.)
 #[derive(Debug, Clone)]
 pub struct UserspaceStr<'a> {
     root_page_table: &'a RootPageTable,
