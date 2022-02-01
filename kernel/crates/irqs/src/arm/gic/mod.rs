@@ -19,7 +19,10 @@
 pub mod irq;
 
 use {
-    core::sync::atomic::{AtomicU8, Ordering},
+    core::{
+        arch::asm,
+        sync::atomic::{AtomicU8, Ordering}
+    },
     volatile::Volatile,
     bitflags::bitflags,
 

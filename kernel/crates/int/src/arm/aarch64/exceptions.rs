@@ -18,6 +18,7 @@
 
 use {
     core::{
+        arch::asm,
         convert::{TryFrom, TryInto},
         num::NonZeroUsize
     },

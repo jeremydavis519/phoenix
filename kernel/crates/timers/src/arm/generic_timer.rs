@@ -22,6 +22,7 @@
 
 use {
     core::{
+        arch::asm,
         convert::TryInto,
         mem
     },

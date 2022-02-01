@@ -20,7 +20,6 @@
 //! for scheduling, keeping track of real-world time, and anything else it might need a timer for.
 
 #![no_std]
-#![feature(asm)]
 
 #![deny(warnings, missing_docs)]
 

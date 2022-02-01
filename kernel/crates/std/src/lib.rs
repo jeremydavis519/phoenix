@@ -25,7 +25,6 @@
 #![no_std]
 
 #![feature(allocator_api)]
-#![feature(asm)]
 #![feature(lang_items)]
 
 #![deny(warnings, missing_docs)]

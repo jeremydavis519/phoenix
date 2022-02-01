@@ -22,8 +22,6 @@
 
 #![no_std]
 
-#![feature(asm)]
-
 #![deny(warnings, missing_docs)]
 
 extern crate alloc;

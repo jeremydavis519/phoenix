@@ -20,6 +20,7 @@
 
 use {
     core::{
+        arch::asm,
         fmt::Write,
         panic::PanicInfo
     },

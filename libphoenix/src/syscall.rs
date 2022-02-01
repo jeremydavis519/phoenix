@@ -19,7 +19,10 @@
 //! This module defines a function to encapsulate each system call the Phoenix kernel understands.
 
 use {
-    core::mem,
+    core::{
+        arch::asm,
+        mem
+    },
     crate::{
         future::SysCallFuture,
         thread::Thread

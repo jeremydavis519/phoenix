@@ -22,7 +22,6 @@
 
 #![no_std]
 
-#![feature(asm)]
 //#![feature(auto_traits)]
 //#![feature(allocator_api)]
 //#![feature(core_intrinsics)]

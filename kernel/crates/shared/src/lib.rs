@@ -27,12 +27,10 @@
 
 #![no_std]
 
-#![feature(asm)]
 #![feature(unsize)]
 #![feature(coerce_unsized)]
 #![feature(const_fn_trait_bound)]
 #![feature(const_ptr_offset)]
-#![feature(const_raw_ptr_deref)]
 
 #![deny(warnings, missing_docs)]
 
@@ -41,6 +39,8 @@ extern crate alloc;
 #[cfg(target_arch = "aarch64")]
 #[macro_use] extern crate bitflags;
 #[macro_use] extern crate macros_unreachable;
+
+use core::arch::asm;
 
 pub mod ffi;
 pub mod fs;

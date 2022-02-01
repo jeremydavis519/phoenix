@@ -23,7 +23,6 @@
 #![no_std]
 
 #![feature(allocator_api)]
-#![feature(asm)]
 
 #![deny(warnings, missing_docs)]
 
