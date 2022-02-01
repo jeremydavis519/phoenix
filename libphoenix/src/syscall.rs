@@ -45,11 +45,9 @@ macro_rules! define_async_syscall {
             //        memory).
             unsafe {
                 const N: usize = mem::size_of::<$ret_type>();
-                let retval_vec = SysCallFuture::from_addr::<N>(addr).await;
-                let (retval_arrays, remainder) = retval_vec.as_chunks::<N>();
-                assert_eq!(retval_arrays.len(), 1, "syscall {}: return value has the wrong size", stringify!($name));
-                assert_eq!(remainder.len(), 0, "syscall {}: return value has the wrong size", stringify!($name));
-                mem::transmute(retval_arrays[0])
+                let retval_raw = SysCallFuture::from_addr::<N>(addr).await;
+                assert_eq!(retval_raw.len(), N, "syscall {}: return value has the wrong size", stringify!($name));
+                mem::transmute(*(&*retval_raw as *const [u8] as *const [u8; N]))
             }
         }
     };
@@ -74,11 +72,9 @@ macro_rules! define_async_syscall {
             //        memory).
             unsafe {
                 const N: usize = mem::size_of::<$ret_type>();
-                let retval_vec = SysCallFuture::from_addr::<N>(addr).await;
-                let (retval_arrays, remainder) = retval_vec.as_chunks::<N>();
-                assert_eq!(retval_arrays.len(), 1, "syscall {}: return value has the wrong size", stringify!($name));
-                assert_eq!(remainder.len(), 0, "syscall {}: return value has the wrong size", stringify!($name));
-                mem::transmute(retval_arrays[0])
+                let retval_raw = SysCallFuture::from_addr::<N>(addr).await;
+                assert_eq!(retval_raw.len(), N, "syscall {}: return value has the wrong size", stringify!($name));
+                mem::transmute(*(&*retval_raw as *const [u8] as *const [u8; N]))
             }
         }
     };
@@ -106,11 +102,9 @@ macro_rules! define_async_syscall {
             //        memory).
             unsafe {
                 const N: usize = mem::size_of::<$ret_type>();
-                let retval_vec = SysCallFuture::from_addr::<N>(addr).await;
-                let (retval_arrays, remainder) = retval_vec.as_chunks::<N>();
-                assert_eq!(retval_arrays.len(), 1, "syscall {}: return value has the wrong size", stringify!($name));
-                assert_eq!(remainder.len(), 0, "syscall {}: return value has the wrong size", stringify!($name));
-                mem::transmute(retval_arrays[0])
+                let retval_raw = SysCallFuture::from_addr::<N>(addr).await;
+                assert_eq!(retval_raw.len(), N, "syscall {}: return value has the wrong size", stringify!($name));
+                mem::transmute(*(&*retval_raw as *const [u8] as *const [u8; N]))
             }
         }
     };
@@ -141,11 +135,9 @@ macro_rules! define_async_syscall {
             //        memory).
             unsafe {
                 const N: usize = mem::size_of::<$ret_type>();
-                let retval_vec = SysCallFuture::from_addr::<N>(addr).await;
-                let (retval_arrays, remainder) = retval_vec.as_chunks::<N>();
-                assert_eq!(retval_arrays.len(), 1, "syscall {}: return value has the wrong size", stringify!($name));
-                assert_eq!(remainder.len(), 0, "syscall {}: return value has the wrong size", stringify!($name));
-                mem::transmute(retval_arrays[0])
+                let retval_raw = SysCallFuture::from_addr::<N>(addr).await;
+                assert_eq!(retval_raw.len(), N, "syscall {}: return value has the wrong size", stringify!($name));
+                mem::transmute(*(&*retval_raw as *const [u8] as *const [u8; N]))
             }
         }
     };
@@ -179,11 +171,9 @@ macro_rules! define_async_syscall {
             //        memory).
             unsafe {
                 const N: usize = mem::size_of::<$ret_type>();
-                let retval_vec = SysCallFuture::from_addr::<N>(addr).await;
-                let (retval_arrays, remainder) = retval_vec.as_chunks::<N>();
-                assert_eq!(retval_arrays.len(), 1, "syscall {}: return value has the wrong size", stringify!($name));
-                assert_eq!(remainder.len(), 0, "syscall {}: return value has the wrong size", stringify!($name));
-                mem::transmute(retval_arrays[0])
+                let retval_raw = SysCallFuture::from_addr::<N>(addr).await;
+                assert_eq!(retval_raw.len(), N, "syscall {}: return value has the wrong size", stringify!($name));
+                mem::transmute(*(&*retval_raw as *const [u8] as *const [u8; N]))
             }
         }
     };
