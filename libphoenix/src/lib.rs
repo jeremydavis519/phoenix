@@ -26,6 +26,7 @@
 #![deny(warnings, missing_docs)]
 
 #![feature(allocator_api)]
+#![feature(lang_items)]
 #![feature(layout_for_ptr)]
 #![feature(panic_info_message)]
 #![feature(slice_as_chunks)]
@@ -39,63 +40,40 @@ pub mod process;
 pub mod syscall;
 pub mod thread;
 
-/// Defines the entry point of the program.
-///
-/// Since Phoenix isn't officially supported by Rust, the runtime has a really hard time understanding
-/// how to compile and link an executable file (i.e. a `bin` crate). This macro automates some of the
-/// workarounds we have to use to get it to work. Just write a `main` function like you normally would
-/// and wrap it in an invocation of this macro, after applying the `start` feature to the crate.
-///
-/// You will also have to pass `-C link-arg=--entry=main` to rustc so the linker will be able to find
-/// the entry point. That should be automatic, but for some reason it isn't. Probably because rustc
-/// thinks we're compiling for an architecture without an operating system.
-///
-/// # Example
-/// ```
-/// #![feature(start)]
-/// phoenix_main! {
-///     fn main() {
-///         println!("Hello, world!");
-///     }
-/// }
-/// ```
-#[macro_export]
-macro_rules! phoenix_main {
-    // TODO: Allow signatures with argc and argv.
+// TODO: We might need this: #[cfg(not(feature = "no_start"))]
+#[lang = "start"]
+fn lang_start<T: 'static+ProcessReturnValue>(
+    main: fn() -> T,
+    _argc: isize,
+    _argv: *const *const u8
+) -> isize {
+    let retval = main().retval();
+    syscall::process_exit(retval);
+}
 
-    ($vis:vis fn main() $(-> ())? { $($body:tt)* }) => {
-        $vis fn main() { $($body)* }
+/// A value that can be returned from `main`.
+pub trait ProcessReturnValue {
+    /// Converts the given value into something the kernel can understand.
+    ///
+    /// The value `0` is special in that it indicates a normal termination. All other
+    /// values are considered to be abnormal (e.g. caused by some error).
+    fn retval(self) -> i32;
+}
 
-        #[start]
-        fn start(_argc: isize, _argv: *const *const u8) -> isize {
-            main();
-            $crate::syscall::process_exit($crate::process::ExitCode::Success as i32);
-        }
+impl ProcessReturnValue for () {
+    fn retval(self) -> i32 { 0 }
+}
 
-        #[panic_handler]
-        fn panic_handler(p: &core::panic::PanicInfo) -> ! {
-            $crate::panic::panic_handler(p)
-        }
-    };
-
-    ($vis:vis fn main() -> Result<(), $error:ty> { $($body:tt)* }) => {
-        $vis fn main() { $($body)* }
-
-        #[start]
-        fn start(_argc: isize, _argv: *const *const u8) -> isize {
-            let status = match main() {
-                Ok(()) => $crate::process::ExitCode::Success,
-                Err(e) => {
-                    eprintln!("{:?}", e);
-                    $crate::process::ExitCode::Failure
-                }
-            };
-            $crate::syscall::process_exit(status as i32);
-        }
-
-        #[panic_handler]
-        fn panic_handler(p: &core::panic::PanicInfo) -> ! {
-            $crate::panic::panic_handler(p)
+macro_rules! impl_proc_ret_val {
+    ($t:ty) => {
+        impl ProcessReturnValue for $t {
+            fn retval(self) -> i32 { self.into() }
         }
     };
 }
+
+impl_proc_ret_val!(i8);
+impl_proc_ret_val!(u8);
+impl_proc_ret_val!(i16);
+impl_proc_ret_val!(u16);
+impl_proc_ret_val!(i32);
