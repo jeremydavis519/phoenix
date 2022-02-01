@@ -286,7 +286,7 @@ fn memory_alloc(
     // FIXME: Do this asynchronously. Memory allocation has unbounded time complexity, and we can't
     //        pre-empt the thread during a system call.
     let mut maybe_block = match AllMemAlloc.malloc::<u8>(
-            size,
+            size.saturating_add(page_size - 1) / page_size * page_size,
             NonZeroUsize::new(usize::max(align, page_size)).unwrap()
     ) {
         Ok(block) => Some(block),
@@ -360,7 +360,7 @@ fn memory_alloc_phys(
     // FIXME: Do this asynchronously. Memory allocation has unbounded time complexity, and we can't
     //        pre-empt the thread during a system call.
     let mut maybe_block = match AllMemAlloc.malloc_low::<u8>(
-            size,
+            size.saturating_add(page_size - 1) / page_size * page_size,
             NonZeroUsize::new(usize::max(align, page_size)).unwrap(),
             max_bits
     ) {
