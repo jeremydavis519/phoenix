@@ -1,4 +1,4 @@
-/* Copyright (c) 2017-2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2017-2022 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -640,10 +640,12 @@ aarch64_handle_synchronous_exception_indirect:
     stp x15, x16, [sp, -16]!
     stp x17, x18, [sp, -16]!
     stp x29, x30, [sp, -16]!
+    pushfp
 
     ldr x9, =aarch64_handle_synchronous_exception
     blr x9
 
+    popfp
     ldp x29, x30, [sp], 16
     ldp x17, x18, [sp], 16
     ldp x15, x16, [sp], 16
@@ -667,10 +669,12 @@ aarch64_handle_irq_indirect:
     stp x15, x16, [sp, -16]!
     stp x17, x18, [sp, -16]!
     stp x29, x30, [sp, -16]!
-    
+    pushfp
+
     ldr x9, =aarch64_handle_irq
     blr x9
 
+    popfp
     ldp x29, x30, [sp], 16
     ldp x17, x18, [sp], 16
     ldp x15, x16, [sp], 16

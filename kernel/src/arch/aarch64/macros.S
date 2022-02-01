@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2019-2022 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -62,4 +62,44 @@
     ldp x4, x5, [sp], 16
     ldp x2, x3, [sp], 16
     ldp x0, x1, [sp], 16
+.endm
+
+// Pushes the floating-point registers.
+.macro pushfp
+    stp q0, q1, [sp, -32]!
+    stp q2, q3, [sp, -32]!
+    stp q4, q5, [sp, -32]!
+    stp q6, q7, [sp, -32]!
+    stp q8, q9, [sp, -32]!
+    stp q10, q11, [sp, -32]!
+    stp q12, q13, [sp, -32]!
+    stp q14, q15, [sp, -32]!
+    stp q16, q17, [sp, -32]!
+    stp q18, q19, [sp, -32]!
+    stp q20, q21, [sp, -32]!
+    stp q22, q23, [sp, -32]!
+    stp q24, q25, [sp, -32]!
+    stp q26, q27, [sp, -32]!
+    stp q28, q29, [sp, -32]!
+    stp q30, q31, [sp, -32]!
+.endm
+
+// Pops the floating-point registers.
+.macro popfp
+    ldp q30, q31, [sp], 32
+    ldp q28, q29, [sp], 32
+    ldp q26, q27, [sp], 32
+    ldp q24, q25, [sp], 32
+    ldp q22, q23, [sp], 32
+    ldp q20, q21, [sp], 32
+    ldp q18, q19, [sp], 32
+    ldp q16, q17, [sp], 32
+    ldp q14, q15, [sp], 32
+    ldp q12, q13, [sp], 32
+    ldp q10, q11, [sp], 32
+    ldp q8, q9, [sp], 32
+    ldp q6, q7, [sp], 32
+    ldp q4, q5, [sp], 32
+    ldp q2, q3, [sp], 32
+    ldp q0, q1, [sp], 32
 .endm
