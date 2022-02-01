@@ -191,8 +191,7 @@ impl<T: ?Sized> Drop for PhysBox<T> {
     }
 }
 
-fn eval_syscall_future<F, T>(mut future: F) -> T
-        where F: Future<Output = T> {
+fn eval_syscall_future<F: Future>(mut future: F) -> F::Output {
     let waker = unsafe { Waker::from_raw(raw_waker()) };
     let mut cx = Context::from_waker(&waker);
     loop {
