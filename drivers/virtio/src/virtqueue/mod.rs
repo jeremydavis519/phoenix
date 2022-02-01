@@ -90,7 +90,7 @@ impl<'a> VirtQueue<'a> {
             let size_of_descriptors = mem::size_of::<BufferDescriptor>() * len;
             let size_of_driver_ring = mem::size_of::<u16>() * (3 + len);
             let size_of_device_ring = mem::size_of::<u16>() * 3 + mem::size_of::<UsedElem>() * len;
-            let align = |x| (x + Self::LEGACY_DEVICE_RING_ALIGN) % Self::LEGACY_DEVICE_RING_ALIGN;
+            let align = |x| (x + Self::LEGACY_DEVICE_RING_ALIGN - 1) & !(Self::LEGACY_DEVICE_RING_ALIGN - 1);
             let block = Allocator.malloc_phys_bytes(
                 align(size_of_descriptors + size_of_driver_ring) + align(size_of_device_ring),
                 usize::max(Self::LEGACY_DEVICE_RING_ALIGN, page_size),
@@ -499,7 +499,7 @@ impl DriverRing {
     unsafe fn new_legacy(block: &PhysBox<[u8]>, offset: usize, len: usize, driver_flags: DriverFlags) -> Self {
         let internal = ptr::slice_from_raw_parts(
             &block[offset] as *const u8 as *const AtomicU16,
-            len
+            len + 3
         );
         (*internal)[Self::FLAGS_OFFSET].store(driver_flags.bits().to_device_endian(true), Ordering::Release);
         (*internal)[Self::IDX_OFFSET].store(0.to_device_endian(true), Ordering::Release);
@@ -584,7 +584,7 @@ impl DriverRing {
 
         let mut this_idx = state.next_idx.fetch_add(1, Ordering::AcqRel);
         let entries_updated = &state.entries_updated;
-        internal[Self::RING_OFFSET + this_idx as usize % self.len()].store(val, Ordering::AcqRel);
+        internal[Self::RING_OFFSET + this_idx as usize % self.len()].store(val, Ordering::Release);
 
         // `self.idx()` must never skip over an entry that hasn't actually been updated yet. If we
         // are ahead of that device-visible index, just leave a note for the task that's not ahead
@@ -603,7 +603,7 @@ impl DriverRing {
                 // If, between the last `swap` and `add_idx`, a new note was left at the next
                 // index, we have to keep going.
                 this_idx = this_idx.wrapping_add(steps);
-                if !entries_updated[this_idx as usize % self.len()].load(Ordering::AcqRel) {
+                if !entries_updated[this_idx as usize % self.len()].load(Ordering::Acquire) {
                     break;
                 }
             }
@@ -655,7 +655,7 @@ impl DeviceRing {
     unsafe fn new_legacy(block: &PhysBox<[u8]>, offset: usize, len: usize) -> Self {
         let internal = ptr::slice_from_raw_parts_mut(
             &block[offset] as *const u8 as *mut u8 as *mut u16,
-            len
+            len + 3
         );
         (&mut (*internal)[Self::FLAGS_OFFSET] as *mut u16).write_volatile(0.to_device_endian(true));
         (&mut (*internal)[Self::IDX_OFFSET] as *mut u16).write_volatile(0.to_device_endian(true));
