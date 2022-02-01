@@ -28,6 +28,7 @@ use {
     core::{
         future::Future,
         mem,
+        ops::Deref,
         pin::Pin,
         ptr,
         sync::atomic::{AtomicBool, Ordering},
@@ -118,7 +119,16 @@ impl<'a> SysCallExecutor<'a> {
 }
 
 /// A promised but possibly not-yet-available return value from a system call.
-pub type SysCallFuture = SysCallFutureInternal<[u8]>;
+#[derive(Debug)]
+pub struct SysCallFuture {
+    internal: Option<*mut SysCallFutureInternal<[u8]>>
+}
+
+/// A value obtained by polling a finished [`SysCallFuture`].
+#[derive(Debug)]
+pub struct SysCallValue {
+    value: *mut SysCallFutureInternal<[u8]>
+}
 
 // This implementation detail is necessary for being able to instantiate `SysCallFuture` as a DST.
 #[derive(Debug)]
@@ -131,12 +141,13 @@ pub struct SysCallFutureInternal<T: ?Sized> {
 }
 
 impl SysCallFuture {
-    pub(crate) unsafe fn from_addr<const VALUE_LEN: usize>(addr: usize) -> Pin<&'static mut SysCallFuture> {
-        let future = Pin::new_unchecked(
-            &mut *(addr as *mut SysCallFutureInternal<[u8; VALUE_LEN]>) as &mut SysCallFuture
-        );
-        assert_eq!(future.value_len, VALUE_LEN);
-        future
+    pub(crate) unsafe fn from_addr<const VALUE_LEN: usize>(addr: usize) -> Self {
+        let internal =
+            addr as *mut SysCallFutureInternal<[u8; VALUE_LEN]> as *mut SysCallFutureInternal<[u8]>;
+        assert_eq!((*internal).value_len, VALUE_LEN);
+        Self {
+            internal: Some(internal)
+        }
     }
 }
 
@@ -156,16 +167,40 @@ impl<T: Sized> SysCallFutureInternal<T> {
 }
 
 impl Future for SysCallFuture {
-    type Output = Vec<u8>;
+    type Output = SysCallValue;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Vec<u8>> {
-        if self.finished.load(Ordering::Acquire) {
-            // TODO: This is probably pretty inefficient. Can we optimize it by using a faster allocator?
-            Poll::Ready(self.value.to_vec())
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let internal = self.internal
+            .expect("polled a future that was already finished");
+
+        if unsafe { (*internal).finished.load(Ordering::Acquire) } {
+            Poll::Ready(SysCallValue { value: mem::replace(&mut self.internal, None).unwrap() })
         } else {
             cx.waker().wake_by_ref();
             Poll::Pending
         }
+    }
+}
+
+impl Deref for SysCallValue {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { &(*self.value).value }
+    }
+}
+
+impl Drop for SysCallFuture {
+    fn drop(&mut self) {
+        if let Some(internal) = self.internal {
+            unsafe { internal.drop_in_place(); }
+        }
+    }
+}
+
+impl Drop for SysCallValue {
+    fn drop(&mut self) {
+        unsafe { self.value.drop_in_place(); }
     }
 }
 
