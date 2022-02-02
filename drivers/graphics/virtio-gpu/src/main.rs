@@ -47,7 +47,9 @@ use {
     virtio::{
         DeviceEndian, DeviceDetails, GenericFeatures,
         virtqueue::future::Executor
-    }
+    },
+    self::api::*,
+    self::msg::Rectangle
 };
 
 mod api;
@@ -87,10 +89,32 @@ fn run_driver(device: Device) {
 
     Executor::new()
         .spawn(async {
-            let _ = match api::DisplayInfo::all(control_q).await {
-                Ok(display_info) => writeln!(KernelWriter, "display_info = {:#?}", display_info),
-                Err(e) => writeln!(KernelWriter, "{}", e)
-            };
+            let display_info = api::DisplayInfo::one(control_q, 0).await
+                .expect("failed to retrieve display info");
+            assert!(display_info.flags.contains(DisplayInfoFlags::ENABLED));
+
+            let mut fb = Image::new(Some(control_q), 0, 1, 32, display_info.rect.width, display_info.rect.height).await
+                .expect("failed to create framebuffer");
+            set_display_framebuffer(control_q, 0, &fb).await
+                .expect("failed to set display framebuffer");
+
+            fb.set_colors(0, &[Color(0xffff00ff)]);
+            fb.draw_rect_region(Rectangle {
+                x: 0, y: 0,
+                width: 320, height: 240
+            }, Tile(0));
+            fb.set_colors(0, &[Color(0xffffff00)]);
+            fb.draw_rect_region(Rectangle {
+                x: 320, y: 240,
+                width: 320, height: 240
+            }, Tile(0));
+            fb.send_all().await
+                .expect("failed to send the framebuffer to the host");
+            fb.flush_all().await
+                .expect("failed to flush the framebuffer");
+
+            let _ = writeln!(KernelWriter, "GPU test done");
+            loop {}
         })
         .block_on_all();
 

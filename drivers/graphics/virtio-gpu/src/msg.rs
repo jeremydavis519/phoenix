@@ -104,7 +104,7 @@ impl Command for CmdGetDisplayInfo {
 
 #[derive(Debug)]
 #[repr(C)]
-struct CmdResourceCreate2D {
+pub struct CmdResourceCreate2D {
     header:       ControlQHeader,
     resource_id:  Le32,
     format:       Resource2DFormat,
@@ -115,7 +115,7 @@ struct CmdResourceCreate2D {
 
 #[derive(Debug)]
 #[repr(u32)]
-enum Resource2DFormat {
+pub enum Resource2DFormat {
     BytesBGRA = u32::to_le(0x01),
     BytesBGRX = u32::to_le(0x02),
     BytesARGB = u32::to_le(0x03),
@@ -162,7 +162,7 @@ impl Command for CmdResourceCreate2D {
 
 #[derive(Debug)]
 #[repr(C)]
-struct CmdResourceUnref {
+pub struct CmdResourceUnref {
     header:       ControlQHeader,
     resource_id:  Le32,
     padding:      Le32,
@@ -195,7 +195,7 @@ impl Command for CmdResourceUnref {
 
 #[derive(Debug)]
 #[repr(C)]
-struct CmdSetScanout {
+pub struct CmdSetScanout {
     header:       ControlQHeader,
     rect:         LeRectangle,
     scanout_id:   Le32,
@@ -235,7 +235,7 @@ impl Command for CmdSetScanout {
 
 #[derive(Debug)]
 #[repr(C)]
-struct CmdResourceFlush {
+pub struct CmdResourceFlush {
     header:       ControlQHeader,
     rect:         LeRectangle,
     resource_id:  Le32,
@@ -274,7 +274,7 @@ impl Command for CmdResourceFlush {
 
 #[derive(Debug)]
 #[repr(C)]
-struct CmdTransferToHost2D {
+pub struct CmdTransferToHost2D {
     header:       ControlQHeader,
     rect:         LeRectangle,
     dest_offset:  Le64,
@@ -326,7 +326,7 @@ struct CmdResourceAttachBacking {
 }*/
 // The version that Rust will actually compile (requires accessors)
 #[repr(C)]
-struct CmdResourceAttachBacking([u8]);
+pub struct CmdResourceAttachBacking([u8]);
 
 #[derive(Debug)]
 #[repr(C)]
@@ -343,7 +343,7 @@ impl CmdResourceAttachBacking {
     // `resource_id` must be non-zero.
     pub fn new(
             resource_id: u32,
-            entries: &[PhysBox<[u8]>],
+            entries: &[&PhysBox<[u8]>],
             flags: MsgFlags
     ) -> Result<PhysBox<Self>, AllocError> {
         // Allocate space for the command on the heap.
@@ -366,15 +366,15 @@ impl CmdResourceAttachBacking {
         )));
         for i in 0 .. u32::from_le(*boxed.entries_len()) as usize {
             mem::forget(mem::replace(&mut boxed.entries_mut()[i], MemEntry {
-                base:    u64::from_le(
+                base:    u64::to_le(
                     u64::try_from(entries[i].addr_phys())
                         .expect("GPU CmdResourceAttachBacking: physical address doesn't fit in 64 bits")
                 ),
-                size:    u32::from_le(
-                    u32::try_from(mem::size_of_val(&*entries[i]))
+                size:    u32::to_le(
+                    u32::try_from(mem::size_of_val(&**entries[i]))
                         .expect("GPU CmdResourceAttachBacking: more than 4 GiB requested in one entry")
                 ),
-                padding: u32::from_le(0)
+                padding: u32::to_le(0)
             }));
         }
         mem::forget(mem::replace(boxed.response_mut(), RespOkNoData::new(flags)));
@@ -414,14 +414,14 @@ impl CmdResourceAttachBacking {
         let base_ptr = &self.0[
             mem::size_of::<ControlQHeader>() + 2 * mem::size_of::<Le32>()
         ] as *const u8 as *const MemEntry;
-        unsafe { slice::from_raw_parts(base_ptr, usize::try_from(*self.entries_len()).unwrap()) }
+        unsafe { slice::from_raw_parts(base_ptr, usize::try_from(u32::from_le(*self.entries_len())).unwrap()) }
     }
 
     fn entries_mut(&mut self) -> &mut [MemEntry] {
         let base_ptr = &mut self.0[
             mem::size_of::<ControlQHeader>() + 2 * mem::size_of::<Le32>()
         ] as *mut u8 as *mut MemEntry;
-        unsafe { slice::from_raw_parts_mut(base_ptr, usize::try_from(*self.entries_len()).unwrap()) }
+        unsafe { slice::from_raw_parts_mut(base_ptr, usize::try_from(u32::from_le(*self.entries_len())).unwrap()) }
     }
 
     fn response(&self) -> &RespOkNoData {
@@ -433,9 +433,20 @@ impl CmdResourceAttachBacking {
     }
 }
 
+impl fmt::Debug for CmdResourceAttachBacking {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("CmdResourceAttachBacking (DST)")
+            .field("header", self.header())
+            .field("resource_id", self.resource_id())
+            .field("entries", &self.entries())
+            .field("response", self.response())
+            .finish()
+    }
+}
+
 impl Command for CmdResourceAttachBacking {
     fn response_offset(&self) -> usize {
-        let entries_offset = mem::size_of::<ControlQHeader>() + mem::size_of::<Le32>();
+        let entries_offset = mem::size_of::<ControlQHeader>() + mem::size_of::<Le32>() * 2;
         entries_offset + usize::try_from(u32::from_le(*self.entries_len())).unwrap() * mem::size_of::<MemEntry>()
     }
 
@@ -858,13 +869,14 @@ impl fmt::Display for InvalidMsgTypeError {
 }
 
 bitflags! {
-    struct MsgFlags: Le32 {
+    pub struct MsgFlags: Le32 {
         const FENCE = u32::to_le(1); // Forces the device to finish the operation before responding
     }
 }
 
 // TODO: This should probably be in a different module.
 /// Any error that can occur when interfacing with the GPU.
+#[derive(Debug)]
 pub enum GpuError {
     /// The device returned a response that was shorter than expected.
     ResponseTooShort(MsgType, usize, usize),

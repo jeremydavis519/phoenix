@@ -27,9 +27,7 @@
 #![deny(warnings, missing_docs)]
 
 extern crate alloc;
-#[macro_use] extern crate bitflags; // TODO: We're only using this for a prototype.
 #[cfg_attr(not(feature = "unit-test"), macro_use)] extern crate io;
-#[macro_use] extern crate shared; // TODO: We're only using this for a prototype.
 
 // Without this line, `rustc` thinks the `int` crate isn't needed because no Rust code uses anything
 // from it. But then the linker complains because, of course, it really is needed.
@@ -48,9 +46,6 @@ use {
     io::{Read, Write},
     scheduler::Thread
 };
-
-#[allow(dead_code)]
-mod gfx_prototype;
 
 // TODO: Remove this temporary function.
 /// Prints a single byte as a character.
@@ -152,8 +147,6 @@ fn shell() {
                 Some("help") => {
                     println!("contents [FILE [...]]   Prints out the contents of the given text files concatenated");
                     println!("devices                 Prints out the device tree");
-                    println!("gfx                     Launches the prototype graphics card driver");
-                    println!("gfx-displays            Shows information about all the connected displays");
                     println!("help                    Shows this list of commands");
                     println!("list DIRECTORY          Lists all of the files and subdirectories in the given directory");
                     println!("parse FILE              Parses the given executable file and prints the image object for debugging");
@@ -192,23 +185,6 @@ fn shell() {
                 },
                 Some("devices") => {
                     println!("{:#?}", *devices::DEVICES);
-                },
-                Some("gfx") => {
-                    for i in 0 .. 32 {
-                        unsafe {
-                            let addr = 0x0a00_0000 + i * 0x0200;
-                            let ptr = addr as *const u32;
-                            if *ptr == 0x74726976 && *ptr.add(1) == 1 && *ptr.add(2) == 16 {
-                                gfx_prototype::main(&gfx_prototype::Device { base_addr: gfx_prototype::Address::Mmio(addr) } as *const _);
-                                break;
-                            }
-                        }
-                    }
-                },
-                Some("gfx-displays") => {
-                    gfx_prototype::EXECUTOR.spawn(async {
-                        println!("{:#?}", gfx_prototype::DisplayInfo::all().await);
-                    }).execute_blocking();
                 },
                 Some("list") => {
                     if let Some(dirname) = split.next() {
