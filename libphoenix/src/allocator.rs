@@ -32,8 +32,9 @@ use {
     alloc::alloc::{Layout, GlobalAlloc, AllocError},
     core::{
         future::Future,
+        marker::Unsize,
         mem,
-        ops::{Deref, DerefMut},
+        ops::{CoerceUnsized, Deref, DerefMut},
         pin::Pin,
         ptr,
         task::{Context, Poll, RawWaker, RawWakerVTable, Waker}
@@ -146,6 +147,16 @@ pub struct PhysBox<T: ?Sized> {
     phys: usize
 }
 
+impl<T> PhysBox<T> {
+    /// Allocates a box and places the given value inside it. Analogous to `Box::new`.
+    pub fn new(value: T) -> Self {
+        let mut phys_box = Allocator.malloc_phys(mem::size_of::<*mut T>() * 8)
+            .expect("failed to allocate a PhysBox");
+        mem::forget(mem::replace(&mut *phys_box, value));
+        phys_box
+    }
+}
+
 impl<T: ?Sized> PhysBox<T> {
     /// Returns the physical address of the object that this box contains.
     pub fn addr_phys(&self) -> usize {
@@ -168,6 +179,8 @@ impl<T: ?Sized> PhysBox<T> {
         Self { ptr, phys }
     }
 }
+
+impl<T: ?Sized+Unsize<U>, U: ?Sized> CoerceUnsized<PhysBox<U>> for PhysBox<T> {}
 
 impl<T: ?Sized> Deref for PhysBox<T> {
     type Target = T;

@@ -26,6 +26,7 @@
 #![deny(warnings, missing_docs)]
 
 #![feature(allocator_api)]
+#![feature(coerce_unsized, unsize)]
 #![feature(lang_items)]
 #![feature(layout_for_ptr)]
 #![feature(panic_info_message)]
