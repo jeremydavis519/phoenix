@@ -447,11 +447,11 @@ pub(crate) const GUARDS_PER_MASTER_BLOCK: usize = NODES_PER_MASTER_BLOCK / 2;
 
 // This struct is a block that contains the nodes that define the heap.
 pub(crate) struct MasterBlock {
-    allocation: Option<Allocation>, // A reference to the this block's heap allocation, if any
+    allocation: RefCell<Option<Allocation>>, // A reference to the this block's heap allocation, if any
     nodes: [Cell<MaybeUninit<Node>>; NODES_PER_MASTER_BLOCK],
-    nodes_used: AtomicU64,          // A bitmap of which elements of the `nodes` array currently exist
+    nodes_used: AtomicU64,                // A bitmap of which elements of the `nodes` array currently exist
 
-    formatting_debug: AtomicBool    // True if `Debug::fmt` is currently being called on this object
+    formatting_debug: AtomicBool          // True if `Debug::fmt` is currently being called on this object
 }
 
 impl MasterBlock {
@@ -480,7 +480,7 @@ impl MasterBlock {
         //index += 1;
 
         Self {
-            allocation:       None,
+            allocation:       RefCell::new(None),
             nodes:            unsafe { nodes.cells },
             nodes_used:       AtomicU64::new(nodes_used),
             formatting_debug: AtomicBool::new(false)
@@ -503,7 +503,7 @@ impl MasterBlock {
 
     pub(crate) const fn new_dynamic(allocation: Allocation) -> Self {
         Self {
-            allocation:       Some(allocation),
+            allocation:       RefCell::new(allocation),
             nodes:            array![Cell::new(MaybeUninit::uninit()); 64],
             nodes_used:       AtomicU64::new(0),
             formatting_debug: AtomicBool::new(false)
@@ -511,7 +511,7 @@ impl MasterBlock {
     }
 
     pub(crate) const fn allocation(&self) -> Option<&Allocation> {
-        self.allocation.as_ref()
+        self.allocation.borrow().as_ref()
     }
 
     pub(crate) fn claim_node(&self) -> Option<&Cell<MaybeUninit<Node>>> {
@@ -586,12 +586,7 @@ impl MasterBlock {
 
         // Actually mark the nodes in this master block as used so they won't be claimed by anyone
         // else.
-        // Relaxed ordering: We don't use the value we read on the error path, so we don't depend on
-        //     it for correctness.
-        // Release ordering: On the success path, reading the wrong value can only result in
-        //     spurriously failing to remove the master block. This may lead to a temporary memory
-        //     leak, but the heap will be valid, and the master block will be reused eventually.
-        if self.nodes_used.compare_exchange(0, u64::max_value(), Ordering::Release, Ordering::Relaxed).is_err() {
+        if self.nodes_used.compare_exchange(0, u64::max_value(), Ordering::AcqRel, Ordering::Acquire).is_err() {
             // Someone's already claimed a node. Undo everything we've done so far.
             super::UNUSED_GUARD_SLOTS.fetch_add(GUARDS_PER_MASTER_BLOCK, Ordering::Release);
             return;
@@ -599,9 +594,7 @@ impl MasterBlock {
 
         // Now we can safely free this master block because we definitely have the only reference to
         // it now. (The heap only has a reference to its parent node.)
-        unsafe {
-            (*(self as *const _ as *mut MasterBlock)).allocation = None;
-        }
+        self.allocation.replace(None);
     }
 }
 
