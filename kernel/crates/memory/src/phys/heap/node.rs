@@ -1,4 +1,4 @@
-/* Copyright (c) 2018-2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2018-2022 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -240,11 +240,13 @@ pub(crate) struct BlockNodeContents {
 }
 
 // A reference to a node. An instance of this type should *never* be made directly, since that would
-// bypass the reference counting.
+// bypass the reference counting. Instead, use `NodeRef::from_tagged_ptr`.
 #[derive(Debug)]
 pub(crate) struct NodeRef(Pin<&'static Node>);
 
 impl NodeRef {
+    // Reads a tagged pointer, increases its reference count, and returns a reference to the node it
+    // points to, along with a snapshot of the tagged pointer.
     pub(crate) fn from_tagged_ptr(tagged_ptr: &TaggedPtr<Node>) -> (Option<Self>, (*mut Node, usize)) {
         let (ptr, tag) = tagged_ptr.fetch_add_tag(GENERATION_STEP, Ordering::AcqRel);
         let node_ref = if ptr.is_null() {
@@ -255,7 +257,7 @@ impl NodeRef {
 
         (node_ref, (ptr, tag.wrapping_add(GENERATION_STEP)))
     }
-    
+
     // Tries once to remove this node from the list. This function returns `Err` if there are more
     // than one reference to this node (it would be undefined behavior to remove it while someone
     // else is using it).
@@ -299,8 +301,8 @@ impl NodeRef {
         }
 
         // Remove the node from the list.
-        // Relaxed ordering: If this CAS fails, we don't care what value we've read. We throw it
-        //     out immediately. Therefore, we don't depend on that value for correctness.
+        // Relaxed ordering: If this CAS fails, we don't care what value we've read. Spurrious
+        //     failures are also acceptable.
         if let Err(_) = prev_ptr.compare_exchange(
             (old_ptr, old_new_refs_gen),
             self.next.load(Ordering::Acquire),
@@ -530,6 +532,9 @@ impl MasterBlock {
         None
     }
 
+    // Marks the given node as unused. Note that this function is intended to be used *after* the node
+    // is dropped. Otherwise, another node could take its place before the old one is dropped. Since
+    // this function never dereferences the given pointer, no undefined behavior results.
     pub(crate) fn unuse_node(&self, node_ptr: *const Node) {
         // Mark the node as unused.
         let node_addr = node_ptr as usize;

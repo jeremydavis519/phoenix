@@ -1,4 +1,4 @@
-/* Copyright (c) 2018-2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2018-2022 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -93,11 +93,18 @@ fn first_guard_ptr() -> &'static TaggedPtr<Node> {
 ///   * `Ok(allocation)` if the memory was reserved, where `allocation` is an object that frees the
 ///     block when it is dropped
 ///   * `Err(AllocErr)`
-pub(crate) fn reserve(base: PhysPtr<u8, *const u8>, size: NonZeroUsize) -> Result<Allocation, AllocError> {
+pub(crate) fn reserve(
+        base: PhysPtr<u8, *const u8>,
+        size: NonZeroUsize
+) -> Result<Allocation, AllocError> {
     reserve_with_map(base, size, &*MEMORY_MAP)
 }
 
-fn reserve_with_map(base: PhysPtr<u8, *const u8>, size: NonZeroUsize, map: &MemoryMap) -> Result<Allocation, AllocError> {
+fn reserve_with_map(
+        base: PhysPtr<u8, *const u8>,
+        size: NonZeroUsize,
+        map: &MemoryMap
+) -> Result<Allocation, AllocError> {
     let base = base.as_addr_phys();
 
     // Don't accept a request for a block that wraps around the address space. Any such request
@@ -116,11 +123,18 @@ fn reserve_with_map(base: PhysPtr<u8, *const u8>, size: NonZeroUsize, map: &Memo
 ///   * `Ok(allocation)` if the memory was reserved, where `allocation` is an object that frees the
 ///     block when it is dropped
 ///   * `Err(AllocErr)`
-pub(crate) fn reserve_mut(base: PhysPtr<u8, *mut u8>, size: NonZeroUsize) -> Result<Allocation, AllocError> {
+pub(crate) fn reserve_mut(
+        base: PhysPtr<u8, *mut u8>,
+        size: NonZeroUsize
+) -> Result<Allocation, AllocError> {
     reserve_mut_with_map(base, size, &*MEMORY_MAP)
 }
 
-fn reserve_mut_with_map(base: PhysPtr<u8, *mut u8>, size: NonZeroUsize, map: &MemoryMap) -> Result<Allocation, AllocError> {
+fn reserve_mut_with_map(
+        base: PhysPtr<u8, *mut u8>,
+        size: NonZeroUsize,
+        map: &MemoryMap
+) -> Result<Allocation, AllocError> {
     let base = base.as_addr_phys();
 
     // Don't accept a request for a block that wraps around the address space. Any such request
@@ -150,11 +164,18 @@ fn reserve_mut_with_map(base: PhysPtr<u8, *mut u8>, size: NonZeroUsize, map: &Me
 ///   * `Ok(allocation)` if the memory was reserved, where `allocation` is an object that frees the
 ///     block when it is dropped
 ///   * `Err(AllocErr)`
-pub(crate) fn reserve_mmio(base: PhysPtr<u8, *mut u8>, size: NonZeroUsize) -> Result<Allocation, AllocError> {
+pub(crate) fn reserve_mmio(
+        base: PhysPtr<u8, *mut u8>,
+        size: NonZeroUsize
+) -> Result<Allocation, AllocError> {
     reserve_mmio_with_map(base, size, &*MEMORY_MAP)
 }
 
-fn reserve_mmio_with_map(base: PhysPtr<u8, *mut u8>, size: NonZeroUsize, map: &MemoryMap) -> Result<Allocation, AllocError> {
+fn reserve_mmio_with_map(
+        base: PhysPtr<u8, *mut u8>,
+        size: NonZeroUsize,
+        map: &MemoryMap
+) -> Result<Allocation, AllocError> {
     let base = base.as_addr_phys();
 
     // Don't accept a request for a block that wraps around the address space. Any such request
@@ -173,11 +194,18 @@ fn reserve_mmio_with_map(base: PhysPtr<u8, *mut u8>, size: NonZeroUsize, map: &M
 ///   * `Ok((ptr, allocation))` if the memory was reserved, where `ptr` is a physical pointer to the
 ///     first byte in the block and `allocation` is an object that frees the block when it is dropped
 ///   * `Err(AllocErr)`
-pub(crate) fn malloc(size: NonZeroUsize, align: NonZeroUsize) -> Result<(PhysPtr<u8, *mut u8>, Allocation), AllocError> {
+pub(crate) fn malloc(
+        size: NonZeroUsize,
+        align: NonZeroUsize
+) -> Result<(PhysPtr<u8, *mut u8>, Allocation), AllocError> {
     malloc_with_map(size, align, &*MEMORY_MAP)
 }
 
-fn malloc_with_map(size: NonZeroUsize, align: NonZeroUsize, map: &MemoryMap) -> Result<(PhysPtr<u8, *mut u8>, Allocation), AllocError> {
+fn malloc_with_map(
+        size: NonZeroUsize,
+        align: NonZeroUsize,
+        map: &MemoryMap
+) -> Result<(PhysPtr<u8, *mut u8>, Allocation), AllocError> {
     // TODO: Prefer memory regions that are not hotpluggable.
 
     update_expected_malloc_size(size.get());
@@ -200,7 +228,11 @@ fn malloc_with_map(size: NonZeroUsize, align: NonZeroUsize, map: &MemoryMap) -> 
 ///   * `Ok((ptr, allocation))` if the memory was reserved, where `ptr` is a physical pointer to the
 ///     first byte in the block and `allocation` is an object that frees the block when it is dropped
 ///   * `Err(AllocErr)`
-pub(crate) fn malloc_low(size: NonZeroUsize, align: NonZeroUsize, max_bits: usize) -> Result<(PhysPtr<u8, *mut u8>, Allocation), AllocError> {
+pub(crate) fn malloc_low(
+        size: NonZeroUsize,
+        align: NonZeroUsize,
+        max_bits: usize
+) -> Result<(PhysPtr<u8, *mut u8>, Allocation), AllocError> {
     if max_bits >= mem::size_of::<usize>() * 8 {
         return malloc(size, align);
     }
@@ -355,13 +387,8 @@ fn update_expected_malloc_size(new_size: usize) {
 // A lower score indicates a better fit.
 fn fit_score(size: usize, free_size: usize) -> usize {
     let expected_malloc_size = EXPECTED_MALLOC_SIZE.load(Ordering::Acquire);
-    assert!(free_size >= size);
     let score = (free_size - size) % expected_malloc_size;
-    if score <= expected_malloc_size / 2 {
-        score
-    } else {
-        expected_malloc_size - score
-    }
+    usize::min(score, expected_malloc_size - score)
 }
 
 // Attempts to allocate a block of `size` bytes starting at `base`. Fails if the block overlaps
@@ -485,8 +512,7 @@ fn claim_slots() -> ((&'static Cell<MaybeUninit<Node>>, &'static MasterBlock),
 // Rounds the given address up until it's aligned at a multiple of `align`.
 fn align_up(addr: usize, align: usize) -> usize {
     assert!(align > 0);
-    let overestimate = addr.wrapping_add(align - 1);
-    overestimate.wrapping_sub(overestimate % align)
+    addr.wrapping_add(align - 1) / align * align
 }
 
 // Returns an iterator over all the block nodes in the heap.
@@ -495,7 +521,7 @@ fn block_nodes() -> impl Iterator<Item = NodeRef> {
 }
 
 // Represents a piece of memory that has been allocated on the heap. This object isn't used for
-// much, but, importantly, dropping it causes the memory to be freed.
+// much, but dropping it causes the memory to be freed.
 #[derive(Debug)]
 pub(crate) struct Allocation {
     block_node: Pin<&'static Node>
