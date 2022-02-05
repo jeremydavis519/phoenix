@@ -133,4 +133,5 @@ cargo:
 	xargo build $(CARGO_PARAMS) --features="$(CARGO_FEATURES)" $(CARGO_RELEASE) --target "$(TARGET)"
 
 target/$(TARGET)/$(DEBUG_OR_RELEASE)/%.o: src/arch/$(ARCH)/%.S
+	mkdir -p $(dir $@) && \
 	$(ASSEMBLER) $(AS_PARAMS) $(AS_SYMS) $(AS_DEBUG) -I $(dir $^) -o $@ $^
