@@ -534,59 +534,6 @@ impl Drop for Allocation {
 }
 
 
-// Checks the heap's invariants to confirm that the heap is currently in a valid state. These
-// invariants are quite expensive to check, so they're only checked in debug builds. Note that, in
-// order to be thread-safe, this function makes `NodeRef`s, which will change the reference counts
-// on the nodes.
-fn check_heap_invariants(location: &str) {
-    if cfg!(debug_assertions) {
-        let visitors = VISITORS.load(Ordering::Acquire);
-        assert!(
-            visitors <= MAX_VISITORS,
-            "violated heap invariant at {}: must have no more than {} simultaneous visitors (found {})",
-            location, MAX_VISITORS, visitors
-        );
-
-        let (next_guard_opt, (_, _)) = NodeRef::from_tagged_ptr(first_guard_ptr());
-        assert!(
-            next_guard_opt.is_some(),
-            "violated heap invariant at {}: must contain at least one node",
-            location
-        );
-        let mut next_guard = next_guard_opt.unwrap();
-        assert!(
-            !next_guard.is_block_node(),
-            "violated heap invariant at {}: must start with a guard node",
-            location
-        );
-        loop {
-            let (next_node, (_, _)) = NodeRef::from_tagged_ptr(next_guard.next());
-            match next_node {
-                Some(next_node) => {
-                    if next_node.is_block_node() {
-                        let next_guard_opt = NodeRef::from_tagged_ptr(next_node.next()).0;
-                        assert!(
-                            next_guard_opt.is_some(),
-                            "violated heap invariant at {}: must end with a guard node",
-                            location
-                        );
-                        next_guard = next_guard_opt.unwrap();
-                        assert!(
-                            !next_guard.is_block_node(),
-                            "violated heap invariant at {}: every node immediately after a block node must be a guard",
-                            location
-                        );
-                    } else {
-                        next_guard = next_node;
-                    }
-                },
-                None => break
-            }
-        }
-    }
-}
-
-
 #[cfg(test)]
 mod tests {
     use {
@@ -1078,7 +1025,6 @@ mod tests {
         // since `BlockNodes` does not guarantee that the observed base addresses will increase
         // monotonically in a multithreaded environment.
         assert_eq!(HEAP_LOCK.writer_count(), 1, "`validate_heap` requires exclusive access to the heap.");
-        check_heap_invariants("validate_heap");
         let (mut prev_base, mut prev_size) = (0, 0);
         for node in block_nodes() {
             let base = node.base().unwrap();

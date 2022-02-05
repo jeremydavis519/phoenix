@@ -126,10 +126,6 @@ impl Node {
             .unwrap_or(false)
     }
 
-    pub(crate) fn next(&self) -> &TaggedPtr<Node> {
-        &self.next
-    }
-
     // Lazily frees this node. (This is currently needed only for block nodes.)
     pub(crate) fn free(&self) {
         if let Some(ref contents) = self.block_node_contents {
@@ -144,7 +140,6 @@ impl Node {
     // to the given heap's list of nodes and returns a reference to the guard immediately before it.
     pub(crate) fn add_to_list(self: Pin<&Self>) -> Result<NodeRef, AllocError> {
         assert!(self.is_block_node());
-        super::check_heap_invariants("Node::add_to_list");
 
         let new_guard = NodeRef::from_tagged_ptr(&self.next).0
             .expect(Text::unexpected_end_of_heap());
@@ -167,10 +162,9 @@ impl Node {
                     Ordering::AcqRel,
                     Ordering::Acquire) {
                 Ok(_)  => break,
-                Err(_) => super::check_heap_invariants("Node::add_to_list->compare_exchange_failure")
+                Err(_) => {}
             };
         }
-        super::check_heap_invariants("Node::add_to_list->end");
         Ok(old_guard)
     }
 
@@ -268,8 +262,6 @@ impl NodeRef {
     // 
     // Returns `Err(self)` if the removal fails, in case the reference is still needed.
     fn try_remove_from_list(self, earlier_ptr: &TaggedPtr<Node>) -> Result<(), Self> {
-        super::check_heap_invariants("NodeRef::try_remove_from_list");
-
         // Find the tagged pointer that points to this guard.
         let mut prev_ptr = earlier_ptr;
         let mut prev_ref;
@@ -315,16 +307,12 @@ impl NodeRef {
         // We should still have the only reference to this node.
         debug_assert_eq!(old_new_refs_gen, self.dropped_refs_gen.load(Ordering::SeqCst).wrapping_add(GENERATION_STEP));
 
-        super::check_heap_invariants("NodeRef::try_remove_from_list->compare_exchange");
-
         // Drop the node and mark the slot it was using as unused.
         let master = self.master();
         let self_ptr = &**self as *const _ as *mut _;
         mem::forget(self);
         unsafe { ptr::drop_in_place(self_ptr); }
         master.unuse_node(self_ptr);
-
-        super::check_heap_invariants("NodeRef::try_remove_from_list");
 
         Ok(())
     }
