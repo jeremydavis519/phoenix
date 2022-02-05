@@ -29,11 +29,9 @@
 //! Care has been taken to ensure that the algorithms here work correctly in a lock-free manner.
 //! It's still not real-time--some operations have unbounded time complexity--but it is, in
 //! general, impossible for one thread to obtain a lock, be preempted by the hypervisor (if there
-//! is one), and cause other threads to wait for it to finish. The only exceptions to this
-//! guarantee are that (1) any system without the necessary atomic instructions falls back to using
-//! read-write locks with small critical sections and (2) the heap can only be traversed by a
-//! certain number of visitors at once--31 at the time of writing. Any further visitors will block
-//! to avoid overflowing reference counts.
+//! is one), and cause other threads to wait for it to finish. The only exception to this guarantee
+//! is that the heap can only be traversed by a certain number of visitors at once--31 at the time
+//! of writing. Any further visitors will block to avoid overflowing reference counts.
 
 pub(crate) mod node;
 
