@@ -168,25 +168,24 @@ impl Node {
         Ok(old_guard)
     }
 
-    // Finds the guard after which this block node should be added. Also returns a reference to the
-    // node currently following that guard (if any) and a snapshot of the tagged pointer from the
-    // guard to that node.
+    // Finds the node after which this block node should be added. Also returns a reference to the
+    // next node (if any) and a snapshot of the tagged pointer to the next node.
     fn find_insert_location(&self, first_guard: NodeRef)
             -> Result<(NodeRef, (Option<NodeRef>, (*mut Node, usize))), AllocError> {
         assert!(self.is_block_node());
 
         let base = self.base().unwrap();
-        let mut guard = first_guard;
+        let mut prev = first_guard;
         let mut block_node: NodeRef;
         let mut block_node_ptr: (*mut Node, usize);
         loop {
             // We must never put a new block node before an existing guard, so we need to put it
             // after a guard that's pointing to a block node or at the end of the list.
             loop {
-                match NodeRef::from_tagged_ptr(&guard.next) {
+                match NodeRef::from_tagged_ptr(&prev.next) {
                     (None, tagged_ptr) => {
                         // We've found the end of the list, so insert the new node here.
-                        return Ok((guard, (None, tagged_ptr)));
+                        return Ok((prev, (None, tagged_ptr)));
                     },
                     (Some(node_ref), tagged_ptr) if node_ref.is_block_node() => {
                         block_node = node_ref;
@@ -194,7 +193,7 @@ impl Node {
                         break;
                     },
                     (Some(guard_ref), _) => {
-                        guard = guard_ref;
+                        prev = guard_ref;
                     }
                 };
             }
@@ -208,12 +207,10 @@ impl Node {
                 break;
             }
 
-            guard = NodeRef::from_tagged_ptr(&block_node.next).0
-                .expect(Text::unexpected_end_of_heap());
-            assert!(!guard.is_block_node());
+            prev = block_node;
         }
 
-        Ok((guard, (Some(block_node), block_node_ptr)))
+        Ok((prev, (Some(block_node), block_node_ptr)))
     }
 }
 
@@ -334,8 +331,8 @@ impl Drop for NodeRef {
 
 /// An iterator over the block nodes in a heap.
 pub(crate) struct BlockNodes {
-    prev_guard:    Option<NodeRef>,
-    current_guard: NodeRef
+    prev_node: Option<NodeRef>,
+    node_base: Option<usize>
 }
 
 impl BlockNodes {
@@ -363,11 +360,7 @@ impl BlockNodes {
             }
         }
 
-        Self {
-            prev_guard:    None,
-            current_guard: NodeRef::from_tagged_ptr(&super::first_guard_ptr()).0
-                .expect(Text::heap_contains_no_guards())
-        }
+        Self { prev_node: NodeRef::from_tagged_ptr(super::first_guard_ptr()).0, node_base: None }
     }
 }
 
@@ -376,7 +369,11 @@ impl Iterator for BlockNodes {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            let next_node = match NodeRef::from_tagged_ptr(&self.current_guard.next).0 {
+            let next_node = match NodeRef::from_tagged_ptr(
+                    self.prev_node.as_ref()
+                        .map(|prev| &prev.next)
+                        .unwrap_or_else(|| super::first_guard_ptr())
+            ).0 {
                 None => {
                     // We've reached the end of the list.
                     return None;
@@ -386,35 +383,39 @@ impl Iterator for BlockNodes {
 
             match next_node.block_node_contents {
                 None => {
-                    // Found another guard. Remove the earlier one from the list if possible, then
-                    // skip it. (Removing the later one would break the lock-free algorithm.)
-                    let obsolete_guard = mem::replace(&mut self.current_guard, next_node);
-                    let _ = obsolete_guard.try_remove_from_list(
-                        self.prev_guard.as_ref()
-                            .map(|guard| &guard.next)
-                            .unwrap_or_else(|| super::first_guard_ptr())
-                    );
+                    // Found a guard. Remove it from the list if possible.
+                    if let Err(next_node) = next_node.try_remove_from_list(
+                            self.prev_node.as_ref()
+                                .map(|prev| &prev.next)
+                                .unwrap_or_else(|| super::first_guard_ptr())
+                    ) {
+                        self.prev_node = Some(next_node);
+                    }
                 },
                 Some(ref contents) if !contents.freeing.load(Ordering::Acquire) => {
                     // Found a block node.
-                    self.prev_guard = Some(mem::replace(
-                        &mut self.current_guard,
-                        NodeRef::from_tagged_ptr(&next_node.next).0
-                            .expect(Text::heap_block_node_not_followed_by_guard())
-                    ));
-                    assert!(!self.current_guard.is_block_node());
-                    return Some(next_node);
+                    if self.node_base.is_none() || contents.base > self.node_base.unwrap() {
+                        self.node_base = Some(contents.base);
+                        return Some(next_node);
+                    } else {
+                        self.prev_node = Some(next_node);
+                    }
                 },
                 Some(_) => {
                     // Found a block node, but it's supposed to be freed. Remove it from the list if
                     // possible.
-                    let next_guard = NodeRef::from_tagged_ptr(&next_node.next).0
-                        .expect(Text::heap_block_node_not_followed_by_guard());
-                    self.prev_guard = Some(mem::replace(&mut self.current_guard, next_guard));
-                    assert!(!self.current_guard.is_block_node());
-                    if let Err(next_node) = next_node.try_remove_from_list(&self.prev_guard.as_ref().unwrap().next) {
+                    if let Err(next_node) = next_node.try_remove_from_list(
+                            self.prev_node.as_ref()
+                                .map(|prev| &prev.next)
+                                .unwrap_or_else(|| super::first_guard_ptr())
+                    ) {
                         // Removal failed, so this node will still exist for a while. We'll have to return it.
-                        return Some(next_node);
+                        if self.node_base.is_none() || next_node.base().unwrap() > self.node_base.unwrap() {
+                            self.node_base = next_node.base();
+                            return Some(next_node);
+                        } else {
+                            self.prev_node = Some(next_node);
+                        }
                     }
                 }
             };
