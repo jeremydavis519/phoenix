@@ -277,7 +277,6 @@ impl<T, ListAlloc: alloc::alloc::Allocator+Copy, ElemAlloc: alloc::alloc::Alloca
 
         // If we have the only reference to `old_element`, its `next` pointer can't be changed
         // between now and when we remove it.
-        // TODO: Can I use this same logic in memory::phys::heap::node to remove the need for guard nodes?
         let (new_ptr, new_tag) = old_element.node.next.load(Ordering::Acquire);
 
         match ptr.compare_exchange(
