@@ -54,11 +54,11 @@ language_tok   = ["phoenix-kernel-i18n/language_tok"]
 # Adds some extra code for testing pieces of the kernel before they're used.
 self-test = [
     "phoenix-kernel-collections/self-test",
+    "phoenix-kernel-devices/self-test",
     "phoenix-kernel-error/self-test",
     "phoenix-kernel-exec/self-test",
     "phoenix-kernel-fs/self-test",
     "phoenix-kernel-hosted/self-test",
-    "phoenix-kernel-devices/self-test",
     "phoenix-kernel-i18n/self-test",
     "phoenix-kernel-initrd/self-test",
     "phoenix-kernel-int/self-test",
@@ -79,10 +79,10 @@ self-test = [
 # Adds some code that's needed in unit tests (cfg(test) doesn't always work).
 unit-test = [
     "phoenix-kernel-collections/unit-test",
+    "phoenix-kernel-devices/unit-test",
     "phoenix-kernel-error/unit-test",
     "phoenix-kernel-exec/unit-test",
     "phoenix-kernel-hosted/unit-test",
-    "phoenix-kernel-devices/unit-test",
     "phoenix-kernel-i18n/unit-test",
     "phoenix-kernel-initrd/unit-test",
     "phoenix-kernel-int/unit-test",
