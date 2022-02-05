@@ -28,7 +28,6 @@ use {
 
     i18n::Text,
     io::printlndebug,
-    shared::array,
 
     crate::{IsrFn, IsrResult}
 };
@@ -209,7 +208,7 @@ impl Debug for AtomicOptionIsrFnPtr {
 }
 
 static ISR_PTR_NODES: IsrPtrNodeHeap = IsrPtrNodeHeap {
-    nodes: array![IsrPtrNode::new(); 1019]
+    nodes: [const { IsrPtrNode::new() }; 1019]
 };
 
 /// Registers the given ISR to handle the given IRQ.

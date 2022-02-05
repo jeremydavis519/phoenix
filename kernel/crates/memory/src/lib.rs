@@ -28,6 +28,7 @@
 
 #![feature(allocator_api, alloc_error_handler)]
 #![feature(const_fn_fn_ptr_basics)]
+#![feature(inline_const)]
 #![feature(negative_impls)]
 #![feature(never_type)]
 #![feature(nonnull_slice_from_raw_parts)]

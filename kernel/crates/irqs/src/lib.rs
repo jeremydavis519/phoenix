@@ -22,9 +22,7 @@
 
 #![no_std]
 
-//#![feature(auto_traits)]
-//#![feature(allocator_api)]
-//#![feature(core_intrinsics)]
+#![feature(inline_const)]
 
 #![deny(warnings, missing_docs)]
 

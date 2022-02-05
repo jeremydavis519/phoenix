@@ -45,7 +45,6 @@ use core::arch::asm;
 pub mod ffi;
 pub mod fs;
 #[macro_use] pub mod once;
-pub mod static_array;
 pub mod sync;
 
 lazy_static! {

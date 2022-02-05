@@ -454,7 +454,7 @@ impl MasterBlock {
             cells:    [Cell<MaybeUninit<Node>>; NODES_PER_MASTER_BLOCK],
             no_cells: [MaybeUninit<Node>;       NODES_PER_MASTER_BLOCK]
         }
-        let mut nodes = Nodes { cells: array![Cell::new(MaybeUninit::uninit()); 64] };
+        let mut nodes = Nodes { cells: [const { Cell::new(MaybeUninit::uninit()) }; 64] };
 
         let mut nodes_used = 0;
         let index = 0;
@@ -493,7 +493,7 @@ impl MasterBlock {
     pub(crate) const fn new_dynamic(allocation: Allocation) -> Self {
         Self {
             allocation:       RefCell::new(Some(allocation)),
-            nodes:            array![Cell::new(MaybeUninit::uninit()); 64],
+            nodes:            [const { Cell::new(MaybeUninit::uninit()) }; 64],
             nodes_used:       AtomicU64::new(0),
             formatting_debug: AtomicBool::new(false)
         }
