@@ -1044,7 +1044,7 @@ mod tests {
 
     fn assert_heap_empty() {
         // Make sure that the only nodes in the heap point to master blocks.
-        if let Some(node) = block_nodes().next() {
+        for node in block_nodes() {
             assert!(
                 node.is_master(Ordering::Acquire) || node.freeing(Ordering::Acquire),
                 "expected empty heap, found block node: {:#x?}", *node
