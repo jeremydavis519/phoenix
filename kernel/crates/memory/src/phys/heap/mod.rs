@@ -53,12 +53,12 @@ use {
         map::{MemoryMap, Region, RegionType, MEMORY_MAP}
     },
     self::node::{
-        BlockNodes,
+        Nodes,
         MasterBlock,
         Node,
         NodeRef,
 
-        GUARDS_PER_MASTER_BLOCK
+        NODES_PER_MASTER_BLOCK
     }
 };
 
@@ -68,14 +68,10 @@ use {
 const MAX_VISITORS: usize = align_of::<Node>() / 2 - 1;
 
 static STATIC_MASTER_BLOCK:  MasterBlock     = MasterBlock::new(None);
-static FIRST_GUARD:          TaggedPtr<Node> = TaggedPtr::new_null(0);  // Initialized at runtime
+static HEAD_PTR:             TaggedPtr<Node> = TaggedPtr::new_null(0);
 static EXPECTED_MALLOC_SIZE: AtomicUsize     = AtomicUsize::new(0);
 static VISITORS:             AtomicUsize     = AtomicUsize::new(0);
-static UNUSED_GUARD_SLOTS:   AtomicUsize     = AtomicUsize::new(MasterBlock::INITIAL_UNUSED_GUARD_SLOTS);
-
-fn first_guard_ptr() -> &'static TaggedPtr<Node> {
-    &FIRST_GUARD
-}
+static UNUSED_NODE_SLOTS:    AtomicUsize     = AtomicUsize::new(NODES_PER_MASTER_BLOCK);
 
 /// Reserves a block of RAM or ROM starting at `base` that is `size` bytes long.
 ///
@@ -244,8 +240,8 @@ pub(crate) fn malloc_low(
 pub(crate) fn dealloc(base: PhysPtr<u8, *mut u8>) {
     let base = base.as_addr_phys();
 
-    if let Some(node) = block_nodes()
-            .find(|node| node.base().unwrap() == base) {
+    if let Some(node) = nodes()
+            .find(|node| node.base() == base) {
         node.free();
     } else {
         panic!("{}", Text::TriedToFreeNothing(base as *mut u8));
@@ -261,7 +257,7 @@ fn find_best_base(size: usize, align: usize, map: &MemoryMap) -> Result<usize, A
     let mut best_size = 0;
     let mut best_score = usize::max_value();
 
-    let mut block_nodes = block_nodes();
+    let mut nodes = nodes();
     let mut prev_base = 0_usize;
     let mut prev_size = 0_usize;
     for region in map.present_regions() {
@@ -270,10 +266,10 @@ fn find_best_base(size: usize, align: usize, map: &MemoryMap) -> Result<usize, A
                 (region.base.checked_add(region.size).is_none() ||
                     prev_base + prev_size < region.base + region.size) {    // or after the end of the region
             // Get the base and size of the next allocated block.
-            let (next_base, next_size) = match block_nodes.next() {
+            let (next_base, next_size) = match nodes.next() {
                 Some(node) => {
-                    let size = node.size().unwrap();
-                    (Some(node.base().unwrap()), size)
+                    let size = node.size();
+                    (Some(node.base()), size)
                 },
                 None => (None, 0)
             };
@@ -385,35 +381,35 @@ fn fit_score(size: usize, free_size: usize) -> usize {
 // at least one byte that has already been allocated. This should only be called right after
 // `alloc_masters`, to make sure there are enough node slots available.
 fn allocate(base: usize, size: NonZeroUsize) -> Result<Allocation, AllocError> {
-    UNUSED_GUARD_SLOTS.fetch_sub(1, Ordering::AcqRel);
-    let (block_node_cell, block_node_master) = claim_slot();
-    block_node_cell.set(MaybeUninit::new(Node::new_block_node(base, size, block_node_master)));
+    UNUSED_NODE_SLOTS.fetch_sub(1, Ordering::AcqRel);
+    let (cell, master) = claim_slot();
+    cell.set(MaybeUninit::new(Node::new(base, size, master)));
 
     // Add the node to the list.
-    let block_node = unsafe { Pin::new_unchecked((*block_node_cell.as_ptr()).assume_init_ref()) };
-    if let Err(AllocError) = block_node.add_to_list() {
+    let node = unsafe { Pin::new_unchecked((*cell.as_ptr()).assume_init_ref()) };
+    if let Err(AllocError) = node.add_to_list() {
         // Couldn't add the node. Release the slot we've claimed.
-        let block_node_ptr = &*block_node as *const _ as *mut _;
-        unsafe { ptr::drop_in_place(block_node_ptr); }
-        block_node_master.unuse_node(block_node_ptr);
+        let node_ptr = &*node as *const Node as *mut Node;
+        unsafe { ptr::drop_in_place(node_ptr); }
+        master.unuse_node(node_ptr);
 
-        UNUSED_GUARD_SLOTS.fetch_add(1, Ordering::Release);
+        UNUSED_NODE_SLOTS.fetch_add(1, Ordering::Release);
         return Err(AllocError);
     }
 
-    Ok(Allocation { block_node })
+    Ok(Allocation { node })
 }
 
-// Claims a guard slot and a node slot. If that won't leave enough slots for every visitor to
-// get one with the worst-case number of visitors, this function allocates a new master block
-// with those slots and repeats until there are enough slots.
+// Claims a node slot. If that won't leave enough slots for every visitor to get one with the
+// worst-case number of visitors, this function allocates a new master block, using the claimed
+// slot, and repeats until there are enough slots.
 fn alloc_masters(map: &MemoryMap) -> Result<(), AllocError> {
     let master_block_size = size_of::<MasterBlock>();
     let master_block_align = align_of::<MasterBlock>();
 
     update_expected_malloc_size(master_block_size);
 
-    while UNUSED_GUARD_SLOTS.load(Ordering::Acquire) <= MAX_VISITORS {
+    while UNUSED_NODE_SLOTS.load(Ordering::Acquire) <= MAX_VISITORS {
         // Loop to handle race conditions where multiple threads try to allocate the same memory at
         // the same time.
         let allocation = loop {
@@ -426,27 +422,26 @@ fn alloc_masters(map: &MemoryMap) -> Result<(), AllocError> {
 
         // Initialize the block of memory as a master block.
         unsafe {
-            let master_block_ptr = PhysPtr::<_, *mut _>::from_addr_phys(allocation.block_node.base().unwrap()).as_virt().unwrap();
+            let master_block_ptr = PhysPtr::<_, *mut _>::from_addr_phys(allocation.node.base()).as_virt().unwrap();
             mem::forget(mem::replace(
                 &mut *master_block_ptr,
                 MasterBlock::new(Some(allocation))
             ));
-            (*master_block_ptr).allocation().as_ref().unwrap().block_node.set_is_master(true, Ordering::Release);
+            (*master_block_ptr).allocation().as_ref().unwrap().node.set_is_master(true, Ordering::Release);
         }
 
         // Now that the master block is initialized, its nodes are available.
-        UNUSED_GUARD_SLOTS.fetch_add(GUARDS_PER_MASTER_BLOCK, Ordering::Release);
+        UNUSED_NODE_SLOTS.fetch_add(NODES_PER_MASTER_BLOCK, Ordering::Release);
     }
 
     Ok(())
 }
 
-// Searches for an atomically claims a slot for a new block node. Calling this function without
-// first decrementing `UNUSED_GUARD_SLOTS` runs the risk of a deadlock, so make sure to do
-// that first.
+// Searches for and atomically claims a slot for a new node. Calling this function without first
+// decrementing `UNUSED_NODE_SLOTS` runs the risk of a deadlock, so make sure to do that first.
 // Returns `(node, node_master)`, where
-//     `node` is a reference to the `Cell` containing the uninitialized block node, and
-//     `node_master` is a pointer to the `MasterBlock` containing that block node.
+//     `node` is a reference to the `Cell` containing the uninitialized node, and
+//     `node_master` is a reference to the `MasterBlock` containing that cell.
 fn claim_slot() -> (&'static Cell<MaybeUninit<Node>>, &'static MasterBlock) {
     // It's possible that we'll go through the whole list without finding any free slots. But
     // in that case, we can still guarantee that there are free slots somewhere in the list, so
@@ -454,7 +449,7 @@ fn claim_slot() -> (&'static Cell<MaybeUninit<Node>>, &'static MasterBlock) {
     'restart: loop {
         // We'll check the static master block first, then each master block in the list.
         let mut master_block = &STATIC_MASTER_BLOCK;
-        let mut block_nodes = block_nodes();
+        let mut nodes = nodes();
 
         let mut cells_masters = [None];
         let mut next_cell_master_index = 0;
@@ -477,9 +472,9 @@ fn claim_slot() -> (&'static Cell<MaybeUninit<Node>>, &'static MasterBlock) {
 
             // Find the next master block.
             loop {
-                match block_nodes.next() {
+                match nodes.next() {
                     Some(node) if node.is_master(Ordering::Acquire) => {
-                        master_block = unsafe { &*PhysPtr::<_, *const _>::from_addr_phys(node.base().unwrap()).as_virt().unwrap() };
+                        master_block = unsafe { &*PhysPtr::<_, *const _>::from_addr_phys(node.base()).as_virt().unwrap() };
                         break;
                     },
                     Some(_) => {},
@@ -496,21 +491,21 @@ fn align_up(addr: usize, align: usize) -> usize {
     addr.wrapping_add(align - 1) / align * align
 }
 
-// Returns an iterator over all the block nodes in the heap.
-fn block_nodes() -> impl Iterator<Item = NodeRef> {
-    BlockNodes::new()
+// Returns an iterator over all the nodes in the heap.
+fn nodes() -> impl Iterator<Item = NodeRef> {
+    Nodes::new()
 }
 
 // Represents a piece of memory that has been allocated on the heap. This object isn't used for
 // much, but dropping it causes the memory to be freed.
 #[derive(Debug)]
 pub(crate) struct Allocation {
-    block_node: Pin<&'static Node>
+    node: Pin<&'static Node>
 }
 
 impl Drop for Allocation {
     fn drop(&mut self) {
-        self.block_node.free();
+        self.node.free();
     }
 }
 
@@ -932,7 +927,7 @@ mod tests {
                                     // instead of just dropping the `Allocation` instance.
                                     if allocations.len() > 0 {
                                         let allocation = allocations.swap_remove(index % allocations.len());
-                                        let addr = allocation.block_node.base().unwrap();
+                                        let addr = allocation.node.base();
                                         mem::forget(allocation);
                                         dealloc(PhysPtr::<_, *mut _>::from_addr_phys(addr));
                                     }
@@ -1042,27 +1037,24 @@ mod tests {
     }
 
     fn clear_heap() {
-        // Deallocate every block node in the heap. This really only sets a flag in each node;
-        // they're not removed from the list until the next time we iterate over them.
-        for node in block_nodes() {
+        // Deallocate every node in the heap. This really only sets a flag in each node; they're
+        // not removed from the list until the next time we iterate over them.
+        for node in nodes() {
             node.free();
         }
 
         // Repeatedly iterate through the whole heap until the nodes are actually gone.
-        while block_nodes().count() > 0 {}
+        while nodes().count() > 0 {}
     }
 
     fn validate_heap() {
         // Make sure that the nodes are sorted by base address and don't overlap. This check also
         // catches any situation in which the list of nodes contains a cycle, since that would cause
-        // a jump to an earlier node. This can only be done if we have exclusive access to the heap,
-        // since `BlockNodes` does not guarantee that the observed base addresses will increase
-        // monotonically in a multithreaded environment.
-        assert_eq!(HEAP_LOCK.writer_count(), 1, "`validate_heap` requires exclusive access to the heap.");
+        // a jump to an earlier node.
         let (mut prev_base, mut prev_size) = (0, 0);
-        for node in block_nodes() {
-            let base = node.base().unwrap();
-            let size = node.size().unwrap();
+        for node in nodes() {
+            let base = node.base();
+            let size = node.size();
             println!("Validating node @ {:#p}: [{:#010x}_{:08x}, {:#010x}_{:08x})",
                 &**node as *const Node,
                 base >> 32, base & 0xffff_ffff,
@@ -1078,25 +1070,25 @@ mod tests {
 
     fn assert_heap_empty() {
         // Make sure that the only nodes in the heap point to master blocks.
-        for node in block_nodes() {
+        for node in nodes() {
             assert!(
                 node.is_master(Ordering::Acquire) || node.freeing(Ordering::Acquire),
-                "expected empty heap, found block node: {:#x?}", *node
+                "expected empty heap, found node: {:#x?}", *node
             );
         }
     }
 
     fn validate_allocation(alloc: &Allocation, map: Option<&MemoryMap>) {
-        // Make sure that `alloc.block_node` is actually in the heap's list and that `*alloc.block_node`
+        // Make sure that `alloc.node` is actually in the heap's list and that `*alloc.node`
         // is entirely contained within an allocated master block.
         let (mut node_in_list, mut node_in_master) = (false, false);
-        let alloc_base = PhysPtr::<_, *const _>::from_virt(&*alloc.block_node).as_addr_phys();
-        let alloc_size = mem::size_of_val(&*alloc.block_node);
-        for node in block_nodes() {
-            let node_base = node.base().unwrap();
-            let node_size = node.size().unwrap();
+        let alloc_base = PhysPtr::<_, *const _>::from_virt(&*alloc.node).as_addr_phys();
+        let alloc_size = mem::size_of_val(&*alloc.node);
+        for node in nodes() {
+            let node_base = node.base();
+            let node_size = node.size();
 
-            if ptr::eq(&**node, &*alloc.block_node) {
+            if ptr::eq(&**node, &*alloc.node) {
                 node_in_list = true;
                 assert!(!node.is_master(Ordering::Acquire), "publicly visible nodes should not be master nodes");
             } else if !node_in_master && node.is_master(Ordering::Acquire) && node_base <= alloc_base
@@ -1114,17 +1106,17 @@ mod tests {
         let node_in_static_master = static_master_base <= alloc_base
             && alloc_base - static_master_base + alloc_size <= static_master_size;
         node_in_master = node_in_master || node_in_static_master;
-        assert!(node_in_list, "the given node @ {:#p} is not in the heap's list", alloc.block_node);
-        assert!(node_in_master, "the given node @ {:#p} is not in a master block", alloc.block_node);
+        assert!(node_in_list, "the given node @ {:#p} is not in the heap's list", alloc.node);
+        assert!(node_in_master, "the given node @ {:#p} is not in a master block", alloc.node);
 
         if let Some(map) = map {
             if !node_in_static_master {
-                // Make sure that `alloc.block_node` is contained within the memory map.
+                // Make sure that `alloc.node` is contained within the memory map.
                 let node_in_region = map.present_regions()
                     .find(|region| region.base <= alloc_base
                         && alloc_base - region.base + alloc_size <= region.size) // Rearranged from b + s <= b + s to avoid overflow
                     .is_some();
-                assert!(node_in_region, "the given node @ {:#p} is not in any of the memory map's regions", alloc.block_node);
+                assert!(node_in_region, "the given node @ {:#p} is not in any of the memory map's regions", alloc.node);
             }
         }
     }

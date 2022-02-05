@@ -42,12 +42,24 @@ use {
 // The amount to add to a pointer's tag to indicate a change in the number of references to a node.
 const GENERATION_STEP: usize = TaggedPtr::<Node>::TAG_UNIT;
 
-// Either a node that defines a block or a guard between block nodes.
+// A node that defines a block of allocated memory.
 #[derive(Debug)]
 #[repr(align(64))]
 pub(crate) struct Node {
     // A pointer to the next node in the list.
     next: TaggedPtr<Node>,
+
+    // The base address of the block.
+    base: usize,
+
+    // The number of bytes of memory in the block.
+    size: NonZeroUsize,
+
+    // True if the block is in the process of being freed.
+    freeing: AtomicBool,
+
+    // True if this node controls a master block (used as space for more nodes).
+    is_master: AtomicBool,
 
     // A number that changes every time a reference to this node is dropped. If it is equal to the
     // similar number stored in the tag of the `TaggedPtr` that points to this node, there are no
@@ -58,24 +70,19 @@ pub(crate) struct Node {
     // initialize the heap, `None` means the statically allocated master block.
     master: Option<&'static MasterBlock>,
 
-    // Extra contents that are necessary for block nodes but not for guards.
-    block_node_contents: Option<BlockNodeContents>,
-
     _pin: PhantomPinned
 }
 
 impl Node {
-    pub(crate) fn new_block_node(base: usize, size: NonZeroUsize, master: &'static MasterBlock) -> Self {
+    pub(crate) fn new(base: usize, size: NonZeroUsize, master: &'static MasterBlock) -> Self {
         Self {
             next:                TaggedPtr::new_null(0),
+            base,
+            size,
+            freeing:             AtomicBool::new(false),
+            is_master:           AtomicBool::new(false),
             dropped_refs_gen:    AtomicUsize::new(0),
             master:              Some(master),
-            block_node_contents: Some(BlockNodeContents {
-                base,
-                size,
-                freeing:          AtomicBool::new(false),
-                is_master:        AtomicBool::new(false)
-            }),
             _pin: PhantomPinned
         }
     }
@@ -84,51 +91,37 @@ impl Node {
         self.master.unwrap_or(&super::STATIC_MASTER_BLOCK)
     }
 
-    pub(crate) fn is_block_node(&self) -> bool {
-        self.block_node_contents.is_some()
+    pub(crate) fn base(&self) -> usize {
+        self.base
     }
 
-    pub(crate) fn base(&self) -> Option<usize> {
-        self.block_node_contents.as_ref().map(|contents| contents.base)
-    }
-
-    pub(crate) fn size(&self) -> Option<usize> {
-        self.block_node_contents.as_ref().map(|contents| contents.size.get())
+    pub(crate) fn size(&self) -> usize {
+        self.size.get()
     }
 
     pub(crate) fn is_master(&self, ordering: Ordering) -> bool {
-        self.block_node_contents.as_ref()
-            .map(|c| c.is_master.load(ordering))
-            .unwrap_or(false)
+        self.is_master.load(ordering)
     }
 
     pub(crate) fn set_is_master(&self, value: bool, ordering: Ordering) {
-        self.block_node_contents.as_ref()
-            .expect("attempted to mark a guard as a master node")
-            .is_master.store(value, ordering);
+        self.is_master.store(value, ordering);
     }
 
     #[cfg(test)]
     pub(crate) fn freeing(&self, ordering: Ordering) -> bool {
-        self.block_node_contents.as_ref()
-            .map(|c| c.freeing.load(ordering))
-            .unwrap_or(false)
+        self.freeing.load(ordering)
     }
 
-    // Lazily frees this node. (This is currently needed only for block nodes.)
+    // Lazily frees this node.
     pub(crate) fn free(&self) {
-        if let Some(ref contents) = self.block_node_contents {
-            // Since we don't know where the guard that points to this node is, we can't efficiently
-            // remove this node from the list yet. But we can mark it so that it will be removed
-            // whenever we happen to come across it in the future.
-            contents.freeing.store(true, Ordering::Release);
-        }
+        // Since we don't know where the previous node is, we can't efficiently remove this
+        // node from the list yet. But we can mark it so that it will be removed whenever
+        // we happen to come across it in the future.
+        self.freeing.store(true, Ordering::Release);
     }
 
-    // Adds this block node to the given heap's list of nodes.
+    // Adds this node to the given heap's list of nodes.
     pub(crate) fn add_to_list(self: Pin<&Self>) -> Result<(), AllocError> {
-        assert!(self.is_block_node());
-
         let mut prev = None;
         loop {
             // Determine where the node should be added.
@@ -139,7 +132,7 @@ impl Node {
             self.next.store(old_next_ptr, Ordering::Release);
             let ptr = prev.as_ref()
                 .map(|prev| &prev.next)
-                .unwrap_or_else(|| super::first_guard_ptr());
+                .unwrap_or(&super::HEAD_PTR);
             match ptr.compare_exchange(
                     old_next_ptr,
                     (&*self as *const Node as *mut Node, 0),
@@ -153,69 +146,43 @@ impl Node {
         Ok(())
     }
 
-    // Finds the node after which this block node should be added. Also returns a reference to the
-    // next node (if any) and a snapshot of the tagged pointer to the next node.
+    // Finds the node after which this node should be added. Also returns a reference to the next
+    // node (if any) and a snapshot of the tagged pointer to the next node.
     fn find_insert_location(&self, mut prev: Option<NodeRef>)
             -> Result<(Option<NodeRef>, (Option<NodeRef>, (*mut Node, usize))), AllocError> {
-        assert!(self.is_block_node());
-
-        let base = self.base().unwrap();
-        let mut block_node: NodeRef;
-        let mut block_node_ptr: (*mut Node, usize);
+        let base = self.base();
+        let mut node: NodeRef;
+        let mut node_ptr: (*mut Node, usize);
         loop {
-            // We must never put a new block node before an existing guard, so we need to put it
-            // after a guard that's pointing to a block node or at the end of the list.
-            loop {
-                match NodeRef::from_tagged_ptr(
-                    prev.as_ref()
-                        .map(|prev| &prev.next)
-                        .unwrap_or_else(|| super::first_guard_ptr())
-                ) {
-                    (None, tagged_ptr) => {
-                        // We've found the end of the list, so insert the new node here.
-                        return Ok((prev, (None, tagged_ptr)));
-                    },
-                    (Some(node_ref), tagged_ptr) if node_ref.is_block_node() => {
-                        block_node = node_ref;
-                        block_node_ptr = tagged_ptr;
-                        break;
-                    },
-                    (Some(guard_ref), _) => {
-                        prev = Some(guard_ref);
-                    }
-                };
-            }
+            match NodeRef::from_tagged_ptr(
+                prev.as_ref()
+                    .map(|prev| &prev.next)
+                    .unwrap_or(&super::HEAD_PTR)
+            ) {
+                (None, tagged_ptr) => {
+                    // We've found the end of the list, so insert the new node here.
+                    return Ok((prev, (None, tagged_ptr)));
+                },
+                (Some(node_ref), tagged_ptr) => {
+                    node = node_ref;
+                    node_ptr = tagged_ptr;
+                }
+            };
 
             // Keep traversing the list until we find a block that's after the given base.
-            if block_node.base().unwrap() >= base {
+            if node.base() >= base {
                 // Found one. Continue allocating only if there won't be any overlap.
-                if block_node.base().unwrap() - base < self.size().unwrap() {
+                if node.base() - base < self.size() {
                     return Err(AllocError);
                 }
                 break;
             }
 
-            prev = Some(block_node);
+            prev = Some(node);
         }
 
-        Ok((prev, (Some(block_node), block_node_ptr)))
+        Ok((prev, (Some(node), node_ptr)))
     }
-}
-
-// The parts of a block node that are not also present in a guard.
-#[derive(Debug)]
-pub(crate) struct BlockNodeContents {
-    // The base address of the block.
-    base: usize,
-
-    // The number of bytes of memory in the block.
-    size: NonZeroUsize,
-
-    // True if the block is in the process of being freed.
-    freeing: AtomicBool,
-
-    // True if this node controls a master block (used as space for more nodes).
-    pub(crate) is_master: AtomicBool
 }
 
 // A reference to a node. An instance of this type should *never* be made directly, since that would
@@ -317,13 +284,13 @@ impl Drop for NodeRef {
     }
 }
 
-/// An iterator over the block nodes in a heap.
-pub(crate) struct BlockNodes {
+/// An iterator over the nodes in a heap.
+pub(crate) struct Nodes {
     prev_node: Option<NodeRef>,
     node_base: Option<usize>
 }
 
-impl BlockNodes {
+impl Nodes {
     pub(crate) fn new() -> Self {
         // Block until there are few enough simultaneous visitors to guarantee that the reference
         // counts won't overflow.
@@ -352,7 +319,7 @@ impl BlockNodes {
     }
 }
 
-impl Iterator for BlockNodes {
+impl Iterator for Nodes {
     type Item = NodeRef;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -360,7 +327,7 @@ impl Iterator for BlockNodes {
             let next_node = match NodeRef::from_tagged_ptr(
                     self.prev_node.as_ref()
                         .map(|prev| &prev.next)
-                        .unwrap_or_else(|| super::first_guard_ptr())
+                        .unwrap_or(&super::HEAD_PTR)
             ).0 {
                 None => {
                     // We've reached the end of the list.
@@ -369,49 +336,36 @@ impl Iterator for BlockNodes {
                 Some(node_ref) => node_ref
             };
 
-            match next_node.block_node_contents {
-                None => {
-                    // Found a guard. Remove it from the list if possible.
-                    if let Err(next_node) = next_node.try_remove_from_list(
-                            self.prev_node.as_ref()
-                                .map(|prev| &prev.next)
-                                .unwrap_or_else(|| super::first_guard_ptr())
-                    ) {
-                        self.prev_node = Some(next_node);
-                    }
-                },
-                Some(ref contents) if !contents.freeing.load(Ordering::Acquire) => {
-                    // Found a block node.
-                    if self.node_base.is_none() || contents.base > self.node_base.unwrap() {
-                        self.node_base = Some(contents.base);
+            if !next_node.freeing.load(Ordering::Acquire) {
+                // Found a node.
+                if self.node_base.is_none() || next_node.base > self.node_base.unwrap() {
+                    self.node_base = Some(next_node.base);
+                    return Some(next_node);
+                } else {
+                    self.prev_node = Some(next_node);
+                }
+            } else {
+                // Found a node, but it's supposed to be freed. Remove it from the list if
+                // possible.
+                if let Err(next_node) = next_node.try_remove_from_list(
+                        self.prev_node.as_ref()
+                            .map(|prev| &prev.next)
+                            .unwrap_or(&super::HEAD_PTR)
+                ) {
+                    // Removal failed, so this node will still exist for a while. We'll have to return it.
+                    if self.node_base.is_none() || next_node.base() > self.node_base.unwrap() {
+                        self.node_base = Some(next_node.base());
                         return Some(next_node);
                     } else {
                         self.prev_node = Some(next_node);
                     }
-                },
-                Some(_) => {
-                    // Found a block node, but it's supposed to be freed. Remove it from the list if
-                    // possible.
-                    if let Err(next_node) = next_node.try_remove_from_list(
-                            self.prev_node.as_ref()
-                                .map(|prev| &prev.next)
-                                .unwrap_or_else(|| super::first_guard_ptr())
-                    ) {
-                        // Removal failed, so this node will still exist for a while. We'll have to return it.
-                        if self.node_base.is_none() || next_node.base().unwrap() > self.node_base.unwrap() {
-                            self.node_base = next_node.base();
-                            return Some(next_node);
-                        } else {
-                            self.prev_node = Some(next_node);
-                        }
-                    }
                 }
-            };
+            }
         }
     }
 }
 
-impl Drop for BlockNodes {
+impl Drop for Nodes {
     fn drop(&mut self) {
         // We are no longer visiting the heap's nodes.
         super::VISITORS.fetch_sub(1, Ordering::Release);
@@ -419,14 +373,11 @@ impl Drop for BlockNodes {
 }
 
 // The number of nodes a master block can contain.
-const NODES_PER_MASTER_BLOCK: usize = 64;
+pub(crate) const NODES_PER_MASTER_BLOCK: usize = 64;
 
-// The average number of guards that can be allocated in each master block.
-pub(crate) const GUARDS_PER_MASTER_BLOCK: usize = NODES_PER_MASTER_BLOCK / 2;
-
-// This struct is a block that contains the nodes that define the heap.
+// This struct is a place to store the nodes that define the heap.
 pub(crate) struct MasterBlock {
-    allocation: RefCell<Option<Allocation>>, // A reference to the this block's heap allocation, if any
+    allocation: RefCell<Option<Allocation>>, // A reference to this block's heap allocation, if any
     nodes: [Cell<MaybeUninit<Node>>; NODES_PER_MASTER_BLOCK],
     nodes_used: AtomicU64,                // A bitmap of which elements of the `nodes` array currently exist
 
@@ -434,11 +385,6 @@ pub(crate) struct MasterBlock {
 }
 
 impl MasterBlock {
-    // The number of slots available in the first master block for guard nodes right after its
-    // `const` initialization if nodes are added to this block in this order: block, guard, block,
-    // guard, ...
-    pub(crate) const INITIAL_UNUSED_GUARD_SLOTS: usize = GUARDS_PER_MASTER_BLOCK;
-
     pub(crate) const fn new(allocation: Option<Allocation>) -> Self {
         Self {
             allocation:       RefCell::new(allocation),
@@ -503,10 +449,10 @@ impl MasterBlock {
         //     this master block (even if we should actually free it) or we'll execute a CAS that
         //     will catch the mistake. Not freeing the master block isn't ideal, but the heap will
         //     still be in a valid state, and the master block will be reused for later allocations.
-        let mut old_unused_guard_slots = super::UNUSED_GUARD_SLOTS.load(Ordering::Relaxed);
+        let mut old_unused_slots = super::UNUSED_NODE_SLOTS.load(Ordering::Relaxed);
         loop {
-            let new_unused_guard_slots = old_unused_guard_slots.saturating_sub(GUARDS_PER_MASTER_BLOCK);
-            if new_unused_guard_slots < super::MAX_VISITORS {
+            let new_unused_slots = old_unused_slots.saturating_sub(NODES_PER_MASTER_BLOCK);
+            if new_unused_slots < super::MAX_VISITORS {
                 // There would be too few slots left if we continued.
                 return;
             }
@@ -514,14 +460,14 @@ impl MasterBlock {
             // Relaxed ordering: Same as above. If we read the wrong value on the error path, we'll
             //     either return without freeing the master block or execute another CAS that will
             //     catch the mistake.
-            match super::UNUSED_GUARD_SLOTS.compare_exchange_weak(
-                    old_unused_guard_slots,
-                    new_unused_guard_slots,
+            match super::UNUSED_NODE_SLOTS.compare_exchange_weak(
+                    old_unused_slots,
+                    new_unused_slots,
                     Ordering::AcqRel,
                     Ordering::Relaxed
             ) {
                 Ok(_) => break,
-                Err(x) => old_unused_guard_slots = x
+                Err(x) => old_unused_slots = x
             };
         }
 
@@ -529,7 +475,7 @@ impl MasterBlock {
         // else.
         if self.nodes_used.compare_exchange(0, u64::max_value(), Ordering::AcqRel, Ordering::Acquire).is_err() {
             // Someone's already claimed a node. Undo everything we've done so far.
-            super::UNUSED_GUARD_SLOTS.fetch_add(GUARDS_PER_MASTER_BLOCK, Ordering::Release);
+            super::UNUSED_NODE_SLOTS.fetch_add(NODES_PER_MASTER_BLOCK, Ordering::Release);
             return;
         }
 
