@@ -22,7 +22,7 @@
 use {
     alloc::alloc::AllocError,
     core::{
-        cell::Cell,
+        cell::{Cell, RefCell},
         fmt,
         hint,
         marker::PhantomPinned,
@@ -505,15 +505,15 @@ impl MasterBlock {
 
     pub(crate) const fn new_dynamic(allocation: Allocation) -> Self {
         Self {
-            allocation:       RefCell::new(allocation),
+            allocation:       RefCell::new(Some(allocation)),
             nodes:            array![Cell::new(MaybeUninit::uninit()); 64],
             nodes_used:       AtomicU64::new(0),
             formatting_debug: AtomicBool::new(false)
         }
     }
 
-    pub(crate) const fn allocation(&self) -> Option<&Allocation> {
-        self.allocation.borrow().as_ref()
+    pub(crate) fn allocation(&self) -> impl '_+Deref<Target = Option<Allocation>> {
+        self.allocation.borrow()
     }
 
     pub(crate) fn claim_node(&self) -> Option<&Cell<MaybeUninit<Node>>> {
@@ -556,7 +556,7 @@ impl MasterBlock {
     // reduce the number of unused slots below the minimum. Does nothing if this is a statically
     // allocated block.
     fn try_free(&self) {
-        if self.allocation.is_none() {
+        if self.allocation.borrow().is_none() {
             // No parent node means this block isn't dynamically allocated, so it can't be dynamically freed.
             return;
         }

@@ -447,7 +447,7 @@ fn alloc_masters(map: &MemoryMap) -> Result<(), AllocError> {
                 &mut *master_block_ptr,
                 MasterBlock::new_dynamic(allocation)
             ));
-            (*master_block_ptr).allocation().unwrap().block_node.set_is_master(true, Ordering::Release);
+            (*master_block_ptr).allocation().as_ref().unwrap().block_node.set_is_master(true, Ordering::Release);
         }
 
         // Now that the master block is initialized, its nodes are available.
