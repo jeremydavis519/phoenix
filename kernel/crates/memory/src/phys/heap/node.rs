@@ -80,16 +80,6 @@ impl Node {
         }
     }
 
-    pub(crate) const fn new_guard(master: Option<&'static MasterBlock>) -> Self {
-        Self {
-            next:                TaggedPtr::new_null(0),
-            dropped_refs_gen:    AtomicUsize::new(0),
-            master,
-            block_node_contents: None,
-            _pin: PhantomPinned
-        }
-    }
-
     fn master(&self) -> &'static MasterBlock {
         self.master.unwrap_or(&super::STATIC_MASTER_BLOCK)
     }
@@ -358,7 +348,7 @@ impl BlockNodes {
             }
         }
 
-        Self { prev_node: NodeRef::from_tagged_ptr(super::first_guard_ptr()).0, node_base: None }
+        Self { prev_node: None, node_base: None }
     }
 }
 
@@ -444,55 +434,14 @@ pub(crate) struct MasterBlock {
 }
 
 impl MasterBlock {
-    // Returns a new statically allocated master block, which is intended to be created at compile
-    // time. This master block contains, from its creation, the heap nodes needed to have the heap
-    // in a valid state, ready to malloc.
-    pub(crate) const fn make_first() -> Self {
-        // TODO: Replace this with a simple array of `Cell`s.
-        assert!(mem::size_of::<Cell<MaybeUninit<Node>>>() == mem::size_of::<MaybeUninit<Node>>());
-        union Nodes {
-            cells:    [Cell<MaybeUninit<Node>>; NODES_PER_MASTER_BLOCK],
-            no_cells: [MaybeUninit<Node>;       NODES_PER_MASTER_BLOCK]
-        }
-        let mut nodes = Nodes { cells: [const { Cell::new(MaybeUninit::uninit()) }; 64] };
-
-        let mut nodes_used = 0;
-        let index = 0;
-
-        // Add a tail guard. The list of nodes should always end with one.
-        // TODO: This simpler line should work, but it doesn't yet. (See https://github.com/rust-lang/rust/issues/69908 for current status.)
-        //       nodes[index].set(MaybeUninit::new(Node::new_guard(None)));
-        unsafe {
-            nodes.no_cells[index] = MaybeUninit::new(Node::new_guard(None));
-        }
-        nodes_used |= 1 << index;
-        //index += 1;
-
-        Self {
-            allocation:       RefCell::new(None),
-            nodes:            unsafe { nodes.cells },
-            nodes_used:       AtomicU64::new(nodes_used),
-            formatting_debug: AtomicBool::new(false)
-        }
-    }
-
     // The number of slots available in the first master block for guard nodes right after its
     // `const` initialization if nodes are added to this block in this order: block, guard, block,
     // guard, ...
-    pub(crate) const INITIAL_UNUSED_GUARD_SLOTS: usize = (NODES_PER_MASTER_BLOCK - 1) / 2;
+    pub(crate) const INITIAL_UNUSED_GUARD_SLOTS: usize = GUARDS_PER_MASTER_BLOCK;
 
-    // Tries to return a pointer to the first guard node in this master block.
-    // 
-    // This function is designed to be used only once, as part of the heap's initialization. Any
-    // other use is still defined behavior according to Rust, but it's undefined according to this
-    // API. The returned pointer might point to an uninitialized value or a block node in that case.
-    pub(crate) fn initial_first_guard_ptr(&self) -> *mut Node {
-        unsafe { (*self.nodes[0].as_ptr()).as_mut_ptr() }
-    }
-
-    pub(crate) const fn new_dynamic(allocation: Allocation) -> Self {
+    pub(crate) const fn new(allocation: Option<Allocation>) -> Self {
         Self {
-            allocation:       RefCell::new(Some(allocation)),
+            allocation:       RefCell::new(allocation),
             nodes:            [const { Cell::new(MaybeUninit::uninit()) }; 64],
             nodes_used:       AtomicU64::new(0),
             formatting_debug: AtomicBool::new(false)

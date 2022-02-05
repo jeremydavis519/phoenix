@@ -67,21 +67,13 @@ use {
 // doesn't overflow.
 const MAX_VISITORS: usize = align_of::<Node>() / 2 - 1;
 
-static STATIC_MASTER_BLOCK:  MasterBlock     = MasterBlock::make_first();
+static STATIC_MASTER_BLOCK:  MasterBlock     = MasterBlock::new(None);
 static FIRST_GUARD:          TaggedPtr<Node> = TaggedPtr::new_null(0);  // Initialized at runtime
 static EXPECTED_MALLOC_SIZE: AtomicUsize     = AtomicUsize::new(0);
 static VISITORS:             AtomicUsize     = AtomicUsize::new(0);
 static UNUSED_GUARD_SLOTS:   AtomicUsize     = AtomicUsize::new(MasterBlock::INITIAL_UNUSED_GUARD_SLOTS);
 
 fn first_guard_ptr() -> &'static TaggedPtr<Node> {
-    // Make sure the pointer is initialized before returning it.
-    let _ = FIRST_GUARD.compare_exchange(
-        (ptr::null_mut(), 0),
-        (STATIC_MASTER_BLOCK.initial_first_guard_ptr(), 0),
-        Ordering::AcqRel,
-        Ordering::Acquire
-    );
-
     &FIRST_GUARD
 }
 
@@ -437,7 +429,7 @@ fn alloc_masters(map: &MemoryMap) -> Result<(), AllocError> {
             let master_block_ptr = PhysPtr::<_, *mut _>::from_addr_phys(allocation.block_node.base().unwrap()).as_virt().unwrap();
             mem::forget(mem::replace(
                 &mut *master_block_ptr,
-                MasterBlock::new_dynamic(allocation)
+                MasterBlock::new(Some(allocation))
             ));
             (*master_block_ptr).allocation().as_ref().unwrap().block_node.set_is_master(true, Ordering::Release);
         }
