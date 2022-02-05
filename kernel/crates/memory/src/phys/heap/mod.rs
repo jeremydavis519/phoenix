@@ -575,8 +575,10 @@ mod tests {
             let _lock = HEAP_LOCK.write();
             clear_heap();
             let (ptr1, allocation1) = malloc_with_map(size, align, &*MAP).unwrap();
+            validate_allocation(&allocation1, Some(&*MAP));
             validate_heap();
             let (ptr2, allocation2) = malloc_with_map(size, align, &*MAP).unwrap();
+            validate_allocation(&allocation2, Some(&*MAP));
             validate_heap();
             assert_eq!(ptr1.as_addr_phys() % align.get(), 0);
             assert_eq!(ptr2.as_addr_phys() % align.get(), 0);
@@ -596,7 +598,10 @@ mod tests {
             let align = NonZeroUsize::new(1).unwrap();
             let _lock = HEAP_LOCK.write();
             clear_heap();
-            assert!(malloc_with_map(size, align, &*MAP).is_ok());
+            let (_, allocation) = malloc_with_map(size, align, &*MAP).unwrap();
+            validate_allocation(&allocation, Some(&*MAP));
+            validate_heap();
+            drop(allocation);
             validate_heap();
             assert_heap_empty();
         }
@@ -607,10 +612,16 @@ mod tests {
             let align = NonZeroUsize::new(1).unwrap();
             let _lock = HEAP_LOCK.write();
             clear_heap();
-            assert!(malloc_with_map(size, align, &*MAP).is_ok());
+            let (_, allocation) = malloc_with_map(size, align, &*MAP).unwrap();
+            validate_allocation(&allocation, Some(&*MAP));
+            validate_heap();
+            drop(allocation);
             validate_heap();
             assert_heap_empty();
-            assert!(malloc_with_map(size, align, &*MAP).is_ok());
+            let (_, allocation) = malloc_with_map(size, align, &*MAP).unwrap();
+            validate_allocation(&allocation, Some(&*MAP));
+            validate_heap();
+            drop(allocation);
             validate_heap();
             assert_heap_empty();
         }
@@ -621,13 +632,22 @@ mod tests {
             let align = NonZeroUsize::new(1).unwrap();
             let _lock = HEAP_LOCK.write();
             clear_heap();
-            assert!(malloc_with_map(size, align, &*MAP).is_ok());
+            let (_, allocation) = malloc_with_map(size, align, &*MAP).unwrap();
+            validate_allocation(&allocation, Some(&*MAP));
+            validate_heap();
+            drop(allocation);
             validate_heap();
             assert_heap_empty();
-            assert!(malloc_with_map(size, align, &*MAP).is_ok());
+            let (_, allocation) = malloc_with_map(size, align, &*MAP).unwrap();
+            validate_allocation(&allocation, Some(&*MAP));
+            validate_heap();
+            drop(allocation);
             validate_heap();
             assert_heap_empty();
-            assert!(malloc_with_map(size, align, &*MAP).is_ok());
+            let (_, allocation) = malloc_with_map(size, align, &*MAP).unwrap();
+            validate_allocation(&allocation, Some(&*MAP));
+            validate_heap();
+            drop(allocation);
             validate_heap();
             assert_heap_empty();
         }
@@ -639,7 +659,10 @@ mod tests {
             let _lock = HEAP_LOCK.write();
             clear_heap();
             for _ in 0 .. 100 {
-                assert!(malloc_with_map(size, align, &*MAP).is_ok());
+                let (_, allocation) = malloc_with_map(size, align, &*MAP).unwrap();
+                validate_allocation(&allocation, Some(&*MAP));
+                validate_heap();
+                drop(allocation);
                 validate_heap();
                 assert_heap_empty();
             }
@@ -655,7 +678,10 @@ mod tests {
             let memory_base = unsafe { &MEMORY[MEMORY.len() - size.get()] as *const _ };
             let _lock = HEAP_LOCK.write();
             clear_heap();
-            assert!(reserve_with_map(PhysPtr::<u8, *const _>::from_virt(memory_base), size, &*MAP).is_ok());
+            let allocation = reserve_with_map(PhysPtr::<u8, *const _>::from_virt(memory_base), size, &*MAP).unwrap();
+            validate_allocation(&allocation, Some(&*MAP));
+            validate_heap();
+            drop(allocation);
             validate_heap();
             assert_heap_empty();
         }
@@ -666,10 +692,16 @@ mod tests {
             let memory_base = unsafe { &MEMORY[MEMORY.len() - size.get()] as *const _ };
             let _lock = HEAP_LOCK.write();
             clear_heap();
-            assert!(reserve_with_map(PhysPtr::<u8, *const _>::from_virt(memory_base), size, &*MAP).is_ok());
+            let allocation = reserve_with_map(PhysPtr::<u8, *const _>::from_virt(memory_base), size, &*MAP).unwrap();
+            validate_allocation(&allocation, Some(&*MAP));
+            validate_heap();
+            drop(allocation);
             validate_heap();
             assert_heap_empty();
-            assert!(reserve_with_map(PhysPtr::<u8, *const _>::from_virt(memory_base), size, &*MAP).is_ok());
+            let allocation = reserve_with_map(PhysPtr::<u8, *const _>::from_virt(memory_base), size, &*MAP).unwrap();
+            validate_allocation(&allocation, Some(&*MAP));
+            validate_heap();
+            drop(allocation);
             validate_heap();
             assert_heap_empty();
         }
@@ -680,13 +712,22 @@ mod tests {
             let memory_base = unsafe { &MEMORY[MEMORY.len() - size.get()] as *const _ };
             let _lock = HEAP_LOCK.write();
             clear_heap();
-            assert!(reserve_with_map(PhysPtr::<u8, *const _>::from_virt(memory_base), size, &*MAP).is_ok());
+            let allocation = reserve_with_map(PhysPtr::<u8, *const _>::from_virt(memory_base), size, &*MAP).unwrap();
+            validate_allocation(&allocation, Some(&*MAP));
+            validate_heap();
+            drop(allocation);
             validate_heap();
             assert_heap_empty();
-            assert!(reserve_with_map(PhysPtr::<u8, *const _>::from_virt(memory_base), size, &*MAP).is_ok());
+            let allocation = reserve_with_map(PhysPtr::<u8, *const _>::from_virt(memory_base), size, &*MAP).unwrap();
+            validate_allocation(&allocation, Some(&*MAP));
+            validate_heap();
+            drop(allocation);
             validate_heap();
             assert_heap_empty();
-            assert!(reserve_with_map(PhysPtr::<u8, *const _>::from_virt(memory_base), size, &*MAP).is_ok());
+            let allocation = reserve_with_map(PhysPtr::<u8, *const _>::from_virt(memory_base), size, &*MAP).unwrap();
+            validate_allocation(&allocation, Some(&*MAP));
+            validate_heap();
+            drop(allocation);
             validate_heap();
             assert_heap_empty();
         }
@@ -698,7 +739,10 @@ mod tests {
             let _lock = HEAP_LOCK.write();
             clear_heap();
             for _ in 0 .. 100 {
-                assert!(reserve_with_map(PhysPtr::<u8, *const _>::from_virt(memory_base), size, &*MAP).is_ok());
+                let allocation = reserve_with_map(PhysPtr::<u8, *const _>::from_virt(memory_base), size, &*MAP).unwrap();
+                validate_allocation(&allocation, Some(&*MAP));
+                validate_heap();
+                drop(allocation);
                 validate_heap();
                 assert_heap_empty();
             }
@@ -715,6 +759,7 @@ mod tests {
             let _lock = HEAP_LOCK.write();
             clear_heap();
             let (ptr, allocation) = malloc_with_map(size, align, &*MAP).unwrap();
+            validate_allocation(&allocation, Some(&*MAP));
             mem::forget(allocation);
             dealloc(ptr.into());
             validate_heap();
@@ -728,11 +773,13 @@ mod tests {
             let _lock = HEAP_LOCK.write();
             clear_heap();
             let (ptr, allocation) = malloc_with_map(size, align, &*MAP).unwrap();
+            validate_allocation(&allocation, Some(&*MAP));
             mem::forget(allocation);
             dealloc(ptr.into());
             validate_heap();
             assert_heap_empty();
             let (ptr, allocation) = malloc_with_map(size, align, &*MAP).unwrap();
+            validate_allocation(&allocation, Some(&*MAP));
             mem::forget(allocation);
             dealloc(ptr.into());
             validate_heap();
@@ -746,16 +793,19 @@ mod tests {
             let _lock = HEAP_LOCK.write();
             clear_heap();
             let (ptr, allocation) = malloc_with_map(size, align, &*MAP).unwrap();
+            validate_allocation(&allocation, Some(&*MAP));
             mem::forget(allocation);
             dealloc(ptr.into());
             validate_heap();
             assert_heap_empty();
             let (ptr, allocation) = malloc_with_map(size, align, &*MAP).unwrap();
+            validate_allocation(&allocation, Some(&*MAP));
             mem::forget(allocation);
             dealloc(ptr.into());
             validate_heap();
             assert_heap_empty();
             let (ptr, allocation) = malloc_with_map(size, align, &*MAP).unwrap();
+            validate_allocation(&allocation, Some(&*MAP));
             mem::forget(allocation);
             dealloc(ptr.into());
             validate_heap();
@@ -770,6 +820,7 @@ mod tests {
             clear_heap();
             for _ in 0 .. 100 {
                 let (ptr, allocation) = malloc_with_map(size, align, &*MAP).unwrap();
+                validate_allocation(&allocation, Some(&*MAP));
                 mem::forget(allocation);
                 dealloc(ptr.into());
                 validate_heap();
@@ -788,10 +839,12 @@ mod tests {
             let _lock = HEAP_LOCK.write();
             clear_heap();
             let (ptr1, allocation) = malloc_with_map(size, align, &*MAP).unwrap();
+            validate_allocation(&allocation, Some(&*MAP));
             validate_heap();
             drop(allocation);
             validate_heap();
             let (ptr2, allocation) = malloc_with_map(size, align, &*MAP).unwrap();
+            validate_allocation(&allocation, Some(&*MAP));
             validate_heap();
             assert_eq!(ptr1, ptr2);
             drop(allocation);
@@ -1064,7 +1117,7 @@ mod tests {
 
             if ptr::eq(&**node, &*alloc.block_node) {
                 node_in_list = true;
-                assert!(!node.is_master(Ordering::Acquire), "nodes in `Allocation` instances should not be master nodes");
+                assert!(!node.is_master(Ordering::Acquire), "publicly visible nodes should not be master nodes");
             } else if !node_in_master && node.is_master(Ordering::Acquire) && node_base <= alloc_base
                     && alloc_base - node_base + alloc_size <= node_size {   // Rearranged from b + s <= b + s to avoid overflow
                 node_in_master = true;
