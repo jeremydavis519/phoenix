@@ -66,9 +66,8 @@ pub(crate) struct Node {
     // references to it except that `TaggedPtr` itself.
     dropped_refs_gen: AtomicUsize,
 
-    // A reference to the master block that contains this node. Because of a quirk with how we
-    // initialize the heap, `None` means the statically allocated master block.
-    master: Option<&'static MasterBlock>,
+    // A reference to the master block that contains this node.
+    master: &'static MasterBlock,
 
     _pin: PhantomPinned
 }
@@ -82,13 +81,9 @@ impl Node {
             freeing:             AtomicBool::new(false),
             is_master:           AtomicBool::new(false),
             dropped_refs_gen:    AtomicUsize::new(0),
-            master:              Some(master),
+            master,
             _pin: PhantomPinned
         }
-    }
-
-    fn master(&self) -> &'static MasterBlock {
-        self.master.unwrap_or(&super::STATIC_MASTER_BLOCK)
     }
 
     pub(crate) fn base(&self) -> usize {
@@ -260,7 +255,7 @@ impl NodeRef {
         debug_assert_eq!(old_new_refs_gen, self.dropped_refs_gen.load(Ordering::SeqCst).wrapping_add(GENERATION_STEP));
 
         // Drop the node and mark the slot it was using as unused.
-        let master = self.master();
+        let master = self.master;
         let self_ptr = &**self as *const Node as *mut Node;
         mem::forget(self);
         unsafe { ptr::drop_in_place(self_ptr); }
