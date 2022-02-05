@@ -396,22 +396,16 @@ fn fit_score(size: usize, free_size: usize) -> usize {
 // `alloc_masters`, to make sure there are enough node slots available.
 fn allocate(base: usize, size: NonZeroUsize) -> Result<Allocation, AllocError> {
     UNUSED_GUARD_SLOTS.fetch_sub(1, Ordering::AcqRel);
-    let ((block_node_cell, block_node_master), (guard_cell, guard_master)) = claim_slots();
-    guard_cell.set(MaybeUninit::new(Node::new_guard(Some(guard_master))));
-    let guard = unsafe { Pin::new_unchecked((*guard_cell.as_ptr()).assume_init_ref()) };
-    block_node_cell.set(MaybeUninit::new(Node::new_block_node(guard, base, size, block_node_master)));
+    let (block_node_cell, block_node_master) = claim_slot();
+    block_node_cell.set(MaybeUninit::new(Node::new_block_node(base, size, block_node_master)));
 
     // Add the node to the list.
     let block_node = unsafe { Pin::new_unchecked((*block_node_cell.as_ptr()).assume_init_ref()) };
     if let Err(AllocError) = block_node.add_to_list() {
-        // Couldn't add the node. Release the slots we've claimed.
+        // Couldn't add the node. Release the slot we've claimed.
         let block_node_ptr = &*block_node as *const _ as *mut _;
         unsafe { ptr::drop_in_place(block_node_ptr); }
         block_node_master.unuse_node(block_node_ptr);
-
-        let guard_ptr = &*guard as *const _ as *mut _;
-        unsafe { ptr::drop_in_place(guard_ptr); }
-        guard_master.unuse_node(guard_ptr);
 
         UNUSED_GUARD_SLOTS.fetch_add(1, Ordering::Release);
         return Err(AllocError);
@@ -457,16 +451,13 @@ fn alloc_masters(map: &MemoryMap) -> Result<(), AllocError> {
     Ok(())
 }
 
-// Searches for an atomically claims a slot for a new block node and another slot for a new guard.
-// Calling this function without first decrementing `UNUSED_GUARD_SLOTS` runs the risk of a
-// deadlock, so make sure to do that first.
-// Returns `(block_node, block_node_master, guard, guard_master)`, where
-//     `block_node` is a reference to the `Cell` containing the uninitialized block node,
-//     `block_node_master` is a pointer to the `MasterBlock` containing that block node,
-//     `guard` is a reference to the `Cell` containing the uninitialized guard, and
-//     `guard_master` is a pointer to the `MasterBlock` containing that guard.
-fn claim_slots() -> ((&'static Cell<MaybeUninit<Node>>, &'static MasterBlock),
-                     (&'static Cell<MaybeUninit<Node>>, &'static MasterBlock)) {
+// Searches for an atomically claims a slot for a new block node. Calling this function without
+// first decrementing `UNUSED_GUARD_SLOTS` runs the risk of a deadlock, so make sure to do
+// that first.
+// Returns `(node, node_master)`, where
+//     `node` is a reference to the `Cell` containing the uninitialized block node, and
+//     `node_master` is a pointer to the `MasterBlock` containing that block node.
+fn claim_slot() -> (&'static Cell<MaybeUninit<Node>>, &'static MasterBlock) {
     // It's possible that we'll go through the whole list without finding any free slots. But
     // in that case, we can still guarantee that there are free slots somewhere in the list, so
     // we'll find them eventually if we keep starting over.
@@ -475,7 +466,7 @@ fn claim_slots() -> ((&'static Cell<MaybeUninit<Node>>, &'static MasterBlock),
         let mut master_block = &STATIC_MASTER_BLOCK;
         let mut block_nodes = block_nodes();
 
-        let mut cells_masters = [None, None];
+        let mut cells_masters = [None];
         let mut next_cell_master_index = 0;
         loop {
             // Claim slots in this master block as long as there are some available.
@@ -490,7 +481,7 @@ fn claim_slots() -> ((&'static Cell<MaybeUninit<Node>>, &'static MasterBlock),
 
                 if next_cell_master_index >= cells_masters.len() {
                     // We've claimed both slots.
-                    return (cells_masters[0].unwrap(), cells_masters[1].unwrap());
+                    return cells_masters[0].unwrap();
                 }
             }
 

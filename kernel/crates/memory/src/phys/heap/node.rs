@@ -34,7 +34,6 @@ use {
         sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering}
     },
 
-    i18n::Text,
     tagged_ptr::TaggedPtr,
 
     super::Allocation
@@ -66,9 +65,9 @@ pub(crate) struct Node {
 }
 
 impl Node {
-    pub(crate) fn new_block_node(next: Pin<&Node>, base: usize, size: NonZeroUsize, master: &'static MasterBlock) -> Self {
+    pub(crate) fn new_block_node(base: usize, size: NonZeroUsize, master: &'static MasterBlock) -> Self {
         Self {
-            next:                TaggedPtr::new(&*next as *const _ as *mut _, 0),
+            next:                TaggedPtr::new_null(0),
             dropped_refs_gen:    AtomicUsize::new(0),
             master:              Some(master),
             block_node_contents: Some(BlockNodeContents {
@@ -136,53 +135,52 @@ impl Node {
         }
     }
 
-    // Adds this block node, which must already be pointing to a guard that is also not yet in the list,
-    // to the given heap's list of nodes and returns a reference to the guard immediately before it.
-    pub(crate) fn add_to_list(self: Pin<&Self>) -> Result<NodeRef, AllocError> {
+    // Adds this block node to the given heap's list of nodes.
+    pub(crate) fn add_to_list(self: Pin<&Self>) -> Result<(), AllocError> {
         assert!(self.is_block_node());
 
-        let new_guard = NodeRef::from_tagged_ptr(&self.next).0
-            .expect(Text::unexpected_end_of_heap());
-        assert!(!new_guard.is_block_node());
-        let mut old_guard = NodeRef::from_tagged_ptr(&super::first_guard_ptr()).0
-            .expect(Text::unexpected_end_of_heap());
-        assert!(!old_guard.is_block_node());
+        let mut prev = None;
         loop {
             // Determine where the node should be added.
-            let (temp_guard, (_, old_next_ptr)) = self.find_insert_location(old_guard)?;
-            old_guard = temp_guard;
+            let (temp_prev, (_, old_next_ptr)) = self.find_insert_location(prev)?;
+            prev = temp_prev;
 
-            // Set the forward pointer from the new guard, which still won't be in the list yet.
-            new_guard.next.store(old_next_ptr, Ordering::Release);
-
-            // Set the forward pointer from the old guard, inserting this node into the list.
-            match old_guard.next.compare_exchange(
+            // Insert this node into the list.
+            self.next.store(old_next_ptr, Ordering::Release);
+            let ptr = prev.as_ref()
+                .map(|prev| &prev.next)
+                .unwrap_or_else(|| super::first_guard_ptr());
+            match ptr.compare_exchange(
                     old_next_ptr,
                     (&*self as *const Node as *mut Node, 0),
                     Ordering::AcqRel,
-                    Ordering::Acquire) {
+                    Ordering::Acquire
+            ) {
                 Ok(_)  => break,
                 Err(_) => {}
             };
         }
-        Ok(old_guard)
+        Ok(())
     }
 
     // Finds the node after which this block node should be added. Also returns a reference to the
     // next node (if any) and a snapshot of the tagged pointer to the next node.
-    fn find_insert_location(&self, first_guard: NodeRef)
-            -> Result<(NodeRef, (Option<NodeRef>, (*mut Node, usize))), AllocError> {
+    fn find_insert_location(&self, mut prev: Option<NodeRef>)
+            -> Result<(Option<NodeRef>, (Option<NodeRef>, (*mut Node, usize))), AllocError> {
         assert!(self.is_block_node());
 
         let base = self.base().unwrap();
-        let mut prev = first_guard;
         let mut block_node: NodeRef;
         let mut block_node_ptr: (*mut Node, usize);
         loop {
             // We must never put a new block node before an existing guard, so we need to put it
             // after a guard that's pointing to a block node or at the end of the list.
             loop {
-                match NodeRef::from_tagged_ptr(&prev.next) {
+                match NodeRef::from_tagged_ptr(
+                    prev.as_ref()
+                        .map(|prev| &prev.next)
+                        .unwrap_or_else(|| super::first_guard_ptr())
+                ) {
                     (None, tagged_ptr) => {
                         // We've found the end of the list, so insert the new node here.
                         return Ok((prev, (None, tagged_ptr)));
@@ -193,7 +191,7 @@ impl Node {
                         break;
                     },
                     (Some(guard_ref), _) => {
-                        prev = guard_ref;
+                        prev = Some(guard_ref);
                     }
                 };
             }
@@ -207,7 +205,7 @@ impl Node {
                 break;
             }
 
-            prev = block_node;
+            prev = Some(block_node);
         }
 
         Ok((prev, (Some(block_node), block_node_ptr)))
@@ -259,7 +257,7 @@ impl NodeRef {
     // 
     // Returns `Err(self)` if the removal fails, in case the reference is still needed.
     fn try_remove_from_list(self, earlier_ptr: &TaggedPtr<Node>) -> Result<(), Self> {
-        // Find the tagged pointer that points to this guard.
+        // Find the tagged pointer that points to this node.
         let mut prev_ptr = earlier_ptr;
         let mut prev_ref;
         let (mut old_ptr, mut old_new_refs_gen);
@@ -306,7 +304,7 @@ impl NodeRef {
 
         // Drop the node and mark the slot it was using as unused.
         let master = self.master();
-        let self_ptr = &**self as *const _ as *mut _;
+        let self_ptr = &**self as *const Node as *mut Node;
         mem::forget(self);
         unsafe { ptr::drop_in_place(self_ptr); }
         master.unuse_node(self_ptr);
