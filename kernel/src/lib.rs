@@ -41,6 +41,8 @@ use {
         sync::Arc
     },
 
+    libphoenix::profiler,
+
     fs::File,
     i18n::Text,
     io::{Read, Write},
@@ -150,6 +152,8 @@ fn shell() {
                     println!("help                    Shows this list of commands");
                     println!("list DIRECTORY          Lists all of the files and subdirectories in the given directory");
                     println!("parse FILE              Parses the given executable file and prints the image object for debugging");
+                    println!("profile                 Shows the data gathered by the profiler.");
+                    println!("profile reset           Resets the profiler.");
                     println!("run FILE                Runs the given executable file in userspace");
                     println!("shutdown                Shuts down the computer");
                     println!("time                    Shows (`time`) or sets (`time <hh:mm:ss>`) the current time");
@@ -233,6 +237,21 @@ fn shell() {
                         };
                     } else {
                         println!("Expected a file after `parse`");
+                    }
+                },
+                Some("profile") => {
+                    if let Some(word2) = split.next() {
+                        if word2 == "reset" {
+                            profiler::reset();
+                        }
+                    } else {
+                        // Just "profile"
+                        for probe in profiler::all_probes() {
+                            println!("{}", probe.module());
+                            println!("{}:{}:{}", probe.file(), probe.line(), probe.column());
+                            println!("Visits: {}", probe.visits());
+                            println!();
+                        }
                     }
                 },
                 Some("run") => {

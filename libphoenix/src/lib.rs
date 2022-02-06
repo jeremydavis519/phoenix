@@ -19,14 +19,12 @@
 //! This crate is a sort of "standard library" of functions and types that are generally useful to
 //! all userspace programs written for the Phoenix operating system.
 
-// FIXME: This is only here to allow compiling on an x86-64 host.
-#![cfg(target_arch = "aarch64")]
-
 #![no_std]
 #![deny(warnings, missing_docs)]
 
 #![feature(allocator_api)]
 #![feature(coerce_unsized, unsize)]
+#![feature(inline_const)]
 #![feature(lang_items)]
 #![feature(layout_for_ptr)]
 #![feature(panic_info_message)]
@@ -34,14 +32,25 @@
 
 extern crate alloc;
 
+// FIXME: This is only here to allow compiling on an x86-64 host.
+#[cfg(target_arch = "aarch64")]
 pub mod allocator;
+// FIXME: This is only here to allow compiling on an x86-64 host.
+#[cfg(target_arch = "aarch64")]
 pub mod future;
+// FIXME: This is only here to allow compiling on an x86-64 host.
+#[cfg(target_arch = "aarch64")]
 pub mod panic; // FIXME: Not `pub` (blocked on making `panic::panic_handler` private).
 pub mod process;
+pub mod profiler;
+// FIXME: This is only here to allow compiling on an x86-64 host.
+#[cfg(target_arch = "aarch64")]
 pub mod syscall;
+// FIXME: This is only here to allow compiling on an x86-64 host.
+#[cfg(target_arch = "aarch64")]
 pub mod thread;
 
-// TODO: We might need this: #[cfg(not(feature = "no_start"))]
+#[cfg(not(feature = "no-start"))]
 #[lang = "start"]
 fn lang_start<T: 'static+ProcessReturnValue>(
     main: fn() -> T,

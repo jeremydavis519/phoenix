@@ -20,6 +20,8 @@ bitflags          = "1.0"
 spin              = "0.6"
 volatile          = "0.2"
 
+libphoenix = { path = "../libphoenix", default-features = false, features = ["no-start"] }
+
 phoenix-kernel-collections        = { path = "crates/collections" }
 phoenix-kernel-error              = { path = "crates/error" }
 phoenix-kernel-exec               = { path = "crates/exec" }
@@ -98,4 +100,10 @@ unit-test = [
     "phoenix-kernel-time/unit-test",
     "phoenix-kernel-timers/unit-test",
     "phoenix-kernel-userspace/unit-test"
+]
+
+# Adds support for profiling.
+profiler = [
+    "libphoenix/profiler",
+    "phoenix-kernel-memory/profiler"
 ]

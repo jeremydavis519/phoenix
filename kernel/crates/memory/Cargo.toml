@@ -12,6 +12,8 @@ bitflags = "1.0"
 hashbrown = "0.7"
 volatile = "0.2"
 
+libphoenix = { path = "../../../libphoenix", default-features = false, features = ["no-start"] }
+
 phoenix-kernel-collections = { path = "../collections" }
 phoenix-kernel-i18n = { path = "../i18n" }
 phoenix-kernel-macros-unreachable = { path = "../macros/unreachable" }
@@ -25,3 +27,4 @@ spin = "0.6"
 [features]
 self-test = []
 unit-test = []
+profiler = ["libphoenix/profiler"]
