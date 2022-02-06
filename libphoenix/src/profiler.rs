@@ -149,7 +149,8 @@ static ALL_PROBES: [AtomicPtr<Probe>; MAX_PROBES] = [const { AtomicPtr::new(ptr:
 #[cfg(feature = "profiler")]
 static PROBES_COUNT: AtomicUsize = AtomicUsize::new(0);
 
-/// A probe used by the profiler to measure performance.
+/// A probe used by the profiler to measure performance. Use the [`profiler_probe`] macro to
+/// construct one.
 #[cfg(feature = "profiler")]
 #[derive(Debug)]
 pub struct Probe {
