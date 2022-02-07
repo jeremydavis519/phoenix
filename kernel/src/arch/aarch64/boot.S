@@ -19,6 +19,7 @@
 .global _start
 .global boot_panic
 .global BOOT_INFO
+.global PROFILER_START_TIME_NANOSECS
 .extern __bss_start, __bss_end
 .extern init_interrupts
 .extern kmain
@@ -33,6 +34,14 @@
 //                     to indicate a device-tree-only (DT-only) platform
 //             x2 = the address of the ATAGs (or the DTB?)
 _start:
+    // Start the profiler.
+    ldr x9, =0x09010000
+    ldr x10, [x9]
+    ldr x9, =1000000000
+    mul x10, x9, x10
+    ldr x9, =PROFILER_START_TIME_NANOSECS
+    str x10, [x9]
+
     // Enable stack alignment checks for EL1. Whenever the kernel uses the stack, it will have to
     // be aligned at a 16-byte boundary, or else an SP alignment fault exception will occur.
     mrs x9, SCTLR_EL1
@@ -160,6 +169,8 @@ stack_end:
 BOOT_INFO:
     .8byte sizeof_BootInfo
     .fill sizeof_BootInfo - 8
+
+PROFILER_START_TIME_NANOSECS: .8byte 0
 
 .section .rodata.boot, "a", @progbits
 

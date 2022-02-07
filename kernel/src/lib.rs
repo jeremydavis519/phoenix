@@ -65,6 +65,11 @@ pub extern fn putx(x: u64) {
     print!("{:#x}", x);
 }
 
+#[cfg(target_machine = "qemu-virt")]
+extern {
+    static PROFILER_START_TIME_NANOSECS: u64;
+}
+
 /// The entry point from the assembly bootloader.
 #[no_mangle]
 #[cfg(target_machine = "qemu-virt")]
@@ -82,6 +87,13 @@ pub extern fn kmain() -> ! {
     // lazily if possible.
     timers::init_per_cpu();
 
+    #[cfg(feature = "profiler")] {
+        println!("Bootloader profile");
+        println!("------------------");
+    }
+    print_profile(time::SystemTime::from_raw_nanosecs(unsafe { PROFILER_START_TIME_NANOSECS }));
+    println!();
+
     // TODO: Instead of starting a shell in the kernel, run some programs and drivers.
     shell();
 
@@ -90,7 +102,31 @@ pub extern fn kmain() -> ! {
 }
 
 #[cfg(target_machine = "qemu-virt")]
+fn print_profile(profiler_start_time: time::SystemTime) {
+    let now = time::SystemTime::now();
+    let seconds_elapsed = now.duration_since(profiler_start_time)
+        .unwrap_or(core::time::Duration::ZERO)
+        .as_secs();
+
+    for probe in profiler::all_probes() {
+        let visits = probe.visits();
+        let throughput = (visits as f64) / (seconds_elapsed as f64);
+
+        println!("{}", probe.module());
+        println!("{}:{}:{}", probe.file(), probe.line(), probe.column());
+        println!("Visits: {}", visits);
+        println!("Throughput: {} visits/sec", throughput);
+        println!();
+    }
+
+    println!("Total time elapsed: {} sec", seconds_elapsed);
+}
+
+#[cfg(target_machine = "qemu-virt")]
 fn shell() {
+    profiler::reset();
+    let mut profiler_start_time = time::SystemTime::now();
+
     println!("Temporary Phoenix kernel shell");
     println!("Type `help` for a list of commands.");
     loop {
@@ -243,15 +279,12 @@ fn shell() {
                     if let Some(word2) = split.next() {
                         if word2 == "reset" {
                             profiler::reset();
+                            profiler_start_time = time::SystemTime::now();
+                        } else {
+                            println!("Unexpected word `{}`", word2);
                         }
                     } else {
-                        // Just "profile"
-                        for probe in profiler::all_probes() {
-                            println!("{}", probe.module());
-                            println!("{}:{}:{}", probe.file(), probe.line(), probe.column());
-                            println!("Visits: {}", probe.visits());
-                            println!();
-                        }
+                        print_profile(profiler_start_time);
                     }
                 },
                 Some("run") => {
