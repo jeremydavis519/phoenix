@@ -23,8 +23,6 @@
 //! entire block is present in virtual memory at all times.
 
 use {
-    core::mem,
-
     i18n::Text,
 
     crate::phys::{
@@ -33,23 +31,7 @@ use {
     }
 };
 
-/// Represents a block of physical memory.
-///
-/// This struct is for an immutable block of memory. For the mutable version, see `BlockMut`.
-#[derive(Debug)]
-#[must_use]
-pub struct Block<T> {
-    /// A pointer to the lower bound of the block
-    base: PhysPtr<T, *const T>,
-
-    /// The number of `T` elements in the block
-    size: usize,
-
-    /// An object that will free this block when dropped, or `None` for a zero-sized block.
-    _allocation: Option<Allocation>
-}
-
-/// The same as `Block`, except that the contents of the block are mutable.
+/// Represents a block of mutable physical memory.
 #[derive(Debug)]
 #[must_use]
 pub struct BlockMut<T> {
@@ -63,8 +45,7 @@ pub struct BlockMut<T> {
     _allocation: Option<Allocation>
 }
 
-/// A block of physical memory that is specifically for memory-mapped I/O rather than actual
-/// memory.
+/// A block of physical memory that is specifically for memory-mapped I/O rather than RAM.
 ///
 /// Unlike `BlockMut`, this type is `Sync` because I/O doesn't always require synchronization
 /// between CPUs. Consult the device's specification to determine its synchronization requirements.
@@ -81,9 +62,6 @@ pub struct Mmio<T> {
     _allocation: Option<Allocation>
 }
 
-unsafe impl<T> Sync for Block<T> {}
-unsafe impl<T> Send for Block<T> {}
-
 // impl<T> !Sync for BlockMut<T> {} // This type provides internal mutability with no thread-safety.
 unsafe impl<T> Send for BlockMut<T> {}
 
@@ -91,11 +69,15 @@ unsafe impl<T> Sync for Mmio<T> {}
 unsafe impl<T> Send for Mmio<T> {}
 
 macro_rules! impl_phys_block_common {
-    ( $generic:tt, $ptr_mutability:tt ) => {
+    ( $generic:tt ) => {
         impl<T> $generic<T> {
             /// Makes a new instance of `$generic` with the given base address and size,
             /// measured in chunks of size `align_of::<T>()`.
-            pub(crate) const fn new(base: PhysPtr<T, *$ptr_mutability T>, size: usize, allocation: Option<Allocation>) -> $generic<T> {
+            pub(crate) const fn new(
+                    base: PhysPtr<T, *mut T>,
+                    size: usize,
+                    allocation: Option<Allocation>
+            ) -> $generic<T> {
                 $generic {
                     base,
                     size,
@@ -104,7 +86,7 @@ macro_rules! impl_phys_block_common {
             }
 
             /// Returns the base address of the block.
-            pub const fn base(&self) -> PhysPtr<T, *$ptr_mutability T> {
+            pub const fn base(&self) -> PhysPtr<T, *mut T> {
                 self.base
             }
 
@@ -120,14 +102,14 @@ macro_rules! impl_phys_block_common {
             ///
             /// # Panics
             /// This function panics if the given `index` is outside the bounds of the block.
-            pub fn index(&self, index: usize) -> *$ptr_mutability T {
+            pub fn index(&self, index: usize) -> *mut T {
                 self.get_ptr_phys(index).as_virt_unchecked()
             }
 
             /// Returns a raw physical pointer to the given index within the block. This is just
             /// like the indexing portion of an array access: the index is given in units
             /// of the array-element size of `T`, rather than units of 1 byte.
-            pub fn get_ptr_phys(&self, index: usize) -> PhysPtr<T, *$ptr_mutability T> {
+            pub fn get_ptr_phys(&self, index: usize) -> PhysPtr<T, *mut T> {
                 assert!(index < self.size(),
                     "{}", Text::PhysBlockIndexOOB(self.base.as_addr_phys(), self.size(), index));
                 unsafe { self.base.add(index) }
@@ -136,13 +118,5 @@ macro_rules! impl_phys_block_common {
     };
 }
 
-impl_phys_block_common!(Block, const);
-impl_phys_block_common!(BlockMut, mut);
-impl_phys_block_common!(Mmio, mut);
-
-impl<T> From<BlockMut<T>> for Block<T> {
-    fn from(mut block: BlockMut<T>) -> Block<T> {
-        let allocation = mem::replace(&mut block._allocation, None);
-        Block::new(PhysPtr::<_, *const _>::from_addr_phys(block.base.as_addr_phys()), block.size, allocation)
-    }
-}
+impl_phys_block_common!(BlockMut);
+impl_phys_block_common!(Mmio);

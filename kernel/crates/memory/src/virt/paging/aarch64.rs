@@ -30,6 +30,7 @@ use {
         mem::{self, size_of},
         num::NonZeroUsize,
         ptr,
+        slice,
         sync::atomic::{AtomicU8, AtomicUsize, AtomicPtr, Ordering}
     },
     hashbrown::HashSet, // FIXME: Implement our own `HashSet`.
@@ -43,7 +44,7 @@ use {
         allocator::AllMemAlloc,
         phys::{
             RegionType,
-            block::{Block, BlockMut},
+            block::BlockMut,
             map::MEMORY_MAP,
             ptr::PhysPtr
         }
@@ -133,20 +134,23 @@ lazy_static! {
     unsafe {
         // A page filled with zeroes, to be used with copy-on-write semantics for uninitialized
         // data.
-        static ref ZEROES_PAGE: Block<u8> = {
+        static ref ZEROES_PAGE: &'static [u8] = {
             let page_size = page_size();
             // This block will always be physically contiguous, even if we stop identity-mapping the
             // kernel, because it's confined to a single page.
-            let block_mut = AllMemAlloc.malloc::<u8>(
+            let block = AllMemAlloc.malloc::<u8>(
                 page_size,
                 NonZeroUsize::new(page_size).expect("tried to allocate the zeroes page before the page size is known")
             ).expect("failed to allocate the zeroes page");
 
-            for i in 0 .. block_mut.size() {
-                *block_mut.index(i) = 0;
+            for i in 0 .. block.size() {
+                *block.index(i) = 0;
             }
 
-            Block::from(block_mut)
+            let base_ptr = block.index(0);
+            let size = block.size();
+            mem::forget(block); // Avoid deallocating the block.
+            slice::from_raw_parts(base_ptr, size)
         };
     }
 }
@@ -555,7 +559,7 @@ macro_rules! define_root_page_table {
             fn map_zeroed_impl(&self, virt_base: Option<usize>, size: NonZeroUsize, expected: PageEntry)
                     -> Result<usize, Option<NonZeroUsize>> {
                 let page_size = page_size();
-                assert_eq!(ZEROES_PAGE.size(), page_size);
+                assert_eq!(ZEROES_PAGE.len(), page_size);
                 assert_eq!(size.get() % page_size, 0);
 
                 match virt_base {
@@ -567,7 +571,9 @@ macro_rules! define_root_page_table {
                         let end = virt_base.wrapping_add(size.get());
                         while addr_virt != end {
                             match self.map_impl(
-                                    Some(PhysPtr::<u8, *const u8>::from_virt(ZEROES_PAGE.index(0)).as_addr_phys()),
+                                    Some(PhysPtr::<u8, *const u8>::from_virt(
+                                        &**ZEROES_PAGE as *const [u8] as *const u8
+                                    ).as_addr_phys()),
                                     Some(addr_virt),
                                     NonZeroUsize::new(page_size).unwrap(),
                                     Some(RegionType::Ram),
@@ -590,7 +596,7 @@ macro_rules! define_root_page_table {
                     None => {
                         // We have to determine a range of virtual addresses that will work. We use a
                         // first-fit allocator, trying to map everywhere until we find a region that works.
-                        let mut virt_base = page_size; // Avoid allocating the zero page.
+                        let mut virt_base = page_size; // Avoid allocating page zero.
                         loop {
                             match self.map_zeroed_impl(Some(virt_base), size, expected) {
                                 Ok(addr) => return Ok(addr),
@@ -2195,7 +2201,7 @@ fn resolve_write_fault_byte(root: &RootPageTable, exc_level: ExceptionLevel, tra
                         let block = AllMemAlloc.malloc::<u8>(size3, NonZeroUsize::new(size3).unwrap())
                             .map_err(|AllocError| ())?; // Out of memory!
                         let src = PhysPtr::<u8, *const u8>::from_addr_phys(entry.address(64).try_into().unwrap()).as_virt_unchecked();
-                        // PERF: As a special case, if `src == &*ZEROES_PAGE as *const u8`, we can
+                        // PERF: As a special case, if `src == &**ZEROES_PAGE as *const u8`, we can
                         // fill the new block with zeroes rather than reading from the source page.
                         // That will avoid filling the cache with useless zeroes.
                         for i in 0 .. size3 {
