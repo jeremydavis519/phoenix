@@ -1,4 +1,4 @@
-/* Copyright (c) 2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2021-2022 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -28,7 +28,7 @@ use {
     },
     libphoenix::{
         future::SysCallFutureInternal,
-        syscall::VirtPhysAddr
+        syscall::{VirtPhysAddr, TimeSelector}
     },
     devices::DEVICES,
     fs::File,
@@ -65,6 +65,8 @@ pub(crate) fn handle_system_call(
         Ok(SystemCall::Memory_AllocPhys) => memory_alloc_phys(thread, args[0], args[1], args[2], result),
         Ok(SystemCall::Memory_PageSize) => memory_page_size(result),
 
+        Ok(SystemCall::Time_NowUnix) => time_now_unix(thread, args[0], args[1], result),
+
         // TODO: Remove all of these temporary system calls.
         Ok(SystemCall::Temp_PutChar) => temp_putchar(args[0]),
         Ok(SystemCall::Temp_GetChar) => temp_getchar(result),
@@ -95,6 +97,8 @@ ffi_enum! {
         Memory_Alloc     = 0x0301,
         Memory_AllocPhys = 0x0302,
         Memory_PageSize  = 0x0380,
+
+        Time_NowUnix     = 0x0400,
 
         Temp_PutChar     = 0xff00,
         Temp_GetChar     = 0xff01
@@ -424,6 +428,31 @@ fn memory_page_size(
     result: &mut usize
 ) -> Response {
     *result = paging::page_size();
+    Response::eret()
+}
+
+// Returns the time as a UNIX timestamp. `time_selector` and `shift_amount` exist to allow for
+// different word sizes without inaccuracies or huge performance penalties. The userspace program
+// can call this with `TimeSelector::Now` and `shift_amount = 0` at first, followed by multiple
+// calls with `TimeSelector::Saved` and, e.g., `shift_amount = 32` to get the higher bytes.
+fn time_now_unix(
+    thread: Option<&mut Thread<File>>,
+    time_selector: usize,
+    shift_amount: usize,
+    result: &mut usize
+) -> Response {
+    let thread = thread.expect("kernel thread attempted to read the time with a system call");
+
+    let time_selector = TimeSelector::try_from(time_selector).unwrap_or(TimeSelector::Now);
+    match time_selector {
+        TimeSelector::Now => thread.saved_time = time::SystemTime::now(),
+        TimeSelector::Saved => {}
+    }
+
+    let time_since_epoch = thread.saved_time.duration_since(time::SystemTime::UNIX_EPOCH)
+        .unwrap_or(Duration::ZERO);
+    *result = (time_since_epoch.as_secs() >> (shift_amount as u64)) as usize;
+
     Response::eret()
 }
 

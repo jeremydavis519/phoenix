@@ -1,4 +1,4 @@
-/* Copyright (c) 2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2021-2022 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -21,6 +21,7 @@
 use {
     core::{
         arch::asm,
+        convert::TryFrom,
         mem
     },
     crate::{
@@ -344,6 +345,33 @@ pub fn memory_page_size() -> usize {
     page_size
 }
 
+/// Returns the current time as a UNIX timestamp (i.e. whole seconds since 1970-01-01T00:00:00).
+///
+/// # Example
+/// ```norun
+/// let time1 = time_now_unix();
+/// let time2 = time_now_unix();
+/// if time2 < time1 {
+///     println!("Either the user changed the clock or we just went back in time!");
+/// }
+/// ```
+pub fn time_now_unix() -> u64 {
+    // FIXME: Make this work with word sizes other than 64 bits.
+    const { assert!(mem::size_of::<usize>() == mem::size_of::<u64>()) };
+
+    let unix_time: u64;
+    unsafe {
+        asm!(
+            "svc 0x0400",
+            in("x2") TimeSelector::Now as usize,
+            in("x3") 0,
+            lateout("x0") unix_time,
+            options(nomem, nostack, preserves_flags)
+        );
+    }
+    unix_time
+}
+
 define_async_syscalls! {
     /// Looks up a physical device by name and claims ownership of it if it exists.
     ///
@@ -436,5 +464,28 @@ impl VirtPhysAddr {
     pub fn is_null(&self) -> bool {
         assert_eq!(self.virt == 0, self.phys == 0);
         self.virt == 0
+    }
+}
+
+/// Used for specifying whether the `time_*` syscalls will use the current time or a time already
+/// saved from an earlier call.
+#[derive(Debug)]
+#[repr(usize)]
+pub enum TimeSelector {
+    /// Represents the current time.
+    Now   = 0,
+    /// Represents the last time that the kernel read on behalf of this thread.
+    Saved = 1
+}
+
+impl TryFrom<usize> for TimeSelector {
+    type Error = ();
+
+    fn try_from(val: usize) -> Result<Self, Self::Error> {
+        match val {
+            x if x == Self::Now as usize   => Ok(Self::Now),
+            x if x == Self::Saved as usize => Ok(Self::Saved),
+            _                              => Err(())
+        }
     }
 }

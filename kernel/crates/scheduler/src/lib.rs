@@ -274,7 +274,10 @@ pub struct Thread<T: Read+Seek> {
     // A place to store the thread's general-purpose registers when we've switched away from it.
     // This is managed almost entirely by ASM functions; we just need to ensure it's the right size
     // and has the right initial contents.
-    register_store: [u64; 32]
+    register_store: [u64; 32],
+
+    /// A place to store a time in case reading it all requires multiple system calls.
+    pub saved_time: SystemTime
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -350,7 +353,8 @@ impl<T: Read+Seek> Thread<T> {
             _max_stack_size: max_stack_size,
             spsr: 0, // TODO: This might not be 0 for a new Aarch32 thread.
             elr: entry_point,
-            register_store: Self::initial_register_store(stack_empty_ptr)
+            register_store: Self::initial_register_store(stack_empty_ptr),
+            saved_time: SystemTime::now()
         })
             .map_err(|AllocError| ThreadCreationError::OutOfMemory)
     }
