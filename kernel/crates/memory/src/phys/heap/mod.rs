@@ -50,7 +50,7 @@ use {
     tagged_ptr::TaggedPtr,
     crate::phys::{
         ptr::PhysPtr,
-        map::{MemoryMap, Region, RegionType, MEMORY_MAP}
+        map::{MemoryMap, Region, MEMORY_MAP}
     },
     self::node::{
         Nodes,
@@ -72,77 +72,6 @@ static HEAD_PTR:             TaggedPtr<Node> = TaggedPtr::new_null(0);
 static EXPECTED_MALLOC_SIZE: AtomicUsize     = AtomicUsize::new(0);
 static VISITORS:             AtomicUsize     = AtomicUsize::new(0);
 static UNUSED_NODE_SLOTS:    AtomicUsize     = AtomicUsize::new(NODES_PER_MASTER_BLOCK);
-
-/// Reserves a block of RAM or ROM starting at `base` that is `size` bytes long.
-///
-/// # Returns
-///   * `Ok(allocation)` if the memory was reserved, where `allocation` is an object that frees the
-///     block when it is dropped
-///   * `Err(AllocErr)`
-pub(crate) fn reserve(
-        base: PhysPtr<u8, *const u8>,
-        size: NonZeroUsize
-) -> Result<Allocation, AllocError> {
-    reserve_with_map(base, size, &*MEMORY_MAP)
-}
-
-fn reserve_with_map(
-        base: PhysPtr<u8, *const u8>,
-        size: NonZeroUsize,
-        map: &MemoryMap
-) -> Result<Allocation, AllocError> {
-    let base = base.as_addr_phys();
-
-    // Don't accept a request for a block that wraps around the address space. Any such request
-    // is most likely an error anyway.
-    if base.checked_add(size.get()).is_none() {
-        return Err(AllocError);
-    }
-
-    alloc_masters(map)?;
-    allocate(base, size)
-}
-
-/// Reserves a block of RAM starting at `base` that is `size` bytes long.
-///
-/// # Returns
-///   * `Ok(allocation)` if the memory was reserved, where `allocation` is an object that frees the
-///     block when it is dropped
-///   * `Err(AllocErr)`
-pub(crate) fn reserve_mut(
-        base: PhysPtr<u8, *mut u8>,
-        size: NonZeroUsize
-) -> Result<Allocation, AllocError> {
-    reserve_mut_with_map(base, size, &*MEMORY_MAP)
-}
-
-fn reserve_mut_with_map(
-        base: PhysPtr<u8, *mut u8>,
-        size: NonZeroUsize,
-        map: &MemoryMap
-) -> Result<Allocation, AllocError> {
-    let base = base.as_addr_phys();
-
-    // Don't accept a request for a block that wraps around the address space. Any such request
-    // is most likely an error anyway.
-    if base.checked_add(size.get()).is_none() {
-        return Err(AllocError);
-    }
-
-    // Make sure that the requested block of memory actually exists.
-    // Note that we're not checking here to see if the memory is already allocated. That's
-    // done by the node itself when it's added to the list.
-    if map.present_regions()
-            .find(|reg| reg.base <= base                    // Region contains beginning
-                && base - reg.base + size.get() <= reg.size // Region contains end (rearranged from b + s <= b + s to avoid overflow)
-                && reg.region_type == RegionType::Ram)
-            .is_none() {
-        return Err(AllocError);
-    }
-
-    alloc_masters(map)?;
-    allocate(base, size)
-}
 
 /// Reserves a block of memory-mapped I/O starting at `base` that is `size` bytes long.
 ///
@@ -645,86 +574,6 @@ mod tests {
         }
     }
 
-    mod reserve_then_drop {
-        use super::*;
-
-        #[test]
-        fn one_time_should_return_to_empty() {
-            let size = NonZeroUsize::new(1).unwrap();
-            let memory_base = unsafe { &MEMORY[MEMORY.len() - size.get()] as *const _ };
-            let _lock = HEAP_LOCK.write();
-            clear_heap();
-            let allocation = reserve_with_map(PhysPtr::<u8, *const _>::from_virt(memory_base), size, &*MAP).unwrap();
-            validate_allocation(&allocation, Some(&*MAP));
-            validate_heap();
-            drop(allocation);
-            validate_heap();
-            assert_heap_empty();
-        }
-
-        #[test]
-        fn two_times_should_return_to_empty() {
-            let size = NonZeroUsize::new(1).unwrap();
-            let memory_base = unsafe { &MEMORY[MEMORY.len() - size.get()] as *const _ };
-            let _lock = HEAP_LOCK.write();
-            clear_heap();
-            let allocation = reserve_with_map(PhysPtr::<u8, *const _>::from_virt(memory_base), size, &*MAP).unwrap();
-            validate_allocation(&allocation, Some(&*MAP));
-            validate_heap();
-            drop(allocation);
-            validate_heap();
-            assert_heap_empty();
-            let allocation = reserve_with_map(PhysPtr::<u8, *const _>::from_virt(memory_base), size, &*MAP).unwrap();
-            validate_allocation(&allocation, Some(&*MAP));
-            validate_heap();
-            drop(allocation);
-            validate_heap();
-            assert_heap_empty();
-        }
-
-        #[test]
-        fn three_times_should_return_to_empty() {
-            let size = NonZeroUsize::new(1).unwrap();
-            let memory_base = unsafe { &MEMORY[MEMORY.len() - size.get()] as *const _ };
-            let _lock = HEAP_LOCK.write();
-            clear_heap();
-            let allocation = reserve_with_map(PhysPtr::<u8, *const _>::from_virt(memory_base), size, &*MAP).unwrap();
-            validate_allocation(&allocation, Some(&*MAP));
-            validate_heap();
-            drop(allocation);
-            validate_heap();
-            assert_heap_empty();
-            let allocation = reserve_with_map(PhysPtr::<u8, *const _>::from_virt(memory_base), size, &*MAP).unwrap();
-            validate_allocation(&allocation, Some(&*MAP));
-            validate_heap();
-            drop(allocation);
-            validate_heap();
-            assert_heap_empty();
-            let allocation = reserve_with_map(PhysPtr::<u8, *const _>::from_virt(memory_base), size, &*MAP).unwrap();
-            validate_allocation(&allocation, Some(&*MAP));
-            validate_heap();
-            drop(allocation);
-            validate_heap();
-            assert_heap_empty();
-        }
-
-        #[test]
-        fn up_to_a_hundred_times_should_return_to_empty() {
-            let size = NonZeroUsize::new(1).unwrap();
-            let memory_base = unsafe { &MEMORY[MEMORY.len() - size.get()] as *const _ };
-            let _lock = HEAP_LOCK.write();
-            clear_heap();
-            for _ in 0 .. 100 {
-                let allocation = reserve_with_map(PhysPtr::<u8, *const _>::from_virt(memory_base), size, &*MAP).unwrap();
-                validate_allocation(&allocation, Some(&*MAP));
-                validate_heap();
-                drop(allocation);
-                validate_heap();
-                assert_heap_empty();
-            }
-        }
-    }
-
     mod malloc_then_dealloc {
         use super::*;
 
@@ -887,26 +736,6 @@ mod tests {
                                         allocations.push(allocation);
                                     }
                                 },
-                                HeapOperation::Reserve { base, size } => {
-                                    if let Ok(allocation) = reserve_with_map(
-                                        base,
-                                        NonZeroUsize::new(size).unwrap(),
-                                        &*MAP
-                                    ) {
-                                        validate_allocation(&allocation, None);
-                                        allocations.push(allocation);
-                                    }
-                                },
-                                HeapOperation::ReserveMut { base, size } => {
-                                    if let Ok(allocation) = reserve_mut_with_map(
-                                        base,
-                                        NonZeroUsize::new(size).unwrap(),
-                                        &*MAP
-                                    ) {
-                                        validate_allocation(&allocation, Some(&*MAP));
-                                        allocations.push(allocation);
-                                    }
-                                },
                                 HeapOperation::ReserveMmio { base, size } => {
                                     if let Ok(allocation) = reserve_mmio_with_map(
                                         base,
@@ -964,14 +793,6 @@ mod tests {
                 size:  usize,
                 align: usize
             },
-            Reserve {
-                base: PhysPtr<u8, *const u8>,
-                size: usize
-            },
-            ReserveMut {
-                base: PhysPtr<u8, *mut u8>,
-                size: usize
-            },
             ReserveMmio {
                 base: PhysPtr<u8, *mut u8>,
                 size: usize
@@ -989,30 +810,22 @@ mod tests {
 
         impl HeapOperation {
             fn new_random(rng: &mut Rand64, mem_size: u64) -> Self {
-                match rng.rand_range(0 .. 8) {
+                match rng.rand_range(0 .. 5) {
                     0 => Self::Malloc {
                         size:  rng.rand_range(1 .. mem_size) as usize,
                         align: rng.rand_range(1 .. mem_size / 2) as usize
                     },
-                    1 => Self::Reserve {
-                        base: PhysPtr::<_, *const _>::from_addr_phys(rng.rand_u64() as usize),
-                        size: rng.rand_range(1 .. mem_size) as usize
-                    },
-                    2 => Self::ReserveMut {
+                    1 => Self::ReserveMmio {
                         base: PhysPtr::<_, *mut _>::from_addr_phys(rng.rand_u64() as usize),
                         size: rng.rand_range(1 .. mem_size) as usize
                     },
-                    3 => Self::ReserveMmio {
-                        base: PhysPtr::<_, *mut _>::from_addr_phys(rng.rand_u64() as usize),
-                        size: rng.rand_range(1 .. mem_size) as usize
-                    },
-                    4 | 5 => Self::DropAllocated {
+                    2 => Self::DropAllocated {
                         index: rng.rand_u64() as usize
                     },
-                    6 | 7 => Self::Dealloc {
+                    3 => Self::Dealloc {
                         index: rng.rand_u64() as usize
                     },
-                    8 => Self::Sleep {
+                    4 => Self::Sleep {
                         duration: Duration::from_millis(rng.rand_range(0 .. 3))
                     },
                     _ => unreachable!()

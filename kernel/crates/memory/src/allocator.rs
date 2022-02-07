@@ -43,7 +43,7 @@ use {
     libphoenix::profiler_probe,
 
     crate::phys::{
-        block::{Block, BlockMut, Mmio},
+        block::{BlockMut, Mmio},
         heap,
         ptr::PhysPtr
     }
@@ -55,70 +55,6 @@ use {
 pub struct AllMemAlloc;
 
 impl AllMemAlloc {
-    /// Immutably reserves the given number of bytes (`size`) of physical memory, starting at physical memory
-    /// address `base`.
-    ///
-    /// # Returns
-    ///   * `Ok(block)` if the block was successfully reserved, where `block` is a `Block` representing
-    ///         the reserved block.
-    ///   * `Err(AllocErr)` on failure.
-    pub fn reserve<T>(&self, base: usize, size: usize) -> Result<Block<T>, AllocError> {
-        let _entrance = profiler_probe!();
-        assert_eq!(
-            base % mem::align_of::<T>(), 0,
-            "base = {:#x}, align of {} = {:#x}", base, type_name::<T>(), mem::align_of::<T>()
-        );
-        assert!(
-            size >= mem::size_of::<T>(),
-            "size = {:#x}, size of {} = {:#x}", size, type_name::<T>(), mem::size_of::<T>()
-        );
-
-        let node = if let Some(size) = NonZeroUsize::new(size) {
-            Some(heap::reserve(PhysPtr::<u8, *const _>::from_addr_phys(base), size)?)
-        } else {
-            None
-        };
-        let block = Block::<T>::new(
-            PhysPtr::<_, *const _>::from_addr_phys(base),
-            size / mem::size_of::<T>(),
-            node
-        );
-        profiler_probe!(_entrance);
-        Ok(block)
-    }
-
-    /// Mutably reserves the given number of bytes (`size`) of physical memory, starting at physical memory
-    /// address `base`.
-    ///
-    /// # Returns
-    ///   * `Ok(block)` if the block was successfully reserved, where `block` is a `BlockMut` representing
-    ///         the reserved block.
-    ///   * `Err(AllocErr)` on failure.
-    pub fn reserve_mut<T>(&self, base: usize, size: usize) -> Result<BlockMut<T>, AllocError> {
-        let _entrance = profiler_probe!();
-        assert_eq!(
-            base % mem::align_of::<T>(), 0,
-            "base = {:#x}, align of {} = {:#x}", base, type_name::<T>(), mem::align_of::<T>()
-        );
-        assert!(
-            size >= mem::size_of::<T>(),
-            "size = {:#x}, size of {} = {:#x}", size, type_name::<T>(), mem::size_of::<T>()
-        );
-
-        let node = if let Some(size) = NonZeroUsize::new(size) {
-            Some(heap::reserve_mut(PhysPtr::<u8, *mut _>::from_addr_phys(base), size)?)
-        } else {
-            None
-        };
-        let block = BlockMut::<T>::new(
-            PhysPtr::<_, *mut _>::from_addr_phys(base),
-            size / mem::size_of::<T>(),
-            node
-        );
-        profiler_probe!(_entrance);
-        Ok(block)
-    }
-
     /// Mutably reserves the given number of bytes (`size`) of memory-mapped I/O space, starting at
     /// physical memory address `base`.
     ///
