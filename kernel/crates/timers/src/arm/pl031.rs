@@ -19,22 +19,29 @@
 //! This module defines the kernel's interface with the PL031, a real-time clock.
 
 use {
+    core::mem,
+
     volatile::Volatile,
 
+    irqs::{self, IsrResult},
     memory::{
         allocator::AllMemAlloc,
         phys::block::Mmio
     },
-    time::{Hertz, Femtosecs, hz_to_fs}
+    time::{Hertz, Femtosecs, hz_to_fs},
+    crate::reset_subrealtime_ticks
 };
 
 // The IRQ and MMIO range associated with the PL031.
 // TODO: Instead of hard-coding these values, get them from something like ACPI.
 attr! { #[cfg(target_machine = "qemu-virt")]
-    // const IRQ: u64 = 18;
+    // Retrieved from https://github.com/qemu/qemu/blob/2c89b5af5e72ab8c9d544c6e30399528b2238827/include/hw/arm/virt.h
+    // and https://github.com/qemu/qemu/blob/2c89b5af5e72ab8c9d544c6e30399528b2238827/hw/arm/virt.c
+    const IRQ: u64 = 34; // Equal to a15irqmap[VIRT_RTC] + 32 in QEMU source (TODO: Why that offset?)
     const MMIO_BASE: usize = 0x0901_0000;
     const MMIO_SIZE: usize = 0x0000_1000;
 }
+
 
 lazy_static! {
     unsafe {
@@ -84,15 +91,50 @@ bitflags! {
     }
 }
 
+bitflags! {
+    struct RtcIMSCFlags : u32 {
+        const ENABLE = 0x1; // Setting to 1 enables interrupts. Setting to 0 disables them.
+    }
+}
+
+bitflags! {
+    struct RtcMISFlags : u32 {
+        const INTERRUPT = 0x1; // Indicates that the PL031 has sent an interrupt.
+    }
+}
+
+bitflags! {
+    struct RtcICRFlags : u32 {
+        const ACK = 0x1; // Acknowledges the current interrupt.
+    }
+}
+
 /// Initializes the PL031 (PrimeCell) RTC as a real-time clock.
 pub fn init_clock_per_cpu() -> Result<(), ()> {
     // Verify that this is a PL031 designed by ARM Ltd (PeriphID[19:0] = 'A' 0x031).
     assert_eq!(get_periph_id() & 0xfffff, 0x41031);
-    
+
     // Verify that the PrimeCell ID register agrees that this is a PL031.
     assert_eq!(get_primecell_id(), 0xb105f00d);
-    
+
+    // Register the IRQ handler if that hasn't been done already.
+    let isr = irqs::register_irq(IRQ, on_clock_irq, irqs::Priority::Medium, irqs::IrqTrigger::Level)?;
+    mem::forget(isr);
+
+    // Enable the RTC.
     unsafe { (*MMIO.index(MmioRegs::RTCCR as usize / 4)).write(RtcCRFlags::ENABLE.bits()); }
+
+    // Set an interrupt to occur one tick in the future. (The loop prevents an unlikely
+    // race condition.)
+    unsafe { (*MMIO.index(MmioRegs::RTCIMSC as usize / 4)).write(RtcIMSCFlags::ENABLE.bits()); }
+    loop {
+        let rtcmr = unsafe { &mut *MMIO.index(MmioRegs::RTCMR as usize / 4) };
+        let rtcdr = unsafe { &*MMIO.index(MmioRegs::RTCDR as usize / 4) };
+        rtcmr.write(rtcdr.read() + 1);
+        if rtcmr.read() > rtcdr.read() {
+            break;
+        }
+    }
 
     Ok(())
 }
@@ -120,6 +162,27 @@ fn get_primecell_id() -> u32 {
     }
 }
 
-// TODO: Add an API to set a timer on the RTC, e.g. for when the user sets an alarm, or for thread-sleeping
-//       on the order of seconds. At the lowest level, we can set the timer on the PL031 by programming RTCMR
-//       (the RTC Match Register).
+fn on_clock_irq() -> IsrResult {
+    // Make sure the PL031 actually sent an interrupt.
+    if !RtcMISFlags::from_bits_truncate(unsafe { (*MMIO.index(MmioRegs::RTCMIS as usize / 4)).read() })
+            .contains(RtcMISFlags::INTERRUPT) {
+        return IsrResult::WrongIsr;
+    }
+
+    // Acknowledge the interrupt.
+    unsafe {
+        (*MMIO.index(MmioRegs::RTCICR as usize / 4)).write(RtcICRFlags::ACK.bits());
+    }
+
+    // Synchronize the system time with this timer.
+    reset_subrealtime_ticks();
+
+    // Interrupt again at the next tick.
+    unsafe {
+        (*MMIO.index(MmioRegs::RTCMR as usize / 4)).write(
+            (*MMIO.index(MmioRegs::RTCMR as usize / 4)).read() + 1
+        );
+    }
+
+    IsrResult::Serviced
+}

@@ -34,6 +34,8 @@ use {
 // TODO: Instead of hard-coding these values, get them from something like ACPI.
 /// The IRQ associated with the Generic Timer (specifically, the virtual timer).
 #[cfg(target_machine = "qemu-virt")]
+// Retrieved from https://github.com/qemu/qemu/blob/2c89b5af5e72ab8c9d544c6e30399528b2238827/include/hw/arm/virt.h
+// (equal to PPI(ARCH_TIMER_VIRT_IRQ))
 const IRQ: u64 = 27;
 
 bitflags! {
@@ -201,8 +203,7 @@ fn on_timer_irq() -> IsrResult {
         return IsrResult::WrongIsr;
     }
 
-    // The scheduling timer's only job is to pre-empt the currently running thread and return to the
-    // scheduler.
+    // Pre-empt the currently running thread and return to the scheduler.
     // FIXME: Somehow keep a record of the IRQ happening if it happens in EL1. In that state, a
     // context switch is impossible (because it would trample the kernel's stack). We just need a
     // single CPU-private bit. A register that Rust is guaranteed never to use could work, but there

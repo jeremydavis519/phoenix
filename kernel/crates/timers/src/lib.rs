@@ -25,7 +25,10 @@
 
 #[macro_use] extern crate cfg_if;
 
-use time::{Nanosecs, SystemTime};
+use {
+    core::sync::atomic::{AtomicU64, Ordering},
+    time::{Hertz, Nanosecs, SystemTime}
+};
 
 cfg_if! {
     if #[cfg(target_machine = "qemu-virt")] {
@@ -40,7 +43,8 @@ cfg_if! {
     } else if #[cfg(target_arch = "x86_64")] {
         #[allow(missing_docs)]
         mod scheduling_timer {
-            use {time::Duration, crate::Timer};
+            use {time::{Duration, Hertz}, crate::Timer};
+            pub static COUNTER_FREQ: Hertz = Hertz(1);
             #[cfg(feature = "self-test")]
             pub static TIMER_WORKS: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
             pub static TIMER: &Timer = &Timer;
@@ -51,9 +55,8 @@ cfg_if! {
         }
         #[allow(missing_docs)]
         mod realtime_clock {
-            use time::{Hertz, Femtosecs};
+            use time::Hertz;
             pub static COUNTER_FREQ: Hertz = Hertz(1);
-            pub static CLOCK_PRECISION: Femtosecs = Femtosecs(1);
             pub fn init_clock_per_cpu() -> Result<(), ()> { Err(()) }
             pub fn get_ticks_elapsed() -> u64 { 0 }
         }
@@ -71,9 +74,6 @@ pub struct Timer;
 pub use self::scheduling_timer::TIMER as SCHEDULING_TIMER;
 
 pub use self::scheduling_timer::scheduling_timer_finished;
-
-/// The system clock's resolution.
-pub use self::realtime_clock::CLOCK_PRECISION;
 
 /// Initializes the platform's time-related functions, such as starting the timers.
 /// This should be called once by every CPU core.
@@ -110,6 +110,29 @@ pub fn init_per_cpu() {
 
 // Gets the amount of time elapsed since some constant, undefined time in the past.
 fn get_time_elapsed() -> Nanosecs {
+    let clock_freq: Hertz = *realtime_clock::COUNTER_FREQ;
+    let timer_freq: Hertz = *scheduling_timer::COUNTER_FREQ;
+
     let ticks = realtime_clock::get_ticks_elapsed();
-    Nanosecs((ticks as u128 * 1_000_000_000 as u128 / realtime_clock::COUNTER_FREQ.0 as u128) as u64)
+    let subtick_nanos = if clock_freq >= timer_freq {
+        0
+    } else {
+        (subrealtime_ticks() as u128 * 1_000_000_000 / timer_freq.0 as u128) as u64
+    };
+
+    Nanosecs(((ticks as u128 * 1_000_000_000 / clock_freq.0 as u128) as u64).wrapping_add(subtick_nanos))
+}
+
+lazy_static! {
+    unsafe {
+        static ref SUBREALTIME_TICKS_BASE: AtomicU64 = AtomicU64::new(scheduling_timer::get_ticks_elapsed());
+    }
+}
+
+fn reset_subrealtime_ticks() {
+    SUBREALTIME_TICKS_BASE.store(scheduling_timer::get_ticks_elapsed(), Ordering::Release);
+}
+
+fn subrealtime_ticks() -> u64 {
+    scheduling_timer::get_ticks_elapsed().wrapping_sub(SUBREALTIME_TICKS_BASE.load(Ordering::Acquire))
 }
