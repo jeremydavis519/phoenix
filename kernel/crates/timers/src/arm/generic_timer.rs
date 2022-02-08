@@ -27,6 +27,7 @@ use {
         mem
     },
     irqs::{self, IsrResult},
+    shared::lazy_static,
     time::{Duration, Hertz, Femtosecs, hz_to_fs},
     crate::Timer
 };

@@ -28,6 +28,7 @@ use {
         allocator::AllMemAlloc,
         phys::block::Mmio
     },
+    shared::{attr, lazy_static},
     time::{Hertz, Femtosecs, hz_to_fs},
     crate::reset_subrealtime_ticks
 };

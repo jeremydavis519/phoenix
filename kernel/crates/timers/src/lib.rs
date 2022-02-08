@@ -27,13 +27,13 @@
 
 use {
     core::sync::atomic::{AtomicU64, Ordering},
+    shared::lazy_static,
     time::{Hertz, Nanosecs, SystemTime}
 };
 
 cfg_if! {
     if #[cfg(target_machine = "qemu-virt")] {
         #[macro_use] extern crate bitflags;
-        #[macro_use] extern crate shared;
 
         #[cfg(feature = "self-test")] use shared::wait_for_event;
 
@@ -44,7 +44,7 @@ cfg_if! {
         #[allow(missing_docs)]
         mod scheduling_timer {
             use {time::{Duration, Hertz}, crate::Timer};
-            pub static COUNTER_FREQ: Hertz = Hertz(1);
+            pub static COUNTER_FREQ: &Hertz = &Hertz(1);
             #[cfg(feature = "self-test")]
             pub static TIMER_WORKS: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
             pub static TIMER: &Timer = &Timer;
@@ -52,11 +52,12 @@ cfg_if! {
                 pub fn interrupt_after(&self, _duration: Duration) { unimplemented!() }
             }
             pub extern "Rust" fn scheduling_timer_finished() -> bool { unimplemented!() }
+            pub fn get_ticks_elapsed() -> u64 { 0 }
         }
         #[allow(missing_docs)]
         mod realtime_clock {
             use time::Hertz;
-            pub static COUNTER_FREQ: Hertz = Hertz(1);
+            pub static COUNTER_FREQ: &Hertz = &Hertz(1);
             pub fn init_clock_per_cpu() -> Result<(), ()> { Err(()) }
             pub fn get_ticks_elapsed() -> u64 { 0 }
         }
@@ -129,6 +130,7 @@ lazy_static! {
     }
 }
 
+#[cfg(target_machine = "qemu-virt")]
 fn reset_subrealtime_ticks() {
     SUBREALTIME_TICKS_BASE.store(scheduling_timer::get_ticks_elapsed(), Ordering::Release);
 }
