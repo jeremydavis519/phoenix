@@ -15,7 +15,7 @@
 # DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-.PHONY: all aarch64-phoenix clean
+.PHONY: all aarch64-phoenix test clean
 
 SRC = $(wildcard src/*.c)
 HEADERS = $(wildcard include/*.h)
@@ -27,6 +27,8 @@ aarch64-phoenix:
 	CC=aarch64-none-elf-gcc \
 	AR=aarch64-none-elf-ar \
 	$(MAKE)
+
+test: aarch64-phoenix
 
 lib/libc.a: $(OBJ)
 	mkdir -p lib

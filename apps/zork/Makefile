@@ -65,7 +65,7 @@ OBJS =	actors.o ballop.o clockr.o demons.o dgame.o dinit.o dmain.o\
 	dverb2.o gdt.o lightp.o local.o nobjs.o np.o np1.o np2.o np3.o\
 	nrooms.o objcts.o rooms.o sobjs.o supp.o sverbs.o verbs.o villns.o
 
-.PHONY: dungeon aarch64-phoenix install clean
+.PHONY: dungeon aarch64-phoenix test install clean
 
 dungeon: $(OBJS) dtextc.dat
 	$(CC) $(CFLAGS) -o zork $(OBJS) $(LIBS)
@@ -77,6 +77,8 @@ aarch64-phoenix:
 	TERMFLAG=-DMORE_24 \
 	CFLAGS="-g -I../../libc/include -L../../libc/lib" \
 	$(MAKE)
+
+test: # TODO: aarch64-phoenix
 
 install: zork dtextc.dat
 	mkdir -p $(BINDIR) $(LIBDIR) $(MANDIR)/man6
