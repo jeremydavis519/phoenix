@@ -372,6 +372,34 @@ pub fn time_now_unix() -> u64 {
     unix_time
 }
 
+/// Returns the current time in relation to the UNIX epoch, but measured in nanoseconds
+/// (i.e. nanoseconds since 1970-01-01T00:00:00.00).
+///
+/// # Example
+/// ```norun
+/// let time1 = time_now_unix_nanos();
+/// let time2 = time_now_unix_nanos();
+/// if time2 < time1 {
+///     println!("Either the user changed the clock or we just went back in time!");
+/// }
+/// ```
+pub fn time_now_unix_nanos() -> u64 {
+    // FIXME: Make this work with word sizes other than 64 bits.
+    const { assert!(mem::size_of::<usize>() == mem::size_of::<u64>()) };
+
+    let unix_time: u64;
+    unsafe {
+        asm!(
+            "svc 0x0401",
+            in("x2") TimeSelector::Now as usize,
+            in("x3") 0,
+            lateout("x0") unix_time,
+            options(nomem, nostack, preserves_flags)
+        );
+    }
+    unix_time
+}
+
 define_async_syscalls! {
     /// Looks up a physical device by name and claims ownership of it if it exists.
     ///

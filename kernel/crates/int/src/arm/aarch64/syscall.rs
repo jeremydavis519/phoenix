@@ -66,6 +66,7 @@ pub(crate) fn handle_system_call(
         Ok(SystemCall::Memory_PageSize) => memory_page_size(result),
 
         Ok(SystemCall::Time_NowUnix) => time_now_unix(thread, args[0], args[1], result),
+        Ok(SystemCall::Time_NowUnixNanos) => time_now_unix_nanos(thread, args[0], args[1], result),
 
         // TODO: Remove all of these temporary system calls.
         Ok(SystemCall::Temp_PutChar) => temp_putchar(args[0]),
@@ -84,24 +85,25 @@ ffi_enum! {
     #[repr(u16)]
     #[allow(non_camel_case_types)]
     enum SystemCall {
-        Thread_Exit      = 0x0000,
-        Thread_Sleep     = 0x0001,
-        Thread_Spawn     = 0x0002,
-        Thread_Wait      = 0x0003,
+        Thread_Exit       = 0x0000,
+        Thread_Sleep      = 0x0001,
+        Thread_Spawn      = 0x0002,
+        Thread_Wait       = 0x0003,
 
-        Process_Exit     = 0x0100,
+        Process_Exit      = 0x0100,
 
-        Device_Claim     = 0x0200,
+        Device_Claim      = 0x0200,
 
-        Memory_Free      = 0x0300,
-        Memory_Alloc     = 0x0301,
-        Memory_AllocPhys = 0x0302,
-        Memory_PageSize  = 0x0380,
+        Memory_Free       = 0x0300,
+        Memory_Alloc      = 0x0301,
+        Memory_AllocPhys  = 0x0302,
+        Memory_PageSize   = 0x0380,
 
-        Time_NowUnix     = 0x0400,
+        Time_NowUnix      = 0x0400,
+        Time_NowUnixNanos = 0x0401,
 
-        Temp_PutChar     = 0xff00,
-        Temp_GetChar     = 0xff01
+        Temp_PutChar      = 0xff00,
+        Temp_GetChar      = 0xff01
     }
 }
 
@@ -452,6 +454,32 @@ fn time_now_unix(
     let time_since_epoch = thread.saved_time.duration_since(time::SystemTime::UNIX_EPOCH)
         .unwrap_or(Duration::ZERO);
     *result = (time_since_epoch.as_secs() >> (shift_amount as u64)) as usize;
+
+    Response::eret()
+}
+
+// Returns the time as the number of nanoseconds since the UNIX epoch. `time_selector` and
+// `shift_amount` exist to allow for different word sizes without inaccuracies or huge performance
+// penalties. The userspace program can call this with `TimeSelector::Now` and `shift_amount = 0` at
+// first, followed by multiple calls with `TimeSelector::Saved` and, e.g., `shift_amount = 32` to
+// get the higher bytes.
+fn time_now_unix_nanos(
+    thread: Option<&mut Thread<File>>,
+    time_selector: usize,
+    shift_amount: usize,
+    result: &mut usize
+) -> Response {
+    let thread = thread.expect("kernel thread attempted to read the time with a system call");
+
+    let time_selector = TimeSelector::try_from(time_selector).unwrap_or(TimeSelector::Now);
+    match time_selector {
+        TimeSelector::Now => thread.saved_time = time::SystemTime::now(),
+        TimeSelector::Saved => {}
+    }
+
+    let time_since_epoch = thread.saved_time.duration_since(time::SystemTime::UNIX_EPOCH)
+        .unwrap_or(Duration::ZERO);
+    *result = (time_since_epoch.as_nanos() >> (shift_amount as u64)) as usize;
 
     Response::eret()
 }
