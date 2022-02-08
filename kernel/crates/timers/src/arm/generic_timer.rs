@@ -94,9 +94,9 @@ impl Timer {
 
         let timer_control = CntvCtlEl0::ENABLE;
         #[cfg(target_arch = "aarch64")]
-        unsafe { asm!("msr CNTV_CTL_EL0, {:x}", in(reg) timer_control.bits(), options(nomem, nostack, preserves_flags)); }
+        unsafe { asm!("msr CNTP_CTL_EL0, {:x}", in(reg) timer_control.bits(), options(nomem, nostack, preserves_flags)); }
         #[cfg(any(target_arch = "arm", target_arch = "armv5te", target_arch = "armv7"))]
-        unsafe { asm!("msr CNTV_CTL, {}", in(reg) timer_control.bits(), options(nomem, nostack, preserves_flags)); }
+        unsafe { asm!("msr CNTP_CTL, {}", in(reg) timer_control.bits(), options(nomem, nostack, preserves_flags)); }
 
         Ok(Timer)
     }
@@ -139,11 +139,11 @@ impl Timer {
 
     #[cfg(target_arch = "aarch64")]
     fn set_countdown(countdown: u32) {
-        unsafe { asm!("msr CNTV_TVAL_EL0, {:x}", in(reg) countdown, options(nomem, nostack, preserves_flags)); }
+        unsafe { asm!("msr CNTP_TVAL_EL0, {:x}", in(reg) countdown, options(nomem, nostack, preserves_flags)); }
     }
     #[cfg(any(target_arch = "arm", target_arch = "armv5te", target_arch = "armv7"))]
     fn set_countdown(countdown: u32) {
-        unsafe { asm!("msr CNTV_TVAL, {}", in(reg) countdown, options(nomem, nostack, preserves_flags)); }
+        unsafe { asm!("msr CNTP_TVAL, {}", in(reg) countdown, options(nomem, nostack, preserves_flags)); }
     }
 }
 
@@ -154,7 +154,7 @@ impl Timer {
 pub extern "Rust" fn scheduling_timer_finished() -> bool {
     // I changed this to always return `false` because the interrupt was always happening after this check.
     /*let timer_control: u32;
-    unsafe { asm!("mrs {:x}, CNTV_CTL_EL0", out(reg) timer_control, options(nomem, nostack, preserves_flags)); }
+    unsafe { asm!("mrs {:x}, CNTP_CTL_EL0", out(reg) timer_control, options(nomem, nostack, preserves_flags)); }
     CntvCtlEl0::from_bits_truncate(timer_control).contains(CntvCtlEl0::ISTATUS)*/
     false
 }
@@ -164,7 +164,7 @@ pub extern "Rust" fn scheduling_timer_finished() -> bool {
 #[cfg(any(target_arch = "arm", target_arch = "armv5te", target_arch = "armv7"))]
 pub extern "Rust" fn scheduling_timer_finished() -> bool {
     /*let timer_control: u32;
-    unsafe { asm!("mrs {}, CNTV_CTL", out(reg) timer_control, options(nomem, nostack, preserves_flags)); }
+    unsafe { asm!("mrs {}, CNTP_CTL", out(reg) timer_control, options(nomem, nostack, preserves_flags)); }
     CntvCtlEl0::from_bits_truncate(timer_control).contains(CntvCtlEl0::ISTATUS)*/
     false
 }
@@ -192,9 +192,9 @@ fn on_timer_irq() -> IsrResult {
     let cntv_ctl: u32;
 
     #[cfg(target_arch = "aarch64")]
-    unsafe { asm!("mrs {:x}, CNTV_CTL_EL0", out(reg) cntv_ctl, options(nomem, nostack, preserves_flags)); }
+    unsafe { asm!("mrs {:x}, CNTP_CTL_EL0", out(reg) cntv_ctl, options(nomem, nostack, preserves_flags)); }
     #[cfg(any(target_arch = "arm", target_arch = "armv5te", target_arch = "armv7"))]
-    unsafe { asm!("mrs {}, CNTV_CTL", out(reg) cntv_ctl, options(nomem, nostack, preserves_flags)); }
+    unsafe { asm!("mrs {}, CNTP_CTL", out(reg) cntv_ctl, options(nomem, nostack, preserves_flags)); }
 
     let cntv_ctl = CntvCtlEl0::from_bits(cntv_ctl).unwrap();
     if cntv_ctl.contains(CntvCtlEl0::IMASK) || !cntv_ctl.contains(CntvCtlEl0::ISTATUS) {
