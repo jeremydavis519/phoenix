@@ -48,13 +48,13 @@ macro_rules! profiler_probe {
     () => {{
         #[cfg(feature = "profiler")] {
             static PROBE: $crate::profiler::Probe = $crate::profiler::Probe{
-                file:          file!(),
-                line:          line!(),
-                column:        column!(),
-                module:        module_path!(),
-                earlier_probe: core::cell::Cell::new(None),
-                visits:        core::sync::atomic::AtomicU64::new(0),
-                registered:    core::sync::atomic::AtomicBool::new(false)
+                file:       file!(),
+                line:       line!(),
+                column:     column!(),
+                module:     module_path!(),
+                prev_probe: core::cell::Cell::new(None),
+                visits:     core::sync::atomic::AtomicU64::new(0),
+                registered: core::sync::atomic::AtomicBool::new(false)
             };
             PROBE.register(None);
             PROBE.visit();
@@ -65,18 +65,18 @@ macro_rules! profiler_probe {
         }
     }};
 
-    ($earlier_probe:expr) => {{
+    ($prev_probe:expr) => {{
         #[cfg(feature = "profiler")] {
             static PROBE: $crate::profiler::Probe = $crate::profiler::Probe {
-                file:          file!(),
-                line:          line!(),
-                column:        column!(),
-                module:        module_path!(),
-                earlier_probe: core::cell::Cell::new(None),
-                visits:        core::sync::atomic::AtomicU64::new(0),
-                registered:    core::sync::atomic::AtomicBool::new(false)
+                file:       file!(),
+                line:       line!(),
+                column:     column!(),
+                module:     module_path!(),
+                prev_probe: core::cell::Cell::new(None),
+                visits:     core::sync::atomic::AtomicU64::new(0),
+                registered: core::sync::atomic::AtomicBool::new(false)
             };
-            PROBE.register(Some($earlier_probe));
+            PROBE.register(Some($prev_probe));
             PROBE.visit();
             &PROBE
         }
@@ -154,14 +154,14 @@ static PROBES_COUNT: AtomicUsize = AtomicUsize::new(0);
 #[cfg(feature = "profiler")]
 #[derive(Debug)]
 pub struct Probe {
-    #[doc(hidden)] pub file:          &'static str,
-    #[doc(hidden)] pub line:          u32,
-    #[doc(hidden)] pub column:        u32,
-    #[doc(hidden)] pub module:        &'static str,
+    #[doc(hidden)] pub file:       &'static str,
+    #[doc(hidden)] pub line:       u32,
+    #[doc(hidden)] pub column:     u32,
+    #[doc(hidden)] pub module:     &'static str,
     // TODO: Also record the function name. This seems to require a procedural macro.
-    #[doc(hidden)] pub earlier_probe: Cell<Option<&'static Probe>>,
-    #[doc(hidden)] pub visits:        AtomicU64,
-    #[doc(hidden)] pub registered:    AtomicBool
+    #[doc(hidden)] pub prev_probe: Cell<Option<&'static Probe>>,
+    #[doc(hidden)] pub visits:     AtomicU64,
+    #[doc(hidden)] pub registered: AtomicBool
 }
 #[cfg(not(feature = "profiler"))]
 #[derive(Debug)]
@@ -194,8 +194,8 @@ impl Probe {
     }
 
     /// The probe immediately before this one, if any.
-    pub fn earlier_probe(&self) -> Option<&'static Probe> {
-        #[cfg(feature = "profiler")] { self.earlier_probe.get() }
+    pub fn prev_probe(&self) -> Option<&'static Probe> {
+        #[cfg(feature = "profiler")] { self.prev_probe.get() }
         #[cfg(not(feature = "profiler"))] { None }
     }
 
@@ -207,14 +207,14 @@ impl Probe {
 
     #[cfg(feature = "profiler")]
     #[doc(hidden)]
-    pub fn register(&'static self, earlier_probe: Option<&'static Probe>) {
+    pub fn register(&'static self, prev_probe: Option<&'static Probe>) {
         if self.registered.swap(true, Ordering::AcqRel) {
             // Already registered.
             return;
         }
 
         // Link to the earlier probe, if any.
-        self.earlier_probe.set(earlier_probe);
+        self.prev_probe.set(prev_probe);
 
         // Register this probe.
         let idx = PROBES_COUNT.fetch_add(1, Ordering::AcqRel);
