@@ -21,6 +21,7 @@
 
 use {
     core::{
+        convert::TryFrom,
         fmt::Debug,
         mem,
         sync::atomic::{AtomicU8, AtomicUsize, Ordering}
@@ -220,7 +221,7 @@ pub fn register_irq(irq: u64, isr: IsrFn, priority: Priority, trigger: IrqTrigge
     if irq > max_irq {
         panic!("{}", Text::GicIrqOutOfBounds(irq, max_irq));
     }
-    let irq = irq as usize;
+    let irq = usize::try_from(irq).unwrap();
 
     let ptr = ISR_PTR_NODES.insert_node(irq, isr)?;
 
