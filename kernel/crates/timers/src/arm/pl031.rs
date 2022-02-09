@@ -142,7 +142,10 @@ pub fn init_clock_per_cpu() -> Result<(), ()> {
 
 /// Returns the number of clock ticks that have elapsed so far.
 pub fn get_ticks_elapsed() -> u64 {
-    unsafe { (*MMIO.index(MmioRegs::RTCDR as usize / 4)).read() as u64 }
+    // We don't use (*MMIO.index(...)).read() here because this can be used by the profiler
+    // during a call to malloc. In that case, dereferencing MMIO would lead to infinite indirect
+    // recursion.
+    unsafe { ((MMIO_BASE + MmioRegs::RTCDR as usize) as *const u32).read_volatile() as u64 }
 }
 
 fn get_periph_id() -> u32 {

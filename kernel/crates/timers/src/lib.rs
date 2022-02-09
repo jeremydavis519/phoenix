@@ -124,6 +124,11 @@ fn get_time_elapsed() -> Nanosecs {
     Nanosecs(((ticks as u128 * 1_000_000_000 / clock_freq.0 as u128) as u64).wrapping_add(subtick_nanos))
 }
 
+#[no_mangle]
+extern "Rust" fn current_time_nanos_extern() -> u64 {
+    get_time_elapsed().0
+}
+
 lazy_static! {
     unsafe {
         static ref SUBREALTIME_TICKS_BASE: AtomicU64 = AtomicU64::new(scheduling_timer::get_ticks_elapsed());

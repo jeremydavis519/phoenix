@@ -47,15 +47,12 @@ use {
 macro_rules! profiler_probe {
     () => {{
         #[cfg(feature = "profiler")] {
-            static PROBE: $crate::profiler::Probe = $crate::profiler::Probe{
-                file:       file!(),
-                line:       line!(),
-                column:     column!(),
-                module:     module_path!(),
-                prev_probe: core::cell::Cell::new(None),
-                visits:     core::sync::atomic::AtomicU64::new(0),
-                registered: core::sync::atomic::AtomicBool::new(false)
-            };
+            static PROBE: $crate::profiler::Probe = $crate::profiler::Probe::new(
+                file!(),
+                line!(),
+                column!(),
+                module_path!()
+            );
             PROBE.register(None);
             PROBE.visit();
             &PROBE
@@ -67,15 +64,12 @@ macro_rules! profiler_probe {
 
     ($prev_probe:expr) => {{
         #[cfg(feature = "profiler")] {
-            static PROBE: $crate::profiler::Probe = $crate::profiler::Probe {
-                file:       file!(),
-                line:       line!(),
-                column:     column!(),
-                module:     module_path!(),
-                prev_probe: core::cell::Cell::new(None),
-                visits:     core::sync::atomic::AtomicU64::new(0),
-                registered: core::sync::atomic::AtomicBool::new(false)
-            };
+            static PROBE: $crate::profiler::Probe = $crate::profiler::Probe::new(
+                file!(),
+                line!(),
+                column!(),
+                module_path!()
+            );
             PROBE.register(Some($prev_probe));
             PROBE.visit();
             &PROBE
@@ -95,7 +89,7 @@ pub fn reset() {
                 // SAFETY: All probes have static lifetimes. A non-null pointer guarantees a valid
                 //         probe.
                 unsafe {
-                    (*probe_ptr).visits.store(0, Ordering::Release);
+                    (*probe_ptr).reset();
                 }
             }
         }
@@ -149,19 +143,45 @@ static ALL_PROBES: [AtomicPtr<Probe>; MAX_PROBES] = [const { AtomicPtr::new(ptr:
 #[cfg(feature = "profiler")]
 static PROBES_COUNT: AtomicUsize = AtomicUsize::new(0);
 
+#[cfg(feature = "profiler")]
+#[cfg(target_machine = "qemu-virt")]
+fn current_time_nanos() -> u64 {
+    #[cfg(feature = "kernelspace")] {
+        unsafe { current_time_nanos_extern() }
+    }
+    #[cfg(not(feature = "kernelspace"))] {
+        crate::syscall::time_now_unix_nanos()
+    }
+}
+
+// TODO: Remove this. It's only here to make building on an x86-64 host possible.
+#[cfg(feature = "profiler")]
+#[cfg(not(target_machine = "qemu-virt"))]
+fn current_time_nanos() -> u64 { unimplemented!() }
+
+// We can avoid using a system call to get the current time if we're already running in the kernel.
+#[cfg(all(feature = "profiler", feature = "kernelspace", target_machine = "qemu-virt"))]
+extern "Rust" {
+    fn current_time_nanos_extern() -> u64;
+}
+
 /// A probe used by the profiler to measure performance. Use the [`profiler_probe`] macro to
 /// construct one.
 #[cfg(feature = "profiler")]
 #[derive(Debug)]
 pub struct Probe {
-    #[doc(hidden)] pub file:       &'static str,
-    #[doc(hidden)] pub line:       u32,
-    #[doc(hidden)] pub column:     u32,
-    #[doc(hidden)] pub module:     &'static str,
+    file:                            &'static str,
+    line:                            u32,
+    column:                          u32,
+    module:                          &'static str,
     // TODO: Also record the function name. This seems to require a procedural macro.
-    #[doc(hidden)] pub prev_probe: Cell<Option<&'static Probe>>,
-    #[doc(hidden)] pub visits:     AtomicU64,
-    #[doc(hidden)] pub registered: AtomicBool
+    prev_probe:                      Cell<Option<&'static Probe>>,
+    visits:                          AtomicU64,
+    current_visitors:                AtomicU64,
+    last_reset_time_nanos:           AtomicU64,
+    last_visitors_change_time_nanos: AtomicU64,
+    total_visitor_nanos:             AtomicU64,
+    registered:                      AtomicBool
 }
 #[cfg(not(feature = "profiler"))]
 #[derive(Debug)]
@@ -169,6 +189,29 @@ pub struct Probe {
 pub struct Probe;
 
 impl Probe {
+    #[cfg(feature = "profiler")]
+    #[doc(hidden)]
+    pub const fn new(
+        file:       &'static str,
+        line:       u32,
+        column:     u32,
+        module:     &'static str
+    ) -> Self {
+        Self {
+            file,
+            line,
+            column,
+            module,
+            prev_probe:                      Cell::new(None),
+            visits:                          AtomicU64::new(0),
+            current_visitors:                AtomicU64::new(0),
+            last_reset_time_nanos:           AtomicU64::new(0),
+            last_visitors_change_time_nanos: AtomicU64::new(0),
+            total_visitor_nanos:             AtomicU64::new(0),
+            registered:                      AtomicBool::new(false)
+        }
+    }
+
     /// The file in which the probe is defined.
     pub const fn file(&self) -> &'static str {
         #[cfg(feature = "profiler")] { self.file }
@@ -205,6 +248,90 @@ impl Probe {
         #[cfg(not(feature = "profiler"))] { 0 }
     }
 
+    /// The number of visitors that have reached this probe but have not yet reached the next probe
+    /// (i.e. a probe whose `prev_probe` is this one).
+    pub fn current_visitors(&self) -> u64 {
+        #[cfg(feature = "profiler")] { self.current_visitors.load(Ordering::Acquire) }
+        #[cfg(not(feature = "profiler"))] { 0 }
+    }
+
+    /// The average throughput this probe has measured since its last reset, measured in Hertz.
+    pub fn avg_throughput_hz(&self) -> f64 {
+        #[cfg(feature = "profiler")] {
+            self.avg_throughput_hz_impl(self.visits(), current_time_nanos(), self.last_reset_time_nanos())
+        }
+        #[cfg(not(feature = "profiler"))] { 0.0 }
+    }
+
+    #[cfg(feature = "profiler")]
+    fn avg_throughput_hz_impl(&self, visits: u64, now_nanos: u64, reset_time_nanos: u64) -> f64 {
+        visits as f64 / now_nanos.wrapping_sub(reset_time_nanos) as i64 as f64 * 1_000_000_000.0
+    }
+
+    /// The average number of visitors in this probe's section of code since the last reset.
+    pub fn avg_visitors(&self) -> f64 {
+        #[cfg(feature = "profiler")] {
+            self.avg_visitors_impl(current_time_nanos(), self.last_reset_time_nanos())
+        }
+        #[cfg(not(feature = "profiler"))] { 0.0 }
+    }
+
+    #[cfg(feature = "profiler")]
+    fn avg_visitors_impl(&self, now_nanos: u64, reset_time_nanos: u64) -> f64 {
+        let total_visitor_nanos = self.total_visitor_nanos()
+            .wrapping_add(
+                (self.current_visitors() as i64)
+                    .wrapping_mul(now_nanos.wrapping_sub(self.last_visitors_change_time_nanos()) as i64)
+                    as u64
+            );
+        total_visitor_nanos as f64 / now_nanos.wrapping_sub(reset_time_nanos) as i64 as f64
+    }
+
+    /// The average latency this probe has measured since its last reset, measured in seconds.
+    pub fn avg_latency_secs(&self) -> Option<f64> {
+        #[cfg(feature = "profiler")] {
+            self.avg_latency_secs_impl(self.visits(), current_time_nanos(), self.last_reset_time_nanos())
+        }
+        #[cfg(not(feature = "profiler"))] { None }
+    }
+
+    #[cfg(feature = "profiler")]
+    fn avg_latency_secs_impl(&self, visits: u64, now_nanos: u64, reset_time_nanos: u64) -> Option<f64> {
+        if let Some(prev_probe) = self.prev_probe() {
+            let throughput = self.avg_throughput_hz_impl(visits, now_nanos, reset_time_nanos);
+            if throughput != 0.0 {
+                Some(prev_probe.avg_visitors_impl(now_nanos, reset_time_nanos) / throughput)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    // A timestamp from the last time `reset` was called (or when the probe was created).
+    #[cfg(feature = "profiler")]
+    fn last_reset_time_nanos(&self) -> u64 {
+        #[cfg(feature = "profiler")] { self.last_reset_time_nanos.load(Ordering::Acquire) }
+        #[cfg(not(feature = "profiler"))] { 0 }
+    }
+
+    // A timestamp from the last time execution entered or exited this probe's section of code.
+    #[cfg(feature = "profiler")]
+    fn last_visitors_change_time_nanos(&self) -> u64 {
+        #[cfg(feature = "profiler")] { self.last_visitors_change_time_nanos.load(Ordering::Acquire) }
+        #[cfg(not(feature = "profiler"))] { 0 }
+    }
+
+    // A running total of concurrent visitors times the amount of time spent between changes. This
+    // is used to calculate the average number of concurrent visitors, which is necessary for
+    // measuring average latency.
+    #[cfg(feature = "profiler")]
+    fn total_visitor_nanos(&self) -> u64 {
+        #[cfg(feature = "profiler")] { self.total_visitor_nanos.load(Ordering::Acquire) }
+        #[cfg(not(feature = "profiler"))] { 0 }
+    }
+
     #[cfg(feature = "profiler")]
     #[doc(hidden)]
     pub fn register(&'static self, prev_probe: Option<&'static Probe>) {
@@ -216,6 +343,11 @@ impl Probe {
         // Link to the earlier probe, if any.
         self.prev_probe.set(prev_probe);
 
+        // This is the first time we're visiting the probe.
+        let now = current_time_nanos();
+        self.last_reset_time_nanos.store(now, Ordering::Release);
+        self.last_visitors_change_time_nanos.store(now, Ordering::Release);
+
         // Register this probe.
         let idx = PROBES_COUNT.fetch_add(1, Ordering::AcqRel);
         assert!(idx < MAX_PROBES, "too many profiler probes");
@@ -226,6 +358,34 @@ impl Probe {
     #[doc(hidden)]
     pub fn visit(&self) {
         self.visits.fetch_add(1, Ordering::AcqRel);
+
+        // Record a visitor entering this section.
+        let now = current_time_nanos();
+        let last_visit_time = self.last_visitors_change_time_nanos.swap(now, Ordering::AcqRel);
+        let old_visitors = self.current_visitors.fetch_add(1, Ordering::AcqRel);
+        self.total_visitor_nanos.fetch_add(
+            (old_visitors as i64).wrapping_mul(now.wrapping_sub(last_visit_time) as i64) as u64,
+            Ordering::AcqRel
+        );
+
+        if let Some(prev_probe) = self.prev_probe.get() {
+            // Record a visitor leaving the previous section.
+            let now = current_time_nanos();
+            let last_visit_time = prev_probe.last_visitors_change_time_nanos.swap(now, Ordering::AcqRel);
+            let old_visitors = prev_probe.current_visitors.fetch_sub(1, Ordering::AcqRel);
+            prev_probe.total_visitor_nanos.fetch_add(
+                (old_visitors as i64).wrapping_mul(now.wrapping_sub(last_visit_time) as i64) as u64,
+                Ordering::AcqRel
+            );
+        }
+    }
+
+    #[cfg(feature = "profiler")]
+    fn reset(&self) {
+        self.visits.store(0, Ordering::Release);
+        self.current_visitors.store(0, Ordering::Release);
+        self.last_visitors_change_time_nanos.store(current_time_nanos(), Ordering::Release);
+        self.total_visitor_nanos.store(0, Ordering::Release);
     }
 }
 

@@ -10,5 +10,6 @@ edition = "2018"
 default = ["global-allocator"]
 
 global-allocator = []
+kernelspace = []
 no-start = []
 profiler = []

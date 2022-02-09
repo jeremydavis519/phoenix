@@ -20,7 +20,7 @@ bitflags          = "1.0"
 spin              = "0.6"
 volatile          = "0.2"
 
-libphoenix = { path = "../libphoenix", default-features = false, features = ["no-start"] }
+libphoenix = { path = "../libphoenix", default-features = false, features = ["no-start", "kernelspace"] }
 
 phoenix-kernel-collections        = { path = "crates/collections" }
 phoenix-kernel-error              = { path = "crates/error" }
