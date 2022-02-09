@@ -104,18 +104,22 @@ pub extern fn kmain() -> ! {
 #[cfg(target_machine = "qemu-virt")]
 fn print_profile(profiler_start_time: time::SystemTime) {
     let now = time::SystemTime::now();
-    let seconds_elapsed = (now.duration_since(profiler_start_time)
+    let nanos_elapsed = now.duration_since(profiler_start_time)
         .unwrap_or(core::time::Duration::ZERO)
-        .as_nanos() as f64) / 1_000_000_000.0;
+        .as_nanos() as u64;
+    let seconds_elapsed = nanos_elapsed as f64 / 1_000_000_000.0;
 
     for probe in profiler::all_probes() {
         let visits = probe.visits();
-        let throughput = (visits as f64) / seconds_elapsed;
-
         println!("{}", probe.module());
         println!("{}:{}:{}", probe.file(), probe.line(), probe.column());
         println!("Visits: {}", visits);
-        println!("Throughput: {} visits/sec", throughput);
+        println!("Throughput: {} visits/sec", probe.avg_throughput_hz());
+        if let Some(latency) = probe.avg_latency_secs() {
+            let total_time = latency * visits as f64;
+            println!("Latency: {} sec", latency);
+            println!("Total time consumed: {} sec ({:.2}%)", total_time, total_time * 100.0 / seconds_elapsed)
+        }
         println!();
     }
 
