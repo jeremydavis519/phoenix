@@ -31,52 +31,54 @@ use std::{
 
 static CONTENTS_PATH: &str = "contents";
 
-fn main() {
-    println!("cargo:rerun-if-env-changed=PHOENIX_TARGET");
-    let target = env::var("PHOENIX_TARGET")
-        .expect("unknown target machine (PHOENIX_TARGET is not set)");
+static TARGETS: &[&str] = &[
+    "aarch64/qemu-virt"
+];
 
-    // Build the InitRD.
-    let output_path = PathBuf::from(env::var("OUT_DIR")
-        .expect("unknown output directory (OUT_DIR is not set)"))
-        .join("contents.rs");
-    let file = match fs::File::create(output_path.clone()) {
-        Ok(file) => file,
-        Err(err) => panic!("could not create file {}: {}", output_path.to_str().expect("non-UTF-8 path"), err)
-    };
-    let root = match make_initrd(&target) {
-        Ok(root) => root,
-        Err(err) => panic!("could not construct InitRD: {}", err)
-    };
-    match write_initrd(file, root) {
-        Ok(()) => {},
-        Err(err) => panic!("could not write {}: {}", output_path.to_str().expect("non-UTF-8 path"), err)
-    };
+fn main() {
+    // Build the InitRD for each target.
+    for target in TARGETS.iter() {
+        let output_path = PathBuf::from(env::var("OUT_DIR")
+            .expect("unknown output directory (OUT_DIR is not set)"))
+            .join(target);
+        match fs::create_dir_all(&output_path) {
+            Ok(()) => {},
+            Err(err) => panic!("could not create directory {}: {}", output_path.to_string_lossy(), err)
+        };
+        let output_path = output_path.join("contents.rs");
+        let file = match fs::File::create(&output_path) {
+            Ok(file) => file,
+            Err(err) => panic!("could not create file {}: {}", output_path.to_string_lossy(), err)
+        };
+        let root = match make_initrd(target) {
+            Ok(root) => root,
+            Err(err) => panic!("could not construct InitRD: {}", err)
+        };
+        match write_initrd(file, root) {
+            Ok(()) => {},
+            Err(err) => panic!("could not write {}: {}", output_path.to_string_lossy(), err)
+        };
+    }
 }
 
 fn make_initrd(target: &str) -> io::Result<InitrdDirBuilder> {
     let mut path = PathBuf::from(CONTENTS_PATH);
-    let blob_path = PathBuf::from(env::var("OUT_DIR")
-        .expect("unknown output directory (OUT_DIR is not set)"))
-        .join("initrd.blob");
 
     let subpath = path.join("initrd");
     let subpath_str = subpath.to_str().expect("non-UTF-8 path");
     println!("cargo:rerun-if-changed={}", subpath_str);
     let mut root = if let Ok(initrd_dir) = subpath.read_dir() {
         // Handle the most general layer before narrowing down on a target.
-        make_initrd_piece(initrd_dir, blob_path.clone())?
+        make_initrd_piece(initrd_dir)?
     } else {
         // This directory doesn't exist yet. Make it so Cargo can keep track of its changes.
         // (Otherwise, it will assume the directory was deleted and will run this build script
         // again.)
-        match fs::DirBuilder::new()
-                .recursive(true)
-                .create(subpath.clone()) {
+        match fs::create_dir_all(&subpath) {
             Ok(()) => {},
             Err(e) => println!("cargo:warning=failed to create directory `{}`: {}", subpath_str, e)
         };
-        InitrdDirBuilder::new(blob_path.clone())
+        InitrdDirBuilder::new()
     };
     for target_piece in target.split('/') {
         path.push(target_piece);
@@ -85,14 +87,12 @@ fn make_initrd(target: &str) -> io::Result<InitrdDirBuilder> {
         let subpath_str = subpath.to_str().expect("non-UTF-8 path");
         println!("cargo:rerun-if-changed={}", subpath_str);
         if let Ok(initrd_dir) = subpath.read_dir() {
-            root = merge_initrd_pieces(root, make_initrd_piece(initrd_dir, blob_path.clone())?);
+            root = merge_initrd_pieces(root, make_initrd_piece(initrd_dir)?);
         } else {
             // This directory doesn't exist yet. Make it so Cargo can keep track of its changes.
             // (Otherwise, it will assume the directory was deleted and will run this build script
             // again.)
-            match fs::DirBuilder::new()
-                    .recursive(true)
-                    .create(subpath.clone()) {
+            match fs::create_dir_all(&subpath) {
                 Ok(()) => {},
                 Err(e) => println!("cargo:warning=failed to create directory `{}`: {}", subpath_str, e)
             };
@@ -102,13 +102,13 @@ fn make_initrd(target: &str) -> io::Result<InitrdDirBuilder> {
     Ok(root)
 }
 
-fn make_initrd_piece(dir: fs::ReadDir, blob_path: PathBuf) -> io::Result<InitrdDirBuilder> {
-    let mut root = InitrdDirBuilder::new(blob_path.clone());
+fn make_initrd_piece(dir: fs::ReadDir) -> io::Result<InitrdDirBuilder> {
+    let mut root = InitrdDirBuilder::new();
 
     for entry in dir {
         let entry = entry?;
         if entry.file_type()?.is_dir() {
-            let mut subdir = make_initrd_piece(entry.path().read_dir()?, blob_path.clone())?;
+            let mut subdir = make_initrd_piece(entry.path().read_dir()?)?;
             subdir.name = entry.file_name().into_string()
                 .map_err(|name| Error::new(ErrorKind::InvalidData,
                     format!("filename `{}` cannot be converted to UTF-8", name.to_string_lossy())))?;
@@ -148,9 +148,6 @@ fn merge_initrd_pieces(general: InitrdDirBuilder, mut specific: InitrdDirBuilder
 fn write_initrd(file: fs::File, root: InitrdDirBuilder) -> io::Result<()> {
     let mut writer = BufWriter::new(file);
 
-    // Make sure the blob file is empty before appending to it.
-    fs::File::create(root.blob_path.clone())?;
-
     write!(writer,
 r#"// This file was automatically generated and should *not* be modified by hand. Instead, modify the
 // files in the initrd crate's "contents/*/initrd" directories.
@@ -164,13 +161,12 @@ pub static ROOT: Directory = {};
 struct InitrdDirBuilder {
     name: String,
     subdirs: HashMap<String, InitrdDirBuilder>,
-    files: HashMap<String, fs::DirEntry>,
-    blob_path: PathBuf
+    files: HashMap<String, fs::DirEntry>
 }
 
 impl InitrdDirBuilder {
-    fn new(blob_path: PathBuf) -> Self {
-        Self { name: String::from(""), subdirs: HashMap::new(), files: HashMap::new(), blob_path }
+    fn new() -> Self {
+        Self { name: String::from(""), subdirs: HashMap::new(), files: HashMap::new() }
     }
 }
 

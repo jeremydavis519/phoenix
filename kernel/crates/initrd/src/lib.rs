@@ -24,7 +24,7 @@
 
 #![deny(warnings, missing_docs)]
 
-include!(concat!(env!("OUT_DIR"), "/contents.rs"));
+include!(concat!(env!("OUT_DIR"), "/", env!("PHOENIX_TARGET"), "/contents.rs"));
 
 /// Represents a directory and allows its contents to be accessed.
 #[derive(Debug)]
