@@ -99,6 +99,7 @@ struct Parser {
     dictionary_defaults:         RefCell<Vec<(TokenStream, TokenStream, TokenStream)>>,
     required_dictionary_members: RefCell<Vec<(TokenStream, TokenStream)>>,
     union_types:                 RefCell<Vec<(String, Vec<(String, TokenStream)>)>>,
+    iter_def:                    RefCell<TokenStream>,
     method_overload_counts:      RefCell<HashMap<String, usize>>
 }
 
@@ -112,6 +113,7 @@ impl Parser {
             dictionary_defaults:         RefCell::new(Vec::new()),
             required_dictionary_members: RefCell::new(Vec::new()),
             union_types:                 RefCell::new(Vec::new()),
+            iter_def:                    RefCell::new(TokenStream::new()),
             method_overload_counts:      RefCell::new(HashMap::new())
         }
     }
@@ -216,6 +218,7 @@ impl Parser {
                     let mod_ident = self.mod_ident.replace(TokenStream::new());
                     let union_types = self.generate_union_types();
                     let consts = self.interface_consts.replace(TokenStream::new());
+                    let iter_def = self.iter_def.replace(TokenStream::new());
 
                     // Weirdly, this is how we can get the equivalent of `use super::*` in the
                     // generated module below.
@@ -224,7 +227,12 @@ impl Parser {
                     quote!(
                         pub trait $ident $inheritance { $members }
                         #[doc(hidden)] pub type $internal_ident = ::alloc::boxed::Box<dyn $ident>;
-                        pub mod $mod_ident { use $super_ident::*; $union_types $consts }
+                        pub mod $mod_ident {
+                            use $super_ident::*;
+                            $union_types
+                            $consts
+                            $iter_def
+                        }
                     )
                 }
             )(input)
@@ -929,7 +937,28 @@ impl Parser {
                     pair(self.type_with_extended_attributes(), self.optional_type()),
                     pair(self.token('>'), self.token(';'))
                 ),
-                |(ty1, opt_ty2)| todo!("iterable")
+                |(ty1, opt_ty2)| {
+                    let item = match opt_ty2 {
+                        None => ty1,
+                        Some(ty2) => {
+                            let item_ident = TokenTree::Ident(Ident::new_raw("KeyValue", Span::call_site()));
+                            let key = TokenTree::Ident(Ident::new_raw("key", Span::call_site()));
+                            let value = TokenTree::Ident(Ident::new_raw("value", Span::call_site()));
+                            self.iter_def.replace(quote!(
+                                pub struct $item_ident<'a> {
+                                    $key: $ty1,
+                                    $value: &'a mut $ty2
+                                }
+                            ));
+                            let mod_ident = self.mod_ident.borrow().clone();
+                            quote!($mod_ident::$item_ident)
+                        }
+                    };
+                    quote!(
+                        fn _iter<'a>(&mut self)
+                            -> ::alloc::boxed::Box<dyn ::core::iter::Iterator::<Item = &'a mut $item>>;
+                    )
+                }
             )(input)
         }
     }
@@ -1138,6 +1167,7 @@ impl Parser {
 
                     let mod_ident = self.mod_ident.replace(TokenStream::new());
                     let union_types = self.generate_union_types();
+                    let iter_def = self.iter_def.replace(TokenStream::new());
 
                     // Weirdly, this is how we can get the equivalent of `use super::*` in the
                     // generated module below.
@@ -1147,7 +1177,11 @@ impl Parser {
                         pub struct $ident { $inheritance $members }
                         #[doc(hidden)] pub type $internal_ident = $ident;
                         impl $ident { $member_default_fns }
-                        pub mod $mod_ident { use $super_ident::*; $union_types }
+                        pub mod $mod_ident {
+                            use $super_ident::*;
+                            $union_types
+                            $iter_def
+                        }
                         $impl_default
                     )
                 }
