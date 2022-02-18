@@ -910,7 +910,10 @@ impl Parser {
                     pair(self.optional_read_only(), self.attribute_rest()),
                     |(ro, attr)| todo!("stringifier_rest (attribute)"),
                 ),
-                map(self.token(';'), |_| todo!("stringifier (;)"))
+                map(self.token(';'), |_| {
+                    let ident = TokenTree::Ident(Ident::new_raw("to_string", Span::call_site()));
+                    quote!(fn $ident(&mut self);)
+                })
             ))(input)
         }
     }

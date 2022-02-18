@@ -60,11 +60,14 @@
 //! * `readonly` -> `const` (where applicable, e.g. `const fn`)
 //! * `iterable<V>` -> `fn _iter<'a>(&mut self) -> Box<dyn Iterator<Item = &'a mut V>>`
 //! * `iterable<K, V>` -> `fn _iter<'a>(&mut self) -> Box<dyn Iterator<Item = &'a mut KeyValue<'a>>>`[^2]
+//! * `stringifier` -> `fn to_string(&mut self)`[^3]
 //!
 //! [^1]: If interface `Foo` has a constructor, it is expected that every method `Bar::_init`, where
 //!   `Bar: Foo`, will call `(self as Foo)._init()`. IDL uses standard OOP constructors, but Rust
 //!   requires us to do it explicitly.
 //! [^2]: For an interface named `Foo`, `KeyValue` is defined in the module `_Foo` as follows:
+//! [^3]: When used before an attribute, the `stringifier` keyword generates an appropriate default
+//!   implementation.
 //!   ```
 //!   pub struct KeyValue<'a> {
 //!       key: K,
@@ -84,11 +87,11 @@
 //! The built-in types are mapped as follows:
 //! * `undefined` -> `()`
 //! * `any` -> `Box<dyn Any>`
-//! * `object` -> `Object`[^3]
+//! * `object` -> `Object`[^4]
 //! * `boolean` -> `bool`
 //! * `byte` -> `i8`
 //! * `octet` -> `u8`
-//! * `bigint` -> `BigInt`[^3]
+//! * `bigint` -> `BigInt`[^4]
 //! * `short` -> `i16`
 //! * `unsigned short` -> `u16`
 //! * `long` -> `i32`
@@ -97,8 +100,8 @@
 //! * `unsigned long long` -> `u64`
 //! * `float` -> `f32`
 //! * `double` -> `f64`
-//! * `restricted float` -> `Restricted<f32>`[^3]
-//! * `restricted f64` -> `Restricted<f64>`[^3]
+//! * `restricted float` -> `Restricted<f32>`[^4]
+//! * `restricted f64` -> `Restricted<f64>`[^4]
 //! * `Int8Array` -> `Vec<i8>`
 //! * `Int16Array` -> `Vec<i16>`
 //! * `Int32Array` -> `Vec<i32>`
@@ -119,7 +122,7 @@
 //!
 //! Variadic types like `long...` are represented as array slices like `&[i32]`.
 //!
-//! [^3]: To define these types, call `def_idl_types!()` where you want them to be defined. It
+//! [^4]: To define these types, call `def_idl_types!()` where you want them to be defined. It
 //!   should be called only once.
 //!
 //! ### Union types
