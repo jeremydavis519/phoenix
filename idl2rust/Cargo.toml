@@ -1,0 +1,12 @@
+[package]
+name = "idl2rust"
+version = "0.1.0"
+authors = ["Jeremy Davis <jeremydavis519@gmail.com>"]
+edition = "2021"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+litrs = "0.2.3"
+nom = { version = "7.1.0", default-features = false }
