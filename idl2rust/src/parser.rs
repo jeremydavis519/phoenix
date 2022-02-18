@@ -487,7 +487,14 @@ impl Parser {
     fn callback_interface_member<'a>(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
         |input| {
             alt((
-                self.idl_const(),
+                map(
+                    self.idl_const(),
+                    |tts| {
+                        // For object safety, a trait's constants can't be copied inline.
+                        self.interface_consts.borrow_mut().extend(tts);
+                        TokenStream::new()
+                    }
+                ),
                 self.regular_operation()
             ))(input)
         }
