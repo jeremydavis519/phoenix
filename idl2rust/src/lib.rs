@@ -61,6 +61,8 @@
 //! * `iterable<V>` -> `fn _iter<'a>(&mut self) -> Box<dyn Iterator<Item = &'a mut V>>`
 //! * `iterable<K, V>` -> `fn _iter<'a>(&mut self) -> Box<dyn Iterator<Item = &'a mut KeyValue<'a>>>`[^2]
 //! * `stringifier` -> `fn to_string(&mut self)`[^3]
+//! * `getter`, `setter`, and `deleter` are ignored; their operations are treated like regular
+//!   operations.
 //!
 //! [^1]: If interface `Foo` has a constructor, it is expected that every method `Bar::constructor`,
 //!   where `Bar: Foo`, will call `(self as Foo).constructor()`. IDL uses standard OOP constructors,
