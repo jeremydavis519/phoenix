@@ -888,7 +888,7 @@ impl Parser {
                 ),
                 |(args, _)| {
                     // We have to make the identifier manually in order to avoid Rust's macro hygiene.
-                    let ident = TokenTree::Ident(Ident::new_raw("_init", Span::call_site()));
+                    let ident = TokenTree::Ident(Ident::new_raw("constructor", Span::call_site()));
                     quote!(fn $ident(&mut self, $args);)
                 }
             )(input)

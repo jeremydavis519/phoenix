@@ -56,15 +56,15 @@
 //! * `enum _` -> `static _: [&str; n]`
 //! * `typedef a b` -> `type b = a`
 //! * `null` -> `None`
-//! * `constructor(...)` -> `fn _init(&mut self, ...)`[^1]
+//! * `constructor(...)` -> `fn constructor(&mut self, ...)`[^1]
 //! * `readonly` -> `const` (where applicable, e.g. `const fn`)
 //! * `iterable<V>` -> `fn _iter<'a>(&mut self) -> Box<dyn Iterator<Item = &'a mut V>>`
 //! * `iterable<K, V>` -> `fn _iter<'a>(&mut self) -> Box<dyn Iterator<Item = &'a mut KeyValue<'a>>>`[^2]
 //! * `stringifier` -> `fn to_string(&mut self)`[^3]
 //!
-//! [^1]: If interface `Foo` has a constructor, it is expected that every method `Bar::_init`, where
-//!   `Bar: Foo`, will call `(self as Foo)._init()`. IDL uses standard OOP constructors, but Rust
-//!   requires us to do it explicitly.
+//! [^1]: If interface `Foo` has a constructor, it is expected that every method `Bar::constructor`,
+//!   where `Bar: Foo`, will call `(self as Foo).constructor()`. IDL uses standard OOP constructors,
+//!   but Rust requires us to do it explicitly.
 //! [^2]: For an interface named `Foo`, `KeyValue` is defined in the module `_Foo` as follows:
 //! [^3]: When used before an attribute, the `stringifier` keyword generates an appropriate default
 //!   implementation.
