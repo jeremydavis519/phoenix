@@ -105,8 +105,7 @@ struct Parser<'a> {
     method_overload_counts:      RefCell<HashMap<String, usize>>,
     definition_attrs:            RefCell<Vec<ExtendedAttribute<'a>>>,
     member_attrs:                RefCell<Vec<ExtendedAttribute<'a>>>,
-    type_attrs:                  RefCell<Vec<ExtendedAttribute<'a>>>,
-    arg_attrs:                   RefCell<Vec<ExtendedAttribute<'a>>>
+    type_attrs:                  RefCell<Vec<ExtendedAttribute<'a>>>
 }
 
 impl<'a> Parser<'a> {
@@ -123,8 +122,7 @@ impl<'a> Parser<'a> {
             method_overload_counts:      RefCell::new(HashMap::new()),
             definition_attrs:            RefCell::new(Vec::new()),
             member_attrs:                RefCell::new(Vec::new()),
-            type_attrs:                  RefCell::new(Vec::new()),
-            arg_attrs:                   RefCell::new(Vec::new())
+            type_attrs:                  RefCell::new(Vec::new())
         }
     }
 
@@ -236,6 +234,10 @@ impl<'a> Parser<'a> {
 
                     for attr in self.definition_attrs.borrow_mut().drain( .. ) {
                         match attr {
+                            ExtendedAttribute::Ident("Exposed", _) |
+                            ExtendedAttribute::IdentList("Exposed", _) |
+                            ExtendedAttribute::Wildcard("Exposed") => {},
+                            ExtendedAttribute::NoArgs("LegacyUnenumerableNamedProperties") => {},
                             attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
                         }
                     }
@@ -395,7 +397,18 @@ impl<'a> Parser<'a> {
                         )
                     )
                 ),
-                |(ident, members)| todo!("mixin_rest")
+                |(ident, members)| {
+                    for attr in self.definition_attrs.borrow_mut().drain( .. ) {
+                        match attr {
+                            ExtendedAttribute::Ident("Exposed", _) |
+                            ExtendedAttribute::IdentList("Exposed", _) |
+                            ExtendedAttribute::Wildcard("Exposed") => {},
+                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
+                        }
+                    }
+
+                    todo!("mixin_rest")
+                }
             )(input)
         }
     }
@@ -488,6 +501,9 @@ impl<'a> Parser<'a> {
 
                         for attr in self.definition_attrs.borrow_mut().drain( .. ) {
                             match attr {
+                                ExtendedAttribute::Ident("Exposed", _) |
+                                ExtendedAttribute::IdentList("Exposed", _) |
+                                ExtendedAttribute::Wildcard("Exposed") => {},
                                 attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
                             }
                         }
@@ -547,6 +563,9 @@ impl<'a> Parser<'a> {
                 |(ty, ident, val)| {
                     for attr in self.member_attrs.borrow_mut().drain( .. ) {
                         match attr {
+                            ExtendedAttribute::Ident("Exposed", _) |
+                            ExtendedAttribute::IdentList("Exposed", _) |
+                            ExtendedAttribute::Wildcard("Exposed") => {},
                             attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
                         }
                     }
@@ -637,6 +656,15 @@ impl<'a> Parser<'a> {
 
                         for attr in self.member_attrs.borrow_mut().drain( .. ) {
                             match attr {
+                                ExtendedAttribute::Ident("Exposed", _) |
+                                ExtendedAttribute::IdentList("Exposed", _) |
+                                ExtendedAttribute::Wildcard("Exposed") => {},
+                                ExtendedAttribute::NoArgs("SameObject") => {
+                                    // The only effect should be to generate `fn _(&self)` instead of `fn _(&mut self)`,
+                                    // but we do that already anyway.
+                                },
+                                ExtendedAttribute::NoArgs("Unscopable") => {},
+                                ExtendedAttribute::NoArgs("LegacyUnforgeable") => {},
                                 attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
                             }
                         }
@@ -663,6 +691,11 @@ impl<'a> Parser<'a> {
 
                     for attr in self.member_attrs.borrow_mut().drain( .. ) {
                         match attr {
+                            ExtendedAttribute::Ident("Exposed", _) |
+                            ExtendedAttribute::IdentList("Exposed", _) |
+                            ExtendedAttribute::Wildcard("Exposed") => {},
+                            ExtendedAttribute::NoArgs("Unscopable") => {},
+                            ExtendedAttribute::NoArgs("LegacyUnforgeable") => {},
                             attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
                         }
                     }
@@ -690,6 +723,11 @@ impl<'a> Parser<'a> {
 
                     for attr in self.member_attrs.borrow_mut().drain( .. ) {
                         match attr {
+                            ExtendedAttribute::Ident("Exposed", _) |
+                            ExtendedAttribute::IdentList("Exposed", _) |
+                            ExtendedAttribute::Wildcard("Exposed") => {},
+                            ExtendedAttribute::NoArgs("Unscopable") => {},
+                            ExtendedAttribute::NoArgs("LegacyUnforgeable") => {},
                             attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
                         }
                     }
@@ -826,7 +864,12 @@ impl<'a> Parser<'a> {
                 |(opt_name, (args, _))| {
                     for attr in self.member_attrs.borrow_mut().drain( .. ) {
                         match attr {
-                            ExtendedAttribute::NoArgs("NewObject") => {}, // No effect on the Rust binding
+                            ExtendedAttribute::Ident("Exposed", _) |
+                            ExtendedAttribute::IdentList("Exposed", _) |
+                            ExtendedAttribute::Wildcard("Exposed") => {},
+                            ExtendedAttribute::NoArgs("NewObject") => {},
+                            ExtendedAttribute::NoArgs("Unscopable") => {},
+                            ExtendedAttribute::NoArgs("LegacyUnforgeable") => {},
                             attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
                         };
                     }
@@ -930,9 +973,9 @@ impl<'a> Parser<'a> {
     fn argument(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, (TokenStream, TokenStream)> {
         |input| {
             map(
-                preceded(self.extended_attribute_list(&self.arg_attrs), self.argument_rest()),
+                preceded(self.extended_attribute_list(&self.type_attrs), self.argument_rest()),
                 |(arg, arg_type)| {
-                    assert!(self.arg_attrs.borrow().is_empty(), "didn't use the extended attributes");
+                    assert!(self.type_attrs.borrow().is_empty(), "didn't use the extended attributes");
                     (arg, arg_type)
                 }
             )(input)
@@ -955,7 +998,7 @@ impl<'a> Parser<'a> {
                 map(
                     tuple((self.idl_type(), self.ellipsis(), self.argument_name())),
                     |(ty, ellipsis, arg)| {
-                        for attr in self.arg_attrs.borrow_mut().drain( .. ) {
+                        for attr in self.type_attrs.borrow_mut().drain( .. ) {
                             match attr {
                                 attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
                             }
@@ -1026,8 +1069,11 @@ impl<'a> Parser<'a> {
                 map(self.token(';'), |_| {
                     for attr in self.member_attrs.borrow_mut().drain( .. ) {
                         match attr {
+                            ExtendedAttribute::Ident("Exposed", _) |
+                            ExtendedAttribute::IdentList("Exposed", _) |
+                            ExtendedAttribute::Wildcard("Exposed") => {},
                             attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                        };
                     }
 
                     let ident = TokenTree::Ident(Ident::new_raw("to_string", Span::call_site()));
@@ -1050,7 +1096,17 @@ impl<'a> Parser<'a> {
             alt((
                 map(
                     pair(self.optional_read_only(), self.attribute_rest()),
-                    |(ro, attr)| todo!("static_member_rest")
+                    |(ro, attr)| {
+                        for attr in self.member_attrs.borrow_mut().drain( .. ) {
+                            match attr {
+                                ExtendedAttribute::Ident("Exposed", _) |
+                                ExtendedAttribute::IdentList("Exposed", _) |
+                                ExtendedAttribute::Wildcard("Exposed") => {},
+                                attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
+                            };
+                        }
+                        todo!("static_member_rest")
+                    }
                 ),
                 self.regular_operation()
             ))(input)
@@ -1086,8 +1142,11 @@ impl<'a> Parser<'a> {
 
                     for attr in self.member_attrs.borrow_mut().drain( .. ) {
                         match attr {
+                            ExtendedAttribute::Ident("Exposed", _) |
+                            ExtendedAttribute::IdentList("Exposed", _) |
+                            ExtendedAttribute::Wildcard("Exposed") => {},
                             attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                        };
                     }
 
                     quote!(
@@ -1121,7 +1180,18 @@ impl<'a> Parser<'a> {
                     ),
                     self.token(';')
                 ),
-                |((ty1, opt_ty2), opt_args)| todo!("async_iterable")
+                |((ty1, opt_ty2), opt_args)| {
+                    for attr in self.member_attrs.borrow_mut().drain( .. ) {
+                        match attr {
+                            ExtendedAttribute::Ident("Exposed", _) |
+                            ExtendedAttribute::IdentList("Exposed", _) |
+                            ExtendedAttribute::Wildcard("Exposed") => {},
+                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
+                        };
+                    }
+
+                    todo!("async_iterable")
+                }
             )(input)
         }
     }
@@ -1156,7 +1226,18 @@ impl<'a> Parser<'a> {
                     ),
                     pair(self.token('>'), self.token(';'))
                 ),
-                |(ty1, ty2)| todo!("maplike_rest")
+                |(ty1, ty2)| {
+                    for attr in self.member_attrs.borrow_mut().drain( .. ) {
+                        match attr {
+                            ExtendedAttribute::Ident("Exposed", _) |
+                            ExtendedAttribute::IdentList("Exposed", _) |
+                            ExtendedAttribute::Wildcard("Exposed") => {},
+                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
+                        };
+                    }
+
+                    todo!("maplike_rest")
+                }
             )(input)
         }
     }
@@ -1175,7 +1256,18 @@ impl<'a> Parser<'a> {
                     self.type_with_extended_attributes(),
                     pair(self.token('>'), self.token(';'))
                 ),
-                |ty| todo!("setlike_rest")
+                |ty| {
+                    for attr in self.member_attrs.borrow_mut().drain( .. ) {
+                        match attr {
+                            ExtendedAttribute::Ident("Exposed", _) |
+                            ExtendedAttribute::IdentList("Exposed", _) |
+                            ExtendedAttribute::Wildcard("Exposed") => {},
+                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
+                        };
+                    }
+
+                    todo!("setlike_rest")
+                }
             )(input)
         }
     }
@@ -1195,6 +1287,9 @@ impl<'a> Parser<'a> {
                 |(ident, members)| {
                     for attr in self.definition_attrs.borrow_mut().drain( .. ) {
                         match attr {
+                            ExtendedAttribute::Ident("Exposed", _) |
+                            ExtendedAttribute::IdentList("Exposed", _) |
+                            ExtendedAttribute::Wildcard("Exposed") => {},
                             attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
                         }
                     }
@@ -1516,6 +1611,7 @@ impl<'a> Parser<'a> {
 
                     for attr in self.definition_attrs.borrow_mut().drain( .. ) {
                         match attr {
+                            ExtendedAttribute::NoArgs("LegacyTreatNonObjectAsNull") => {},
                             attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
                         }
                     }
@@ -1940,6 +2036,8 @@ impl<'a> Parser<'a> {
                 map(preceded(self.keyword("unsigned"), pair(self.keyword("long"), self.keyword("long"))), |_| {
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
+                            ExtendedAttribute::NoArgs("Clamp") => {},
+                            ExtendedAttribute::NoArgs("EnforceRange") => {},
                             attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
                         }
                     }
@@ -1948,6 +2046,8 @@ impl<'a> Parser<'a> {
                 map(preceded(self.keyword("unsigned"), self.keyword("long")), |_| {
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
+                            ExtendedAttribute::NoArgs("Clamp") => {},
+                            ExtendedAttribute::NoArgs("EnforceRange") => {},
                             attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
                         }
                     }
@@ -1956,6 +2056,8 @@ impl<'a> Parser<'a> {
                 map(preceded(self.keyword("unsigned"), self.keyword("short")), |_| {
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
+                            ExtendedAttribute::NoArgs("Clamp") => {},
+                            ExtendedAttribute::NoArgs("EnforceRange") => {},
                             attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
                         }
                     }
@@ -1964,6 +2066,8 @@ impl<'a> Parser<'a> {
                 map(pair(self.keyword("long"), self.keyword("long")), |_| {
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
+                            ExtendedAttribute::NoArgs("Clamp") => {},
+                            ExtendedAttribute::NoArgs("EnforceRange") => {},
                             attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
                         }
                     }
@@ -1972,6 +2076,8 @@ impl<'a> Parser<'a> {
                 map(self.keyword("long"), |_| {
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
+                            ExtendedAttribute::NoArgs("Clamp") => {},
+                            ExtendedAttribute::NoArgs("EnforceRange") => {},
                             attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
                         }
                     }
@@ -1980,6 +2086,8 @@ impl<'a> Parser<'a> {
                 map(self.keyword("short"), |_| {
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
+                            ExtendedAttribute::NoArgs("Clamp") => {},
+                            ExtendedAttribute::NoArgs("EnforceRange") => {},
                             attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
                         }
                     }
@@ -2004,6 +2112,7 @@ impl<'a> Parser<'a> {
                 map(self.keyword("DOMString"), |_| {
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
+                            ExtendedAttribute::NoArgs("LegacyNullToEmptyString") => {},
                             attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
                         }
                     }
@@ -2012,6 +2121,7 @@ impl<'a> Parser<'a> {
                 map(self.keyword("USVString"), |_| {
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
+                            ExtendedAttribute::NoArgs("LegacyNullToEmptyString") => {},
                             attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
                         }
                     }
