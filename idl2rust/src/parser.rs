@@ -1103,7 +1103,7 @@ impl<'a> Parser<'a> {
                     |(ro, attr)| todo!("stringifier_rest (attribute)"),
                 ),
                 map(self.token(';'), |_| {
-                    let ident = TokenTree::Ident(Ident::new_raw("to_string", Span::call_site()));
+                    let ident = TokenTree::Ident(Ident::new_raw("toString", Span::call_site()));
                     let mut tts = quote!(fn $ident(&mut self););
 
                     for attr in self.member_attrs.borrow_mut().drain( .. ) {
@@ -2959,43 +2959,15 @@ impl<'a> Parser<'a> {
     }
 
     // Converts an IDL identifier into a Rust identifier. This means converting a leading hyphen into two underscores
-    // (which is invalid for the beginning of an IDL identifier) and changing camel case to snake case.
+    // (which is invalid for the beginning of an IDL identifier).
     fn rustify_ident(&self, idl_ident: &str) -> String {
         assert!(!idl_ident.is_empty());
 
-        let (mut rust_ident, rest) = if idl_ident.starts_with('-') {
-            (String::from("___"), &idl_ident[1 ..])
+        if idl_ident.starts_with('-') {
+            String::from("___") + &idl_ident[1 .. ]
         } else {
-            (String::new(), idl_ident)
-        };
-
-        if self.is_screaming_snake_case(rest) {
-            // SCREAMING_SNAKE_CASE is fine.
-            // TODO: This is usually used for enumerations. Should we convert to UpperCamelCase and generate enums?
-            return rust_ident + rest;
+            String::from(idl_ident)
         }
-
-        // An out-of-bounds access is impossible here because the only character we could have removed by now is a hyphen.
-        // Every IDL identifier must contain at least one letter.
-        if rest.chars().next().expect("parser error when reading identifier").is_ascii_uppercase() {
-            // Assume this is UpperCamelCase. That is also fine.
-            rust_ident + rest
-        } else {
-            // Otherwise, assume it's lowerCamelCase. This should be converted to snake_case.
-            for c in rest.chars() {
-                if c.is_ascii_uppercase() {
-                    rust_ident.push('_');
-                    rust_ident.push(c.to_ascii_lowercase());
-                } else {
-                    rust_ident.push(c);
-                }
-            }
-            rust_ident
-        }
-    }
-
-    fn is_screaming_snake_case(&self, s: &str) -> bool {
-        s.chars().position(|c| c.is_ascii_lowercase()).is_none()
     }
 
     // Matches the given keyword while ensuring that it's not matching just the prefix of a longer

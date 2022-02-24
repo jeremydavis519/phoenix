@@ -27,13 +27,10 @@
 //! * In accordance with the specification, any leading `_` is stripped from each identifier.
 //! * Any identifier beginning with `-` is changed to one beginning with `___` (which is not
 //!   stripped).
-//! * Identifiers in `lowerCamelCase` (i.e. those whose first letter is lowercase) are converted to
-//!   `snake_case`.
-//! * After being converted to snake case, any identifiers that are the same (i.e. the names of
-//!   an overloaded operation or constructor) are distinguished with a suffix. The suffix consists
-//!   of the letter `O` followed by the number of overloads defined before this one. The first
-//!   overload does not receive a suffix at all. For instance, the following IDL fragment and Rust
-//!   code are equivalent:
+//! * Any identifiers that are the same (i.e. the names of an overloaded operation or constructor)
+//!   are distinguished with a suffix. The suffix consists of the letter `O` followed by the number
+//!   of overloads defined before this one. The first overload does not receive a suffix at all. For
+//!   instance, the following IDL fragment and Rust code are equivalent:
 //!   ```text
 //!   interface CanvasDrawPathExcerpt {
 //!     undefined stroke();
@@ -60,7 +57,7 @@
 //! * `readonly` -> `const` (where applicable, e.g. `const fn`)
 //! * `iterable<V>` -> `fn _iter<'a>(&mut self) -> Box<dyn Iterator<Item = &'a mut V>>`
 //! * `iterable<K, V>` -> `fn _iter<'a>(&mut self) -> Box<dyn Iterator<Item = &'a mut KeyValue<'a>>>`[^2]
-//! * `stringifier` -> `fn to_string(&mut self)`[^3]
+//! * `stringifier` -> `fn toString(&mut self)`[^3]
 //! * `getter`, `setter`, and `deleter` are ignored; their operations are treated like regular
 //!   operations.
 //!
@@ -68,8 +65,6 @@
 //!   where `Bar: Foo`, will call `(self as Foo).constructor()`. IDL uses standard OOP constructors,
 //!   but Rust requires us to do it explicitly.
 //! [^2]: For an interface named `Foo`, `KeyValue` is defined in the module `_Foo` as follows:
-//! [^3]: When used before an attribute, the `stringifier` keyword generates an appropriate default
-//!   implementation.
 //!   ```
 //!   pub struct KeyValue<'a> {
 //!       key: K,
@@ -77,13 +72,15 @@
 //!   }
 //!   # type K = (); type V = ();
 //!   ```
+//! [^3]: When used before an attribute, the `stringifier` keyword generates an appropriate default
+//!   implementation.
 //!
 //! ## Attributes
 //! A read-write attribute `foo` with type `T` is converted into an accessor (`fn foo(&self) -> T`)
-//! and a mutator (`fn foo(&mut self, value: T)`). A read-only attribute only gets the accessor.
+//! and a mutator (`fn _set_foo(&mut self, value: T)`). A read-only attribute only gets the accessor.
 //!
 //! In the special case of an attribute that is a member of a namespace (which must be read-only),
-//! FIXME: What happens then???
+//! ***** FIXME: What happens then??? *****
 //!
 //! ## Types
 //! The built-in types are mapped as follows:
@@ -151,7 +148,7 @@
 //!   );
 //! };
 //!
-//! interface EventListener { /* ... */ }
+//! interface EventListener { /* ... */ };
 //!
 //! dictionary AddEventListenerOptions { /* ... */ };
 //! ```
@@ -197,13 +194,13 @@
 //! ```
 //! ```
 //! pub struct Foo {
-//!     pub bar: u32,
-//!     pub baz: Option<u32>
+//!     pub bar: i32,
+//!     pub baz: Option<i32>
 //! }
 //!
 //! impl Foo {
-//!     pub fn bar() -> u32 { 42 }
-//!     pub fn baz() -> Option<u32> { None }
+//!     pub fn bar() -> i32 { 42 }
+//!     pub fn baz() -> Option<i32> { None }
 //! }
 //!
 //! impl Default for Foo {
@@ -228,7 +225,7 @@
 //!   processing the list a bit easier.
 //! * If the extended attribute takes arguments with IDL types, it is converted to a Rust syntax
 //!   in the same way as an operation is converted to a method declaration. For instance,
-//!   `[Foo(long value, bool setNotGet)]` is converted to `[Foo(value: i32, set_not_get: bool,)]`.
+//!   `[Foo(long value, bool setNotGet)]` is converted to `[Foo(value: i32, setNotGet: bool,)]`.
 //! * After the conversion, if any, the extended attribute, including surrounding brackets, is
 //!   passed to the macro, followed by the Rust version of the annotated IDL item.
 //!
@@ -250,7 +247,7 @@
 //!         [AutoImpl = genericSetAttr(qualified_name: Vec<u16>, value: Vec<u16>,)]
 //!         idlea_CEReactions! {
 //!             [CEReactions]
-//!             fn set_attribute(&mut self, qualified_name: Vec<u16>, value: Vec<u16>);
+//!             fn setAttribute(&mut self, qualifiedName: Vec<u16>, value: Vec<u16>);
 //!         }
 //!     }
 //! }
