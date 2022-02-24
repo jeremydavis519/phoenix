@@ -218,6 +218,43 @@
 //!
 //! ## Arguments
 //! Since Rust doesn't have optional parameters, any default values of IDL arguments are ignored.
+//!
+//! ## Extended Attributes
+//! Extended attributes defined in the WebIDL standard are handled directly by this crate. All
+//! others generate calls to macros that the client code needs to define.
+//! * The macro name is the extended attribute's name, prepended with `"idlea_"`.
+//! * Any extended attribute that contains a list of things (identifiers or arguments) will have
+//!   an extra comma at the end of the list, even if that comma was not present in IDL. This makes
+//!   processing the list a bit easier.
+//! * If the extended attribute takes arguments with IDL types, it is converted to a Rust syntax
+//!   in the same way as an operation is converted to a method declaration. For instance,
+//!   `[Foo(long value, bool setNotGet)]` is converted to `[Foo(value: i32, set_not_get: bool,)]`.
+//! * After the conversion, if any, the extended attribute, including surrounding brackets, is
+//!   passed to the macro, followed by the Rust version of the annotated IDL item.
+//!
+//! If multiple extended attributes appear on the same definition, they are applied in order from
+//! left to right.
+//!
+//! For example, the following IDL fragment and Rust snippet are equivalent:
+//! ```text
+//! interface ElementFragment {
+//!   [CEReactions, AutoImpl = genericSetAttr(DOMString qualifiedName, DOMString value)]
+//!   undefined setAttribute(DOMString qualifiedName, DOMString value);
+//! }
+//! ```
+//! ```
+//! # macro_rules! idlea_AutoImpl { ([$($attr:tt)*] $($tts:tt)*) => { $($tts)* }; }
+//! # macro_rules! idlea_CEReactions { ([$($attr:tt)*] $($tts:tt)*) => { $($tts)* }; }
+//! pub trait ElementFragment {
+//!     idlea_AutoImpl! {
+//!         [AutoImpl = genericSetAttr(qualified_name: Vec<u16>, value: Vec<u16>,)]
+//!         idlea_CEReactions! {
+//!             [CEReactions]
+//!             fn set_attribute(&mut self, qualified_name: Vec<u16>, value: Vec<u16>);
+//!         }
+//!     }
+//! }
+//! ```
 
 #![feature(proc_macro_expand)]
 #![feature(proc_macro_quote)]

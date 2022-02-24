@@ -33,7 +33,6 @@ use {
     std::{
         cell::RefCell,
         collections::{HashMap, HashSet},
-        fmt,
         iter,
         str::FromStr
     },
@@ -232,18 +231,25 @@ impl<'a> Parser<'a> {
                     // generated module below.
                     let super_ident = TokenTree::Ident(Ident::new("self", Span::call_site()));
 
+                    let mut tts = quote!(
+                        pub trait $ident $inheritance { $members }
+                    );
+
                     for attr in self.definition_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ExtendedAttribute::Ident("Exposed", _) |
                             ExtendedAttribute::IdentList("Exposed", _) |
                             ExtendedAttribute::Wildcard("Exposed") => {},
                             ExtendedAttribute::NoArgs("LegacyUnenumerableNamedProperties") => {},
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
 
                     quote!(
-                        pub trait $ident $inheritance { $members }
+                        $tts
                         #[doc(hidden)] pub type $internal_ident = ::alloc::boxed::Box<dyn $ident>;
                         pub mod $mod_ident {
                             use $super_ident::*;
@@ -398,16 +404,20 @@ impl<'a> Parser<'a> {
                     )
                 ),
                 |(ident, members)| {
+                    let tts = todo!("mixin_rest");
+
                     for attr in self.definition_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ExtendedAttribute::Ident("Exposed", _) |
                             ExtendedAttribute::IdentList("Exposed", _) |
                             ExtendedAttribute::Wildcard("Exposed") => {},
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-
-                    todo!("mixin_rest")
+                    tts
                 }
             )(input)
         }
@@ -499,17 +509,24 @@ impl<'a> Parser<'a> {
                         // generated module below.
                         let super_ident = TokenTree::Ident(Ident::new("self", Span::call_site()));
 
+                        let mut tts = quote!(
+                            pub trait $ident { $members }
+                        );
+
                         for attr in self.definition_attrs.borrow_mut().drain( .. ) {
                             match attr {
                                 ExtendedAttribute::Ident("Exposed", _) |
                                 ExtendedAttribute::IdentList("Exposed", _) |
                                 ExtendedAttribute::Wildcard("Exposed") => {},
-                                attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                            }
+                                ref attr => {
+                                    let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                    tts = quote!($macro_ident ! ($attr $tts););
+                                }
+                            };
                         }
 
                         quote!(
-                            pub trait $ident { $members }
+                            $tts
                             #[doc(hidden)] pub type $internal_ident = ::alloc::boxed::Box<dyn $ident>;
                             pub mod $mod_ident { use $super_ident::*; $union_types $consts }
                         )
@@ -561,16 +578,20 @@ impl<'a> Parser<'a> {
                     self.token(';')
                 ),
                 |(ty, ident, val)| {
+                    let mut tts = quote!(pub const $ident: $ty = $val;);
+
                     for attr in self.member_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ExtendedAttribute::Ident("Exposed", _) |
                             ExtendedAttribute::IdentList("Exposed", _) |
                             ExtendedAttribute::Wildcard("Exposed") => {},
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-
-                    quote!(pub const $ident: $ty = $val;)
+                    tts
                 }
             )(input)
         }
@@ -654,6 +675,8 @@ impl<'a> Parser<'a> {
                     |(ty, ident_str)| {
                         let getter_ident = TokenTree::Ident(Ident::new_raw(&ident_str, Span::call_site()));
 
+                        let mut tts = quote!(fn $getter_ident(&self) -> $ty;);
+
                         for attr in self.member_attrs.borrow_mut().drain( .. ) {
                             match attr {
                                 ExtendedAttribute::Ident("Exposed", _) |
@@ -665,11 +688,13 @@ impl<'a> Parser<'a> {
                                 },
                                 ExtendedAttribute::NoArgs("Unscopable") => {},
                                 ExtendedAttribute::NoArgs("LegacyUnforgeable") => {},
-                                attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                            }
+                                ref attr => {
+                                    let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                    tts = quote!($macro_ident ! ($attr $tts););
+                                }
+                            };
                         }
-
-                        quote!(fn $getter_ident(&self) -> $ty;)
+                        tts
                     }
                 ),
                 self.maplike_rest(),
@@ -689,6 +714,11 @@ impl<'a> Parser<'a> {
                         (String::from("_set_") + &ident_str).as_str(), Span::call_site()
                     ));
 
+                    let mut tts = quote!(
+                        fn $getter_ident(&self) -> $ty;
+                        fn $setter_ident(&mut self, value: $ty);
+                    );
+
                     for attr in self.member_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ExtendedAttribute::Ident("Exposed", _) |
@@ -696,14 +726,13 @@ impl<'a> Parser<'a> {
                             ExtendedAttribute::Wildcard("Exposed") => {},
                             ExtendedAttribute::NoArgs("Unscopable") => {},
                             ExtendedAttribute::NoArgs("LegacyUnforgeable") => {},
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-
-                    quote!(
-                        fn $getter_ident(&self) -> $ty;
-                        fn $setter_ident(&mut self, value: $ty);
-                    )
+                    tts
                 }
             )(input)
         }
@@ -721,6 +750,14 @@ impl<'a> Parser<'a> {
                         (String::from("_set_") + &ident_str).as_str(), Span::call_site()
                     ));
 
+                    let mut tts = quote!(
+                        fn $getter_ident(&self) -> $ty {
+                            (self as $super_ident).$getter_ident()
+                        }
+                        // NOTE: `inherit` only means an attribute inherits its getter, not its setter.
+                        fn $setter_ident(&mut self, value: $ty);
+                    );
+
                     for attr in self.member_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ExtendedAttribute::Ident("Exposed", _) |
@@ -728,17 +765,13 @@ impl<'a> Parser<'a> {
                             ExtendedAttribute::Wildcard("Exposed") => {},
                             ExtendedAttribute::NoArgs("Unscopable") => {},
                             ExtendedAttribute::NoArgs("LegacyUnforgeable") => {},
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
                         }
                     }
-
-                    quote!(
-                        fn $getter_ident(&self) -> $ty {
-                            (self as $super_ident).$getter_ident()
-                        }
-                        // NOTE: `inherit` only means an attribute inherits its getter, not its setter.
-                        fn $setter_ident(&mut self, value: $ty);
-                    )
+                    tts
                 }
             )(input)
         }
@@ -818,7 +851,25 @@ impl<'a> Parser<'a> {
                     self.operation_rest()
                 ),
                 |(ty, opt_op)| match opt_op {
-                    Some(op) => quote!($op -> $ty;),
+                    Some(op) => {
+                        let mut tts = quote!($op -> $ty;);
+
+                        for attr in self.member_attrs.borrow_mut().drain( .. ) {
+                            match attr {
+                                ExtendedAttribute::Ident("Exposed", _) |
+                                ExtendedAttribute::IdentList("Exposed", _) |
+                                ExtendedAttribute::Wildcard("Exposed") => {},
+                                ExtendedAttribute::NoArgs("NewObject") => {},
+                                ExtendedAttribute::NoArgs("Unscopable") => {},
+                                ExtendedAttribute::NoArgs("LegacyUnforgeable") => {},
+                                ref attr => {
+                                    let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                    tts = quote!($macro_ident ! ($attr $tts););
+                                }
+                            };
+                        }
+                        tts
+                    },
                     None => TokenStream::new()
                 }
             )(input)
@@ -861,20 +912,7 @@ impl<'a> Parser<'a> {
                         pair(self.token(')'), self.token(';'))
                     )
                 ),
-                |(opt_name, (args, _))| {
-                    for attr in self.member_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ExtendedAttribute::Ident("Exposed", _) |
-                            ExtendedAttribute::IdentList("Exposed", _) |
-                            ExtendedAttribute::Wildcard("Exposed") => {},
-                            ExtendedAttribute::NoArgs("NewObject") => {},
-                            ExtendedAttribute::NoArgs("Unscopable") => {},
-                            ExtendedAttribute::NoArgs("LegacyUnforgeable") => {},
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        };
-                    }
-                    opt_name.map(|name| quote!(fn $name(&mut self, $args)))
-                }
+                |(opt_name, (args, _))| opt_name.map(|name| quote!(fn $name(&mut self, $args)))
             )(input)
         }
     }
@@ -998,12 +1036,6 @@ impl<'a> Parser<'a> {
                 map(
                     tuple((self.idl_type(), self.ellipsis(), self.argument_name())),
                     |(ty, ellipsis, arg)| {
-                        for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                            match attr {
-                                attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                            }
-                        }
-
                         let ty = if ellipsis { quote!(&[$ty]) } else { ty };
                         (quote!($arg: $ty), ty)
                     }
@@ -1038,14 +1070,18 @@ impl<'a> Parser<'a> {
                     pair(self.token(')'), self.token(';'))
                 ),
                 |(args, _)| {
+                    let ident = TokenTree::Ident(Ident::new_raw("constructor", Span::call_site()));
+                    let mut tts = quote!(fn $ident(&mut self, $args););
+
                     for attr in self.member_attrs.borrow_mut().drain( .. ) {
                         match attr {
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-
-                    let ident = TokenTree::Ident(Ident::new_raw("constructor", Span::call_site()));
-                    quote!(fn $ident(&mut self, $args);)
+                    tts
                 }
             )(input)
         }
@@ -1067,17 +1103,21 @@ impl<'a> Parser<'a> {
                     |(ro, attr)| todo!("stringifier_rest (attribute)"),
                 ),
                 map(self.token(';'), |_| {
+                    let ident = TokenTree::Ident(Ident::new_raw("to_string", Span::call_site()));
+                    let mut tts = quote!(fn $ident(&mut self););
+
                     for attr in self.member_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ExtendedAttribute::Ident("Exposed", _) |
                             ExtendedAttribute::IdentList("Exposed", _) |
                             ExtendedAttribute::Wildcard("Exposed") => {},
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
                         };
                     }
-
-                    let ident = TokenTree::Ident(Ident::new_raw("to_string", Span::call_site()));
-                    quote!(fn $ident(&mut self);)
+                    tts
                 })
             ))(input)
         }
@@ -1097,15 +1137,20 @@ impl<'a> Parser<'a> {
                 map(
                     pair(self.optional_read_only(), self.attribute_rest()),
                     |(ro, attr)| {
+                        let mut tts = todo!("static_member_rest");
+
                         for attr in self.member_attrs.borrow_mut().drain( .. ) {
                             match attr {
                                 ExtendedAttribute::Ident("Exposed", _) |
                                 ExtendedAttribute::IdentList("Exposed", _) |
                                 ExtendedAttribute::Wildcard("Exposed") => {},
-                                attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
+                                ref attr => {
+                                    let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                    tts = quote!($macro_ident ! ($attr $tts););
+                                }
                             };
                         }
-                        todo!("static_member_rest")
+                        tts
                     }
                 ),
                 self.regular_operation()
@@ -1140,19 +1185,23 @@ impl<'a> Parser<'a> {
                         }
                     };
 
+                    let mut tts = quote!(
+                        fn _iter<'a>(&mut self)
+                            -> ::alloc::boxed::Box<dyn ::core::iter::Iterator::<Item = &'a mut $item>>;
+                    );
+
                     for attr in self.member_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ExtendedAttribute::Ident("Exposed", _) |
                             ExtendedAttribute::IdentList("Exposed", _) |
                             ExtendedAttribute::Wildcard("Exposed") => {},
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
                         };
                     }
-
-                    quote!(
-                        fn _iter<'a>(&mut self)
-                            -> ::alloc::boxed::Box<dyn ::core::iter::Iterator::<Item = &'a mut $item>>;
-                    )
+                    tts
                 }
             )(input)
         }
@@ -1181,16 +1230,20 @@ impl<'a> Parser<'a> {
                     self.token(';')
                 ),
                 |((ty1, opt_ty2), opt_args)| {
+                    let mut tts = todo!("async_iterable");
+
                     for attr in self.member_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ExtendedAttribute::Ident("Exposed", _) |
                             ExtendedAttribute::IdentList("Exposed", _) |
                             ExtendedAttribute::Wildcard("Exposed") => {},
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
                         };
                     }
-
-                    todo!("async_iterable")
+                    tts
                 }
             )(input)
         }
@@ -1227,16 +1280,20 @@ impl<'a> Parser<'a> {
                     pair(self.token('>'), self.token(';'))
                 ),
                 |(ty1, ty2)| {
+                    let mut tts = todo!("maplike_rest");
+
                     for attr in self.member_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ExtendedAttribute::Ident("Exposed", _) |
                             ExtendedAttribute::IdentList("Exposed", _) |
                             ExtendedAttribute::Wildcard("Exposed") => {},
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
                         };
                     }
-
-                    todo!("maplike_rest")
+                    tts
                 }
             )(input)
         }
@@ -1257,16 +1314,20 @@ impl<'a> Parser<'a> {
                     pair(self.token('>'), self.token(';'))
                 ),
                 |ty| {
+                    let mut tts = todo!("setlike_rest");
+
                     for attr in self.member_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ExtendedAttribute::Ident("Exposed", _) |
                             ExtendedAttribute::IdentList("Exposed", _) |
                             ExtendedAttribute::Wildcard("Exposed") => {},
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
                         };
                     }
-
-                    todo!("setlike_rest")
+                    tts
                 }
             )(input)
         }
@@ -1285,16 +1346,20 @@ impl<'a> Parser<'a> {
                     )
                 ),
                 |(ident, members)| {
+                    let mut tts = quote!(pub mod $ident { $members });
+
                     for attr in self.definition_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ExtendedAttribute::Ident("Exposed", _) |
                             ExtendedAttribute::IdentList("Exposed", _) |
                             ExtendedAttribute::Wildcard("Exposed") => {},
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-
-                    quote!(pub mod $ident { $members })
+                    tts
                 }
             )(input)
         }
@@ -1415,13 +1480,7 @@ impl<'a> Parser<'a> {
                     // generated module below.
                     let super_ident = TokenTree::Ident(Ident::new("self", Span::call_site()));
 
-                    for attr in self.definition_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
-                    }
-
-                    quote!(
+                    let mut tts = quote!(
                         pub struct $ident { $inheritance $members }
                         #[doc(hidden)] pub type $internal_ident = $ident;
                         impl $ident { $member_default_fns }
@@ -1431,7 +1490,17 @@ impl<'a> Parser<'a> {
                             $iter_def
                         }
                         $impl_default
-                    )
+                    );
+
+                    for attr in self.definition_attrs.borrow_mut().drain( .. ) {
+                        match attr {
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
+                    }
+                    tts
                 }
             )(input)
         }
@@ -1476,13 +1545,17 @@ impl<'a> Parser<'a> {
                     |(ty, ident)| {
                         self.required_dictionary_members.borrow_mut().push((ident.clone(), ty.clone()));
 
+                        let mut tts = quote!(pub $ident: $ty,);
+
                         for attr in self.member_attrs.borrow_mut().drain( .. ) {
                             match attr {
-                                attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                            }
+                                ref attr => {
+                                    let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                    tts = quote!($macro_ident ! ($attr $tts););
+                                }
+                            };
                         }
-
-                        quote!(pub $ident: $ty,)
+                        tts
                     }
                 ),
                 map(
@@ -1500,14 +1573,18 @@ impl<'a> Parser<'a> {
                             )
                         };
 
+                        self.dictionary_defaults.borrow_mut().push((ident.clone(), ty.clone(), default));
+                        let mut tts = quote!(pub $ident: $ty,);
+
                         for attr in self.member_attrs.borrow_mut().drain( .. ) {
                             match attr {
-                                attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                            }
+                                ref attr => {
+                                    let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                    tts = quote!($macro_ident ! ($attr $tts););
+                                }
+                            };
                         }
-
-                        self.dictionary_defaults.borrow_mut().push((ident.clone(), ty.clone(), default));
-                        quote!(pub $ident: $ty,)
+                        tts
                     }
                 ),
                 self.idl_type()
@@ -1554,13 +1631,17 @@ impl<'a> Parser<'a> {
                 |(ident, (values, len))| {
                     let len = TokenTree::Literal(Literal::usize_unsuffixed(len));
 
+                    let mut tts = quote!(pub static $ident: [&str; $len] = [$values]);
+
                     for attr in self.member_attrs.borrow_mut().drain( .. ) {
                         match attr {
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-
-                    quote!(pub static $ident: [&str; $len] = [$values])
+                    tts
                 }
             )(input)
         }
@@ -1609,17 +1690,21 @@ impl<'a> Parser<'a> {
                         (String::from("__") + &ident_str).as_str(), Span::mixed_site()
                     ));
 
+                    let mut tts = quote!(
+                        pub type $ident = ::alloc::boxed::Box<dyn ::core::ops::FnMut($arg_types) -> $ty>;
+                        #[doc(hidden)] pub type $internal_ident = $ident;
+                    );
+
                     for attr in self.definition_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ExtendedAttribute::NoArgs("LegacyTreatNonObjectAsNull") => {},
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-
-                    quote!(
-                        pub type $ident = ::alloc::boxed::Box<dyn ::core::ops::FnMut($arg_types) -> $ty>;
-                        #[doc(hidden)] pub type $internal_ident = $ident;
-                    )
+                    tts
                 }
             )(input)
         }
@@ -1641,16 +1726,20 @@ impl<'a> Parser<'a> {
                         (String::from("__") + &ident_str).as_str(), Span::mixed_site()
                     ));
 
-                    for attr in self.definition_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
-                    }
-
-                    quote!(
+                    let mut tts = quote!(
                         pub type $ident = $ty;
                         #[doc(hidden)] pub type $internal_ident = $ident;
-                    )
+                    );
+
+                    for attr in self.definition_attrs.borrow_mut().drain( .. ) {
+                        match attr {
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
+                    }
+                    tts
                 }
             )(input)
         }
@@ -1697,13 +1786,17 @@ impl<'a> Parser<'a> {
         |input| {
             alt((
                 map(self.keyword("any"), |_| {
+                    let mut tts = quote!(::alloc::boxed::Box<dyn ::core::any::Any>);
+
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-
-                    quote!(::alloc::boxed::Box<dyn ::core::any::Any>)
+                    tts
                 }),
                 self.promise_type(),
                 self.distinguishable_type()
@@ -1734,14 +1827,17 @@ impl<'a> Parser<'a> {
                         );
 
                         let mod_ident = self.mod_ident.borrow().clone();
+                        let mut tts = quote!($mod_ident::$ident);
 
                         for attr in self.type_attrs.borrow_mut().drain( .. ) {
                             match attr {
-                                attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                            }
+                                ref attr => {
+                                    let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                    tts = quote!($macro_ident ! ($attr $tts););
+                                }
+                            };
                         }
-
-                        (union_name, quote!($mod_ident::$ident))
+                        (union_name, tts)
                     }
                 ),
                 self.token(')')
@@ -1825,38 +1921,50 @@ impl<'a> Parser<'a> {
                         self.null()
                     ),
                     |(ty, null)| {
+                        let ty = if null { quote!(::core::option::Option::<$ty>) } else { ty };
+                        let mut tts = quote!(::alloc::vec::Vec::<$ty>);
+
                         for attr in self.type_attrs.borrow_mut().drain( .. ) {
                             match attr {
-                                attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                            }
+                                ref attr => {
+                                    let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                    tts = quote!($macro_ident ! ($attr $tts););
+                                }
+                            };
                         }
-
-                        let ty = if null { quote!(::core::option::Option::<$ty>) } else { ty };
-                        quote!(::alloc::vec::Vec::<$ty>)
+                        tts
                     }
                 ),
                 map(
                     preceded(self.keyword("object"), self.null()),
                     |null| {
+                        let mut tts = if null { quote!(::core::option::Option::<Object>) } else { quote!(Object) };
+
                         for attr in self.type_attrs.borrow_mut().drain( .. ) {
                             match attr {
-                                attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                            }
+                                ref attr => {
+                                    let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                    tts = quote!($macro_ident ! ($attr $tts););
+                                }
+                            };
                         }
-
-                        if null { quote!(::core::option::Option::<Object>) } else { quote!(Object) }
+                        tts
                     }
                 ),
                 map(
                     preceded(self.keyword("symbol"), self.null()),
                     |null| {
+                        let mut tts = todo!("distinguishable_type (symbol)");
+
                         for attr in self.type_attrs.borrow_mut().drain( .. ) {
                             match attr {
-                                attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                            }
+                                ref attr => {
+                                    let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                    tts = quote!($macro_ident ! ($attr $tts););
+                                }
+                            };
                         }
-
-                        todo!("distinguishable_type (symbol)")
+                        tts
                     }
                 ),
                 map(
@@ -1876,14 +1984,18 @@ impl<'a> Parser<'a> {
                         self.null()
                     ),
                     |(ty, null)| {
+                        let ty = if null { quote!(::core::option::Option::<$ty>) } else { ty };
+                        let mut tts = quote!(&[$ty]);
+
                         for attr in self.type_attrs.borrow_mut().drain( .. ) {
                             match attr {
-                                attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                            }
+                                ref attr => {
+                                    let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                    tts = quote!($macro_ident ! ($attr $tts););
+                                }
+                            };
                         }
-
-                        let ty = if null { quote!(::core::option::Option::<$ty>) } else { ty };
-                        quote!(&[$ty])
+                        tts
                     }
                 ),
                 map(
@@ -1899,13 +2011,17 @@ impl<'a> Parser<'a> {
                         self.null()
                     ),
                     |(ty, null)| {
+                        let mut tts = todo!("distinguishable_type (ObservableArray)");
+
                         for attr in self.type_attrs.borrow_mut().drain( .. ) {
                             match attr {
-                                attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                            }
+                                ref attr => {
+                                    let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                    tts = quote!($macro_ident ! ($attr $tts););
+                                }
+                            };
                         }
-
-                        todo!("distinguishable_type (ObservableArray)")
+                        tts
                     }
                 ),
                 map(
@@ -1924,13 +2040,17 @@ impl<'a> Parser<'a> {
                             Ident::new_raw((String::from("__") + &ident_str).as_str(), Span::mixed_site())
                         );
 
+                        let mut tts = if null { quote!(::core::option::Option::<$ty>) } else { ty.into() };
+
                         for attr in self.type_attrs.borrow_mut().drain( .. ) {
                             match attr {
-                                attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                            }
+                                ref attr => {
+                                    let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                    tts = quote!($macro_ident ! ($attr $tts););
+                                }
+                            };
                         }
-
-                        if null { quote!(::core::option::Option::<$ty>) } else { ty.into() }
+                        tts
                     }
                 )
             ))(input)
@@ -1944,44 +2064,64 @@ impl<'a> Parser<'a> {
                 self.unsigned_integer_type(),
                 self.unrestricted_float_type(),
                 map(self.keyword("undefined"), |_| {
+                    let mut tts = quote!(());
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-                    quote!(())
+                    tts
                 }),
                 map(self.keyword("boolean"), |_| {
+                    let mut tts = quote!(bool);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-                    quote!(bool)
+                    tts
                 }),
                 map(self.keyword("byte"), |_| {
+                    let mut tts = quote!(i8);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-                    quote!(i8)
+                    tts
                 }),
                 map(self.keyword("octet"), |_| {
+                    let mut tts = quote!(u8);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-                    quote!(u8)
+                    tts
                 }),
                 map(self.keyword("bigint"), |_| {
+                    let mut tts = quote!(BigInt);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-                    quote!(BigInt)
+                    tts
                 })
             ))(input)
         }
@@ -2008,20 +2148,28 @@ impl<'a> Parser<'a> {
         |input| {
             alt((
                 map(self.keyword("float"), |_| {
+                    let mut tts = quote!(f32);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-                    quote!(f32)
+                    tts
                 }),
                 map(self.keyword("double"), |_| {
+                    let mut tts = quote!(f64);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-                    quote!(f64)
+                    tts
                 })
             ))(input)
         }
@@ -2034,64 +2182,88 @@ impl<'a> Parser<'a> {
         |input| {
             alt((
                 map(preceded(self.keyword("unsigned"), pair(self.keyword("long"), self.keyword("long"))), |_| {
+                    let mut tts = quote!(u64);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ExtendedAttribute::NoArgs("Clamp") => {},
                             ExtendedAttribute::NoArgs("EnforceRange") => {},
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-                    quote!(u64)
+                    tts
                 }),
                 map(preceded(self.keyword("unsigned"), self.keyword("long")), |_| {
+                    let mut tts = quote!(u32);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ExtendedAttribute::NoArgs("Clamp") => {},
                             ExtendedAttribute::NoArgs("EnforceRange") => {},
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-                    quote!(u32)
+                    tts
                 }),
                 map(preceded(self.keyword("unsigned"), self.keyword("short")), |_| {
+                    let mut tts = quote!(u16);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ExtendedAttribute::NoArgs("Clamp") => {},
                             ExtendedAttribute::NoArgs("EnforceRange") => {},
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-                    quote!(u16)
+                    tts
                 }),
                 map(pair(self.keyword("long"), self.keyword("long")), |_| {
+                    let mut tts = quote!(i64);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ExtendedAttribute::NoArgs("Clamp") => {},
                             ExtendedAttribute::NoArgs("EnforceRange") => {},
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-                    quote!(i64)
+                    tts
                 }),
                 map(self.keyword("long"), |_| {
+                    let mut tts = quote!(i32);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ExtendedAttribute::NoArgs("Clamp") => {},
                             ExtendedAttribute::NoArgs("EnforceRange") => {},
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-                    quote!(i32)
+                    tts
                 }),
                 map(self.keyword("short"), |_| {
+                    let mut tts = quote!(i16);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ExtendedAttribute::NoArgs("Clamp") => {},
                             ExtendedAttribute::NoArgs("EnforceRange") => {},
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-                    quote!(i16)
+                    tts
                 })
             ))(input)
         }
@@ -2102,30 +2274,42 @@ impl<'a> Parser<'a> {
         |input| {
             alt((
                 map(self.keyword("ByteString"), |_| {
+                    let mut tts = quote!(::alloc::vec::Vec<u8>);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-                    quote!(::alloc::vec::Vec<u8>)
+                    tts
                 }),
                 map(self.keyword("DOMString"), |_| {
+                    let mut tts = quote!(::alloc::vec::Vec<u16>);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ExtendedAttribute::NoArgs("LegacyNullToEmptyString") => {},
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-                    quote!(::alloc::vec::Vec<u16>)
+                    tts
                 }),
                 map(self.keyword("USVString"), |_| {
+                    let mut tts = quote!(::alloc::string::String);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ExtendedAttribute::NoArgs("LegacyNullToEmptyString") => {},
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-                    quote!(::alloc::string::String)
+                    tts
                 })
             ))(input)
         }
@@ -2171,12 +2355,16 @@ impl<'a> Parser<'a> {
                 ),
                 move |(s_type, attr_type)| {
                     assert!(inner_type_attrs.borrow().is_empty(), "didn't use the inner type's extended attributes");
+                    let mut tts = todo!("record_type");
                     for attr in outer_type_attrs.drain( .. ) {
                         match attr {
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-                    todo!("record_type")
+                    tts
                 }
             )(input)
         }
@@ -2197,108 +2385,160 @@ impl<'a> Parser<'a> {
         |input| {
             alt((
                 map(self.keyword("ArrayBuffer"), |_| {
+                    let mut tts = todo!("buffer_related_type (ArrayBuffer)");
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-                    todo!("buffer_related_type (ArrayBuffer)")
+                    tts
                 }),
                 map(self.keyword("DataView"), |_| {
+                    let mut tts = todo!("buffer_related_type (DataView)");
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-                    todo!("buffer_related_type (DataView)")
+                    tts
                 }),
                 map(self.keyword("Int8Array"), |_| {
+                    let mut tts = quote!(::alloc::vec::Vec<i8>);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-                    quote!(::alloc::vec::Vec<i8>)
+                    tts
                 }),
                 map(self.keyword("Int16Array"), |_| {
+                    let mut tts = quote!(::alloc::vec::Vec<i16>);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-                    quote!(::alloc::vec::Vec<i16>)
+                    tts
                 }),
                 map(self.keyword("Int32Array"), |_| {
+                    let mut tts = quote!(::alloc::vec::Vec<i32>);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-                    quote!(::alloc::vec::Vec<i32>)
+                    tts
                 }),
                 map(self.keyword("Uint8Array"), |_| {
+                    let mut tts = quote!(::alloc::vec::Vec<u8>);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-                    quote!(::alloc::vec::Vec<u8>)
+                    tts
                 }),
                 map(self.keyword("Uint16Array"), |_| {
+                    let mut tts = quote!(::alloc::vec::Vec<u16>);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-                    quote!(::alloc::vec::Vec<u16>)
+                    tts
                 }),
                 map(self.keyword("Uint32Array"), |_| {
+                    let mut tts = quote!(::alloc::vec::Vec<u32>);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-                    quote!(::alloc::vec::Vec<u32>)
+                    tts
                 }),
                 map(self.keyword("Uint8ClampedArray"), |_| {
+                    let mut tts = todo!("buffer_related_type (Uint8ClampedArray)");
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-                    todo!("buffer_related_type (Uint8ClampedArray)")
+                    tts
                 }),
                 map(self.keyword("BigInt64Array"), |_| {
+                    let mut tts = quote!(::alloc::vec::Vec<i64>);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-                    quote!(::alloc::vec::Vec<i64>)
+                    tts
                 }),
                 map(self.keyword("BigUint64Array"), |_| {
+                    let mut tts = quote!(::alloc::vec::Vec<u64>);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-                    quote!(::alloc::vec::Vec<u64>)
+                    tts
                 }),
                 map(self.keyword("Float32Array"), |_| {
+                    let mut tts = quote!(::alloc::vec::Vec<f32>);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-                    quote!(::alloc::vec::Vec<f32>)
+                    tts
                 }),
                 map(self.keyword("Float64Array"), |_| {
+                    let mut tts = quote!(::alloc::vec::Vec<f64>);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
-                            attr => eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", attr)
-                        }
+                            ref attr => {
+                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
+                                tts = quote!($macro_ident ! ($attr $tts););
+                            }
+                        };
                     }
-                    quote!(::alloc::vec::Vec<f64>)
+                    tts
                 })
             ))(input)
         }
@@ -2513,6 +2753,12 @@ impl<'a> Parser<'a> {
                 |(lident, (rident, args))| ExtendedAttribute::NamedArgList(lident, rident, args)
             )(input)
         }
+    }
+
+    fn custom_extended_attribute_macro_ident(attr: &ExtendedAttribute<'a>) -> TokenTree {
+        TokenTree::Ident(Ident::new_raw(
+            (String::from("idlea_") + attr.lident()).as_str(), Span::call_site()
+        ))
     }
 
     // https://webidl.spec.whatwg.org/#prod-IdentifierList
@@ -2845,15 +3091,67 @@ enum ExtendedAttribute<'a> {
     NamedArgList(&'a str, &'a str, Vec<&'a str>)
 }
 
-impl<'a> fmt::Display for ExtendedAttribute<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::NoArgs(ident) => write!(f, "{}", ident),
-            Self::ArgList(ident, args) => write!(f, "{}({})", ident, args.join(", ")),
-            Self::Ident(lident, rident) => write!(f, "{} = {}", lident, rident),
-            Self::Wildcard(ident) => write!(f, "{} = *", ident),
-            Self::IdentList(lident, ridents) => write!(f, "{} = ({})", lident, ridents.join(", ")),
-            Self::NamedArgList(lident, rident, args) => write!(f, "{} = {}({})", lident, rident, args.join(", "))
+impl<'a> ExtendedAttribute<'a> {
+    const fn lident(&self) -> &'a str {
+        match *self {
+            Self::NoArgs(ident) => ident,
+            Self::ArgList(ident, _) => ident,
+            Self::Ident(lident, _) => lident,
+            Self::Wildcard(ident) => ident,
+            Self::IdentList(ident, _) => ident,
+            Self::NamedArgList(lident, _, _) => lident
+        }
+    }
+}
+
+impl<'a> From<&ExtendedAttribute<'a>> for TokenStream {
+    fn from(attr: &ExtendedAttribute<'a>) -> TokenStream {
+        match attr {
+            ExtendedAttribute::NoArgs(ident) => {
+                let ident = TokenTree::Ident(Ident::new(ident, Span::call_site()));
+                quote!([$ident])
+            },
+            ExtendedAttribute::ArgList(ident, arg_strings) => {
+                let ident = TokenTree::Ident(Ident::new(ident, Span::call_site()));
+                let mut args = TokenStream::new();
+                let parser = Parser::new();
+                for s in arg_strings.iter() {
+                    let (_, (arg, _)) = parser.argument()(s)
+                        .expect("failed to parse extended attribute argument");
+                    args.extend(quote!($arg,));
+                }
+                quote!([$ident($args)])
+            },
+            ExtendedAttribute::Ident(lident, rident) => {
+                let lident = TokenTree::Ident(Ident::new(lident, Span::call_site()));
+                let rident = TokenTree::Ident(Ident::new_raw(rident, Span::call_site()));
+                quote!([$lident = $rident])
+            },
+            ExtendedAttribute::Wildcard(ident) => {
+                let ident = TokenTree::Ident(Ident::new(ident, Span::call_site()));
+                quote!([$ident = *])
+            },
+            ExtendedAttribute::IdentList(ident, ident_strings) => {
+                let ident = TokenTree::Ident(Ident::new(ident, Span::call_site()));
+                let mut idents = TokenStream::new();
+                for s in ident_strings.iter() {
+                    let ident = TokenTree::Ident(Ident::new_raw(s, Span::call_site()));
+                    idents.extend(quote!($ident,));
+                }
+                quote!([$ident = ($idents)])
+            },
+            ExtendedAttribute::NamedArgList(lident, rident, arg_strings) => {
+                let lident = TokenTree::Ident(Ident::new(lident, Span::call_site()));
+                let rident = TokenTree::Ident(Ident::new_raw(rident, Span::call_site()));
+                let mut args = TokenStream::new();
+                let parser = Parser::new();
+                for s in arg_strings.iter() {
+                    let (_, (arg, _)) = parser.argument()(s)
+                        .expect("failed to parse extended attribute argument");
+                    args.extend(quote!($arg,));
+                }
+                quote!([$lident = $rident($args)])
+            }
         }
     }
 }
