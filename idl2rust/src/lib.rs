@@ -28,9 +28,10 @@
 //! * Any identifier beginning with `-` is changed to one beginning with `___` (which is not
 //!   stripped).
 //! * Any identifiers that are the same (i.e. the names of an overloaded operation or constructor)
-//!   are distinguished with a suffix. The suffix consists of the letter `O` followed by the number
-//!   of overloads defined before this one. The first overload does not receive a suffix at all. For
-//!   instance, the following IDL fragment and Rust code are equivalent:
+//!   are distinguished with a prefix. The prefix consists of an underscore, the letter `O`, the
+//!   number of overloads defined before this one, and another underscore. The first overload does
+//!   not receive a prefix at all. For instance, the following IDL fragment and Rust code are
+//!   equivalent:
 //!   ```text
 //!   interface CanvasDrawPathExcerpt {
 //!     undefined stroke();
@@ -40,7 +41,7 @@
 //!   ```
 //!   trait CanvasDrawPathExcerpt {
 //!       fn stroke(&mut self);
-//!       fn strokeO1(&mut self, path: Box<dyn Path2D>);
+//!       fn _O1_stroke(&mut self, path: Box<dyn Path2D>);
 //!   }
 //!   # trait Path2D {}
 //!   ```

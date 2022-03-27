@@ -927,7 +927,7 @@ impl<'a> Parser<'a> {
                     if let Some(count) = overload_counts.get_mut(&name) {
                         *count += 1;
                         TokenTree::Ident(Ident::new_raw(
-                            (name + "O" + &format!("{}", *count)).as_str(), Span::call_site()
+                            format!("_O{}_{}", *count, name).as_str(), Span::call_site()
                         )).into()
                     } else {
                         let ident = TokenTree::Ident(Ident::new_raw(&name, Span::call_site()));
