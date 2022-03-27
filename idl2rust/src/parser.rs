@@ -217,6 +217,12 @@ impl<'a> Parser<'a> {
                     let internal_ident = TokenTree::Ident(
                         Ident::new_raw((String::from("__") + &ident_str).as_str(), Span::mixed_site())
                     );
+                    #[cfg(feature = "intertrait")]
+                    let inheritance = match inheritance {
+                        Some(x) => quote!(: $x + ::intertrait::CastFrom),
+                        None => quote!(: ::intertrait::CastFrom)
+                    };
+                    #[cfg(not(feature = "intertrait"))]
                     let inheritance = match inheritance {
                         Some(x) => quote!(: $x),
                         None => TokenStream::new()

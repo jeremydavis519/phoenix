@@ -10,3 +10,6 @@ proc-macro = true
 [dependencies]
 litrs = "0.2.3"
 nom = { version = "7.1.0", default-features = false }
+
+[features]
+intertrait = []

@@ -254,6 +254,11 @@
 //!     }
 //! }
 //! ```
+//!
+//! ## Type-Casting
+//! Casting between traits defined by IDL interfaces is provided by the `intertrait` crate. Every
+//! such trait is marked as a possible source for casting. See the `intertrait` crate's
+//! documentation for how to declare target traits.
 
 #![feature(proc_macro_expand)]
 #![feature(proc_macro_quote)]
