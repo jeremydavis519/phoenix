@@ -111,8 +111,8 @@
 //! * `BigUint64Array` -> `Vec<u64>`
 //! * `Float32Array` -> `Vec<f32>`
 //! * `Float64Array` -> `Vec<f64>`
-//! * `ByteString` -> `Vec<u8>`
-//! * `DOMString` -> `Vec<u16>`
+//! * `ByteString` -> `ByteString`[^4]
+//! * `DOMString` -> `DomString`[^4]
 //! * `USVString` -> `String`
 //! * `sequence<...>` -> `Vec<...>`
 //! * Any interface type `Foo` -> `Box<dyn Foo>`
@@ -256,7 +256,7 @@
 #![feature(proc_macro_expand)]
 #![feature(proc_macro_quote)]
 
-use proc_macro::{TokenStream, quote};
+use proc_macro::{Ident, Span, TokenStream, TokenTree, quote};
 
 mod float;
 mod parser;
@@ -288,5 +288,10 @@ pub fn def_idl_types(tts: TokenStream) -> TokenStream {
         return quote!(::core::compile_error!("`def_idl_types` expected 0 arguments");)
     }
 
-    float::restricted_float()
+    let mut tts = float::restricted_float();
+    let byte_str_type = TokenTree::Ident(Ident::new_raw("ByteString", Span::call_site()));
+    tts.extend(quote!(pub type $byte_str_type = ::alloc::vec::Vec<u8>;));
+    let dom_str_type = TokenTree::Ident(Ident::new_raw("DomString", Span::call_site()));
+    tts.extend(quote!(pub type $dom_str_type = ::alloc::vec::Vec<u16>;));
+    tts
 }

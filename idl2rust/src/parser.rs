@@ -2274,7 +2274,7 @@ impl<'a> Parser<'a> {
         |input| {
             alt((
                 map(self.keyword("ByteString"), |_| {
-                    let mut tts = quote!(::alloc::vec::Vec<u8>);
+                    let mut tts = TokenTree::Ident(Ident::new_raw("ByteString", Span::call_site())).into();
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ref attr => {
@@ -2286,7 +2286,7 @@ impl<'a> Parser<'a> {
                     tts
                 }),
                 map(self.keyword("DOMString"), |_| {
-                    let mut tts = quote!(::alloc::vec::Vec<u16>);
+                    let mut tts = TokenTree::Ident(Ident::new_raw("DomString", Span::call_site())).into();
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ExtendedAttribute::NoArgs("LegacyNullToEmptyString") => {},
