@@ -84,7 +84,7 @@
 //! ***** FIXME: What happens then??? *****
 //!
 //! ## Types
-//! The built-in types are mapped as follows:
+//! Types are mapped as follows:
 //! * `undefined` -> `()`
 //! * `any` -> `Rc<dyn Any>`
 //! * `object` -> `Rc<Object>`[^4]
@@ -117,6 +117,7 @@
 //! * `USVString` -> `Rc<String>`
 //! * `sequence<...>` -> `Rc<Vec<...>>`
 //! * Any interface type `Foo` -> `Rc<dyn Foo>`
+//! * Any dictionary type `Foo` -> `Rc<Foo>`
 //!
 //! Nullable types like `long?` are represented as optional types like `Option<i32>`.
 //!

@@ -1482,7 +1482,7 @@ impl<'a> Parser<'a> {
 
                     let mut tts = quote!(
                         pub struct $ident { $inheritance $members }
-                        #[doc(hidden)] pub type $internal_ident = $ident;
+                        #[doc(hidden)] pub type $internal_ident = ::alloc::rc::Rc<$ident>;
                         impl $ident { $member_default_fns }
                         pub mod $mod_ident {
                             use $super_ident::*;
