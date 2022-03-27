@@ -56,8 +56,8 @@
 //! * `null` -> `None`
 //! * `constructor(...)` -> `fn constructor(&mut self, ...)`[^1]
 //! * `readonly` -> `const` (where applicable, e.g. `const fn`)
-//! * `iterable<V>` -> `fn _iter<'a>(&mut self) -> Box<dyn Iterator<Item = &'a mut V>>`
-//! * `iterable<K, V>` -> `fn _iter<'a>(&mut self) -> Box<dyn Iterator<Item = &'a mut KeyValue<'a>>>`[^2]
+//! * `iterable<V>` -> `fn _iter(&mut self) -> Box<dyn Iterator<Item = &mut V> + '_>`
+//! * `iterable<K, V>` -> `fn _iter(&mut self) -> Box<dyn Iterator<Item = &mut KeyValue<'_>> + '_>`[^2]
 //! * `stringifier` -> `fn toString(&mut self)`[^3]
 //! * `getter`, `setter`, and `deleter` are ignored; their operations are treated like regular
 //!   operations.

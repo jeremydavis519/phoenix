@@ -1187,13 +1187,14 @@ impl<'a> Parser<'a> {
                                 }
                             ));
                             let mod_ident = self.mod_ident.borrow().clone();
-                            quote!($mod_ident::$item_ident)
+                            quote!($mod_ident::$item_ident<'_>)
                         }
                     };
 
+                    let ident = TokenTree::Ident(Ident::new_raw("_iter", Span::call_site()));
                     let mut tts = quote!(
-                        fn _iter<'a>(&mut self)
-                            -> ::alloc::boxed::Box<dyn ::core::iter::Iterator::<Item = &'a mut $item>>;
+                        fn $ident(&mut self)
+                            -> ::alloc::boxed::Box<dyn ::core::iter::Iterator::<Item = &mut $item> + '_>;
                     );
 
                     for attr in self.member_attrs.borrow_mut().drain( .. ) {
