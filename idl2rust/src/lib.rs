@@ -85,12 +85,12 @@
 //! ## Types
 //! The built-in types are mapped as follows:
 //! * `undefined` -> `()`
-//! * `any` -> `Box<dyn Any>`
-//! * `object` -> `Object`[^4]
+//! * `any` -> `Rc<dyn Any>`
+//! * `object` -> `Rc<Object>`[^4]
 //! * `boolean` -> `bool`
 //! * `byte` -> `i8`
 //! * `octet` -> `u8`
-//! * `bigint` -> `BigInt`[^4]
+//! * `bigint` -> `Rc<BigInt>`[^4]
 //! * `short` -> `i16`
 //! * `unsigned short` -> `u16`
 //! * `long` -> `i32`
@@ -101,21 +101,21 @@
 //! * `double` -> `f64`
 //! * `restricted float` -> `Restricted<f32>`[^4]
 //! * `restricted f64` -> `Restricted<f64>`[^4]
-//! * `Int8Array` -> `Vec<i8>`
-//! * `Int16Array` -> `Vec<i16>`
-//! * `Int32Array` -> `Vec<i32>`
-//! * `Uint8Array` -> `Vec<u8>`
-//! * `Uint16Array` -> `Vec<u16>`
-//! * `Uint32Array` -> `Vec<u32>`
-//! * `BigInt64Array` -> `Vec<i64>`
-//! * `BigUint64Array` -> `Vec<u64>`
-//! * `Float32Array` -> `Vec<f32>`
-//! * `Float64Array` -> `Vec<f64>`
-//! * `ByteString` -> `ByteString`[^4]
-//! * `DOMString` -> `DomString`[^4]
-//! * `USVString` -> `String`
-//! * `sequence<...>` -> `Vec<...>`
-//! * Any interface type `Foo` -> `Box<dyn Foo>`
+//! * `Int8Array` -> `Rc<Vec<i8>>`
+//! * `Int16Array` -> `Rc<Vec<i16>>`
+//! * `Int32Array` -> `Rc<Vec<i32>>`
+//! * `Uint8Array` -> `Rc<Vec<u8>>`
+//! * `Uint16Array` -> `Rc<Vec<u16>>`
+//! * `Uint32Array` -> `Rc<Vec<u32>>`
+//! * `BigInt64Array` -> `Rc<Vec<i64>>`
+//! * `BigUint64Array` -> `Rc<Vec<u64>>`
+//! * `Float32Array` -> `Rc<Vec<f32>>`
+//! * `Float64Array` -> `Rc<Vec<f64>>`
+//! * `ByteString` -> `Rc<ByteString>`[^4]
+//! * `DOMString` -> `Rc<DomString>`[^4]
+//! * `USVString` -> `Rc<String>`
+//! * `sequence<...>` -> `Rc<Vec<...>>`
+//! * Any interface type `Foo` -> `Rc<dyn Foo>`
 //!
 //! Nullable types like `long?` are represented as optional types like `Option<i32>`.
 //!

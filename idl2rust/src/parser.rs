@@ -250,7 +250,7 @@ impl<'a> Parser<'a> {
 
                     quote!(
                         $tts
-                        #[doc(hidden)] pub type $internal_ident = ::alloc::boxed::Box<dyn $ident>;
+                        #[doc(hidden)] pub type $internal_ident = ::alloc::rc::Rc<dyn $ident>;
                         pub mod $mod_ident {
                             use $super_ident::*;
                             $union_types
@@ -527,7 +527,7 @@ impl<'a> Parser<'a> {
 
                         quote!(
                             $tts
-                            #[doc(hidden)] pub type $internal_ident = ::alloc::boxed::Box<dyn $ident>;
+                            #[doc(hidden)] pub type $internal_ident = ::alloc::rc::Rc<dyn $ident>;
                             pub mod $mod_ident { use $super_ident::*; $union_types $consts }
                         )
                     }
@@ -1691,7 +1691,7 @@ impl<'a> Parser<'a> {
                     ));
 
                     let mut tts = quote!(
-                        pub type $ident = ::alloc::boxed::Box<dyn ::core::ops::FnMut($arg_types) -> $ty>;
+                        pub type $ident = ::alloc::rc::Rc<dyn ::core::ops::FnMut($arg_types) -> $ty>;
                         #[doc(hidden)] pub type $internal_ident = $ident;
                     );
 
@@ -1786,7 +1786,7 @@ impl<'a> Parser<'a> {
         |input| {
             alt((
                 map(self.keyword("any"), |_| {
-                    let mut tts = quote!(::alloc::boxed::Box<dyn ::core::any::Any>);
+                    let mut tts = quote!(::alloc::rc::Rc<dyn ::core::any::Any>);
 
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
@@ -1938,7 +1938,12 @@ impl<'a> Parser<'a> {
                 map(
                     preceded(self.keyword("object"), self.null()),
                     |null| {
-                        let mut tts = if null { quote!(::core::option::Option::<Object>) } else { quote!(Object) };
+                        let object_type = TokenTree::Ident(Ident::new_raw("Object", Span::call_site()));
+                        let mut tts = if null {
+                            quote!(::core::option::Option::<::alloc::rc::Rc<$object_type>>)
+                        } else {
+                            quote!(::alloc::rc::Rc<$object_type>)
+                        };
 
                         for attr in self.type_attrs.borrow_mut().drain( .. ) {
                             match attr {
@@ -2112,7 +2117,8 @@ impl<'a> Parser<'a> {
                     tts
                 }),
                 map(self.keyword("bigint"), |_| {
-                    let mut tts = quote!(BigInt);
+                    let big_int_type = TokenTree::Ident(Ident::new_raw("BigInt", Span::call_site()));
+                    let mut tts = quote!(::alloc::rc::Rc<$big_int_type>);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ref attr => {
@@ -2274,7 +2280,8 @@ impl<'a> Parser<'a> {
         |input| {
             alt((
                 map(self.keyword("ByteString"), |_| {
-                    let mut tts = TokenTree::Ident(Ident::new_raw("ByteString", Span::call_site())).into();
+                    let byte_str_type = TokenTree::Ident(Ident::new_raw("ByteString", Span::call_site()));
+                    let mut tts = quote!(::alloc::rc::Rc<$byte_str_type>);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ref attr => {
@@ -2286,7 +2293,8 @@ impl<'a> Parser<'a> {
                     tts
                 }),
                 map(self.keyword("DOMString"), |_| {
-                    let mut tts = TokenTree::Ident(Ident::new_raw("DomString", Span::call_site())).into();
+                    let dom_str_type = TokenTree::Ident(Ident::new_raw("DomString", Span::call_site()));
+                    let mut tts = quote!(::alloc::rc::Rc<$dom_str_type>);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ExtendedAttribute::NoArgs("LegacyNullToEmptyString") => {},
@@ -2299,7 +2307,7 @@ impl<'a> Parser<'a> {
                     tts
                 }),
                 map(self.keyword("USVString"), |_| {
-                    let mut tts = quote!(::alloc::string::String);
+                    let mut tts = quote!(::alloc::rc::Rc<::alloc::string::String>);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ExtendedAttribute::NoArgs("LegacyNullToEmptyString") => {},
@@ -2409,7 +2417,7 @@ impl<'a> Parser<'a> {
                     tts
                 }),
                 map(self.keyword("Int8Array"), |_| {
-                    let mut tts = quote!(::alloc::vec::Vec<i8>);
+                    let mut tts = quote!(::alloc::rc::Rc<::alloc::vec::Vec<i8>>);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ref attr => {
@@ -2421,7 +2429,7 @@ impl<'a> Parser<'a> {
                     tts
                 }),
                 map(self.keyword("Int16Array"), |_| {
-                    let mut tts = quote!(::alloc::vec::Vec<i16>);
+                    let mut tts = quote!(::alloc::rc::Rc<::alloc::vec::Vec<i16>>);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ref attr => {
@@ -2433,7 +2441,7 @@ impl<'a> Parser<'a> {
                     tts
                 }),
                 map(self.keyword("Int32Array"), |_| {
-                    let mut tts = quote!(::alloc::vec::Vec<i32>);
+                    let mut tts = quote!(::alloc::rc::Rc<::alloc::vec::Vec<i32>>);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ref attr => {
@@ -2445,7 +2453,7 @@ impl<'a> Parser<'a> {
                     tts
                 }),
                 map(self.keyword("Uint8Array"), |_| {
-                    let mut tts = quote!(::alloc::vec::Vec<u8>);
+                    let mut tts = quote!(::alloc::rc::Rc<::alloc::vec::Vec<u8>>);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ref attr => {
@@ -2457,7 +2465,7 @@ impl<'a> Parser<'a> {
                     tts
                 }),
                 map(self.keyword("Uint16Array"), |_| {
-                    let mut tts = quote!(::alloc::vec::Vec<u16>);
+                    let mut tts = quote!(::alloc::rc::Rc<::alloc::vec::Vec<u16>>);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ref attr => {
@@ -2469,7 +2477,7 @@ impl<'a> Parser<'a> {
                     tts
                 }),
                 map(self.keyword("Uint32Array"), |_| {
-                    let mut tts = quote!(::alloc::vec::Vec<u32>);
+                    let mut tts = quote!(::alloc::rc::Rc<::alloc::vec::Vec<u32>>);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ref attr => {
@@ -2493,7 +2501,7 @@ impl<'a> Parser<'a> {
                     tts
                 }),
                 map(self.keyword("BigInt64Array"), |_| {
-                    let mut tts = quote!(::alloc::vec::Vec<i64>);
+                    let mut tts = quote!(::alloc::rc::Rc<::alloc::vec::Vec<i64>>);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ref attr => {
@@ -2505,7 +2513,7 @@ impl<'a> Parser<'a> {
                     tts
                 }),
                 map(self.keyword("BigUint64Array"), |_| {
-                    let mut tts = quote!(::alloc::vec::Vec<u64>);
+                    let mut tts = quote!(::alloc::rc::Rc<::alloc::vec::Vec<u64>>);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ref attr => {
@@ -2517,7 +2525,7 @@ impl<'a> Parser<'a> {
                     tts
                 }),
                 map(self.keyword("Float32Array"), |_| {
-                    let mut tts = quote!(::alloc::vec::Vec<f32>);
+                    let mut tts = quote!(::alloc::rc::Rc<::alloc::vec::Vec<f32>>);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ref attr => {
@@ -2529,7 +2537,7 @@ impl<'a> Parser<'a> {
                     tts
                 }),
                 map(self.keyword("Float64Array"), |_| {
-                    let mut tts = quote!(::alloc::vec::Vec<f64>);
+                    let mut tts = quote!(::alloc::rc::Rc<::alloc::vec::Vec<f64>>);
                     for attr in self.type_attrs.borrow_mut().drain( .. ) {
                         match attr {
                             ref attr => {
