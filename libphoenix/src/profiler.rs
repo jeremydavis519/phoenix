@@ -421,6 +421,7 @@ impl Probe {
         self.current_visitors.store(0, Ordering::Release);
         self.last_visitors_change_time_nanos.store(current_time_nanos(), Ordering::Release);
         self.total_visitor_nanos.store(0, Ordering::Release);
+        self.last_reset_time_nanos.store(current_time_nanos(), Ordering::Release);
     }
 }
 
