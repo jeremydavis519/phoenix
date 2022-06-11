@@ -34,9 +34,11 @@
 use {
     core::{
         cell::Cell,
+        hint,
         ptr,
-        sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, AtomicPtr, Ordering}
-    }
+        sync::atomic::{AtomicU8, AtomicU64, AtomicUsize, AtomicPtr, Ordering}
+    },
+    crate::syscall
 };
 
 /// Defines a probe that counts every time the calling line is visited (thereby measuring
@@ -182,12 +184,19 @@ pub struct Probe {
     last_reset_time_nanos:           AtomicU64,
     last_visitors_change_time_nanos: AtomicU64,
     total_visitor_nanos:             AtomicU64,
-    registered:                      AtomicBool
+    state:                           AtomicU8
 }
 #[cfg(not(feature = "profiler"))]
 #[derive(Debug)]
 #[doc(hidden)]
 pub struct Probe;
+
+#[repr(u8)]
+enum ProbeState {
+    Unregistered = 0,
+    Registering  = 1,
+    Registered   = 2
+}
 
 impl Probe {
     #[cfg(feature = "profiler")]
@@ -209,7 +218,7 @@ impl Probe {
             last_reset_time_nanos:           AtomicU64::new(0),
             last_visitors_change_time_nanos: AtomicU64::new(0),
             total_visitor_nanos:             AtomicU64::new(0),
-            registered:                      AtomicBool::new(false)
+            state:                           ProbeState::Unregistered.into()
         }
     }
 
@@ -336,10 +345,15 @@ impl Probe {
     #[cfg(feature = "profiler")]
     #[doc(hidden)]
     pub fn register(&'static self, prev_probe: Option<&'static Probe>) {
-        if self.registered.swap(true, Ordering::AcqRel) {
-            // Already registered.
-            return;
-        }
+        match self.state.compare_exchange(
+                ProbeState::Unregistered.into(),
+                ProbeState::Registering.into(),
+                Ordering::AcqRel,
+                Ordering::Acquire
+        ) {
+            Ok(_) => {},
+            Err(_) => return // Already registered.
+        };
 
         // Link to the earlier probe, if any.
         self.prev_probe.set(prev_probe);
@@ -353,14 +367,29 @@ impl Probe {
         let idx = PROBES_COUNT.fetch_add(1, Ordering::AcqRel);
         assert!(idx < MAX_PROBES, "too many profiler probes; only up to {} probes may be used", MAX_PROBES);
         ALL_PROBES[idx].store(self as *const Probe as *mut Probe, Ordering::Release);
+
+        self.state.store(Ordering::Registered.into(), Ordering::Release);
     }
 
     #[cfg(feature = "profiler")]
     #[doc(hidden)]
     pub fn visit(&self) {
-        self.visits.fetch_add(1, Ordering::AcqRel);
+        // Make sure the probe is fully initialized before continuing.
+        'wait: loop {
+            for _ in 0 .. 100 {
+                if self.state.load(Ordering::Acquire) == ProbeState::Registered.into() {
+                    break 'wait;
+                }
+                hint::spin_loop();
+            }
+            #[cfg(not(feature = "kernelspace"))] {
+                // This is taking a while, so yield to the operating system.
+                syscall::thread_sleep(0);
+            }
+        }
 
         // Record a visitor entering this section.
+        self.visits.fetch_add(1, Ordering::AcqRel);
         let now = current_time_nanos();
         let last_visit_time = self.last_visitors_change_time_nanos.swap(now, Ordering::AcqRel);
         let old_visitors = self.current_visitors.fetch_add(1, Ordering::AcqRel);
@@ -369,7 +398,7 @@ impl Probe {
             Ordering::AcqRel
         );
 
-        if let Some(prev_probe) = self.prev_probe.get() {
+        if let Some(prev_probe) = self.prev_probe() {
             // Record a visitor leaving the previous section.
             let now = current_time_nanos();
             let last_visit_time = prev_probe.last_visitors_change_time_nanos.swap(now, Ordering::AcqRel);
