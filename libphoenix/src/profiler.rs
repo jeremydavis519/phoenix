@@ -37,9 +37,12 @@ use {
         hint,
         ptr,
         sync::atomic::{AtomicU8, AtomicU64, AtomicUsize, AtomicPtr, Ordering}
-    },
-    crate::syscall
+    }
 };
+
+#[cfg(all(feature = "profiler", not(feature = "kernelspace")))]
+#[cfg(target_arch = "aarch64")] // FIXME: Remove this condition.
+use crate::syscall;
 
 /// Defines a probe that counts every time the calling line is visited (thereby measuring
 /// throughput) and returns a reference to it. If an argument is given, that argument must be a
@@ -191,6 +194,7 @@ pub struct Probe {
 #[doc(hidden)]
 pub struct Probe;
 
+#[cfg(feature = "profiler")]
 #[repr(u8)]
 enum ProbeState {
     Unregistered = 0,
@@ -218,7 +222,7 @@ impl Probe {
             last_reset_time_nanos:           AtomicU64::new(0),
             last_visitors_change_time_nanos: AtomicU64::new(0),
             total_visitor_nanos:             AtomicU64::new(0),
-            state:                           ProbeState::Unregistered.into()
+            state:                           AtomicU8::new(ProbeState::Unregistered as u8)
         }
     }
 
@@ -346,8 +350,8 @@ impl Probe {
     #[doc(hidden)]
     pub fn register(&'static self, prev_probe: Option<&'static Probe>) {
         match self.state.compare_exchange(
-                ProbeState::Unregistered.into(),
-                ProbeState::Registering.into(),
+                ProbeState::Unregistered as u8,
+                ProbeState::Registering as u8,
                 Ordering::AcqRel,
                 Ordering::Acquire
         ) {
@@ -368,7 +372,7 @@ impl Probe {
         assert!(idx < MAX_PROBES, "too many profiler probes; only up to {} probes may be used", MAX_PROBES);
         ALL_PROBES[idx].store(self as *const Probe as *mut Probe, Ordering::Release);
 
-        self.state.store(Ordering::Registered.into(), Ordering::Release);
+        self.state.store(ProbeState::Registered as u8, Ordering::Release);
     }
 
     #[cfg(feature = "profiler")]
@@ -377,13 +381,14 @@ impl Probe {
         // Make sure the probe is fully initialized before continuing.
         'wait: loop {
             for _ in 0 .. 100 {
-                if self.state.load(Ordering::Acquire) == ProbeState::Registered.into() {
+                if self.state.load(Ordering::Acquire) == ProbeState::Registered as u8 {
                     break 'wait;
                 }
                 hint::spin_loop();
             }
             #[cfg(not(feature = "kernelspace"))] {
                 // This is taking a while, so yield to the operating system.
+                #[cfg(target_arch = "aarch64")] // FIXME: Remove this condition.
                 syscall::thread_sleep(0);
             }
         }
