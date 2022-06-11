@@ -75,6 +75,7 @@ macro_rules! profiler_probe {
             &PROBE
         }
         #[cfg(not(feature = "profiler"))] {
+            $prev_probe;
             &$crate::profiler::Probe
         }
     }};

@@ -63,7 +63,7 @@ impl AllMemAlloc {
     ///         the reserved block.
     ///   * `Err(AllocErr)` on failure.
     pub fn mmio_mut<T>(&self, base: usize, size: usize) -> Result<Mmio<T>, AllocError> {
-        let _entrance = profiler_probe!();
+        let entrance = profiler_probe!();
         assert_eq!(
             base % mem::align_of::<T>(), 0,
             "base = {:#x}, align of {} = {:#x}", base, type_name::<T>(), mem::align_of::<T>()
@@ -83,7 +83,7 @@ impl AllMemAlloc {
             size / mem::size_of::<T>(),
             node
         );
-        profiler_probe!(_entrance);
+        profiler_probe!(entrance);
         Ok(block)
     }
 
@@ -95,7 +95,7 @@ impl AllMemAlloc {
     ///         the reserved block.
     ///   * `Err(AllocErr)` on failure.
     pub fn malloc<T>(&self, size: usize, align: NonZeroUsize) -> Result<BlockMut<T>, AllocError> {
-        let _entrance = profiler_probe!();
+        let entrance = profiler_probe!();
         assert_eq!(
             align.get() % mem::align_of::<T>(), 0,
             "align = {:#x}, align of {} = {:#x}", align.get(), type_name::<T>(), mem::align_of::<T>()
@@ -117,7 +117,7 @@ impl AllMemAlloc {
             size / mem::size_of::<T>(),
             node
         );
-        profiler_probe!(_entrance);
+        profiler_probe!(entrance);
         Ok(block)
     }
 
@@ -131,7 +131,7 @@ impl AllMemAlloc {
     ///         the reserved block.
     ///   * `Err(AllocErr)` on failure.
     pub fn malloc_low<T>(&self, size: usize, align: NonZeroUsize, max_bits: usize) -> Result<BlockMut<T>, AllocError> {
-        let _entrance = profiler_probe!();
+        let entrance = profiler_probe!();
         assert_eq!(
             align.get() % mem::align_of::<T>(), 0,
             "align = {:#x}, align of {} = {:#x}", align.get(), type_name::<T>(), mem::align_of::<T>()
@@ -158,7 +158,7 @@ impl AllMemAlloc {
             size / mem::size_of::<T>(),
             node
         );
-        profiler_probe!(_entrance);
+        profiler_probe!(entrance);
         Ok(block)
     }
 
@@ -167,7 +167,7 @@ impl AllMemAlloc {
     /// dropped. To avoid a double-free, only call this function if you've called `mem::forget` on
     /// the block.
     pub fn free<T>(&self, ptr: *mut T) {
-        let _entrance = profiler_probe!();
+        let entrance = profiler_probe!();
         // TODO: It might be useful to keep a hash table of recently allocated blocks. Then, we
         // could find those ones in constant time and only use this linear-time alternative as a
         // fallback for when the relevant entry in that table has been overwritten. The hash table
@@ -175,7 +175,7 @@ impl AllMemAlloc {
         // only for blocks that have been allocated by `Allocator::allocate`. In all other cases, we can
         // assume the block will be dropped, which will deallocate it.
         heap::dealloc(PhysPtr::<_, *mut _>::from_virt(ptr as *mut u8));
-        profiler_probe!(_entrance);
+        profiler_probe!(entrance);
     }
 }
 
@@ -234,7 +234,7 @@ unsafe impl Allocator for AllMemAlloc {
 
     unsafe fn grow(&self, ptr: NonNull<u8>, old_layout: Layout, new_layout: Layout)
             -> Result<NonNull<[u8]>, AllocError> {
-        let _entrance = profiler_probe!();
+        let entrance = profiler_probe!();
 
         // The heap implementation doesn't allow us to make a block larger, so allocate a whole new
         // block instead.
@@ -242,7 +242,7 @@ unsafe impl Allocator for AllMemAlloc {
         ptr::copy_nonoverlapping(ptr.as_ptr(), new_ptr.as_mut_ptr(), old_layout.size());
         self.deallocate(ptr, old_layout);
 
-        profiler_probe!(_entrance);
+        profiler_probe!(entrance);
         Ok(new_ptr)
     }
 
@@ -256,11 +256,11 @@ unsafe impl Allocator for AllMemAlloc {
 
     unsafe fn shrink(&self, ptr: NonNull<u8>, old_layout: Layout, new_layout: Layout)
             -> Result<NonNull<[u8]>, AllocError> {
-        let _entrance = profiler_probe!();
+        let entrance = profiler_probe!();
         let phys_ptr = PhysPtr::<_, *const _>::from_virt(ptr.as_ptr());
         if phys_ptr.as_addr_phys() % new_layout.align() == 0 {
             // It's UB for new_size to be greater than the block's current size, so this is safe.
-            profiler_probe!(_entrance);
+            profiler_probe!(entrance);
             Ok(NonNull::slice_from_raw_parts(ptr, new_layout.size()))
         } else {
             // A new, incompatible alignment is required, so allocate a new block.
@@ -268,7 +268,7 @@ unsafe impl Allocator for AllMemAlloc {
             ptr::copy_nonoverlapping(ptr.as_ptr(), new_ptr.as_mut_ptr(), new_layout.size());
             self.deallocate(ptr, old_layout);
 
-            profiler_probe!(_entrance);
+            profiler_probe!(entrance);
             Ok(new_ptr)
         }
     }
