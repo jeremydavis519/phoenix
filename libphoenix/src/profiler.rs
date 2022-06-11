@@ -351,7 +351,7 @@ impl Probe {
 
         // Register this probe.
         let idx = PROBES_COUNT.fetch_add(1, Ordering::AcqRel);
-        assert!(idx < MAX_PROBES, "too many profiler probes");
+        assert!(idx < MAX_PROBES, "too many profiler probes; only up to {} probes may be used", MAX_PROBES);
         ALL_PROBES[idx].store(self as *const Probe as *mut Probe, Ordering::Release);
     }
 
