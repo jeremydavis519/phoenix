@@ -109,9 +109,8 @@ fn print_profile(profiler_start_time: time::SystemTime) {
         .as_nanos() as u64;
     let seconds_elapsed = nanos_elapsed as f64 / 1_000_000_000.0;
 
-    for probe in profiler::all_probes() {
+    for probe in profiler::probes() {
         let visits = probe.visits();
-        println!("{}", probe.module());
         println!("{}:{}:{}", probe.file(), probe.line(), probe.column());
         println!("Visits: {}", visits);
         println!("Throughput: {} visits/sec", probe.avg_throughput_hz());

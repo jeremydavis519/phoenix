@@ -27,6 +27,7 @@ PHDRS {
     readonly PT_LOAD;
     trampoline PT_LOAD;
     stack PT_LOAD;
+    profile PT_LOAD;
     readwrite PT_LOAD;
 }
 
@@ -70,7 +71,7 @@ SECTIONS {
     /* This is where the CPUs' private trampoline stacks will be stored in virtual memory. These
      * stacks are only used while the CPUs are executing code in the trampoline; in the main part
      * of the kernel, they have larger stacks where, because they're not mapped in the same address
-     * space as userspace, sensitive data can be handled. This address is has a page of padding to
+     * space as userspace, sensitive data can be handled. This address has a page of padding to
      * protect the read-write region below it, then it's rounded up to the next page boundary. */
     __trampoline_stacks_virt = (__trampoline_virt + (__trampoline_end - __trampoline_start) + 0x1ffff) / 0x10000 * 0x10000;
 
@@ -89,6 +90,20 @@ SECTIONS {
     __rw_nonshareable_end = .;
 
     __rw_shareable_start = __data_start;
+    /* The profiler stores its probes in this section. This must exactly fill some integer number of
+     * pages because we provide a system call to map them into userspace. */
+    __profile_start = ADDR(.profile);
+    .profile BLOCK(0x10000) : {
+        *(.profile.header)
+        . = ALIGN(16);
+        __profile_probes_start = .;
+        *(.profile)
+        __profile_probes_end = .;
+        *(.profile.strings)
+        . = ALIGN(0x10000);
+    } >kernel :profile
+    __profile_end = .;
+
     __data_start = ADDR(.data);
     .data : {
         *(.data) *(.data.*)

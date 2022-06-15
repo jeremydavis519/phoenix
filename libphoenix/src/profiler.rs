@@ -30,13 +30,20 @@
 //! performance penalty. Therefore, the functionality is locked behind the `profiler` feature. If that
 //! feature is not used, the API is still available but does nothing and can be optimized away.
 
+use {
+    core::{
+        ffi::c_void,
+        str
+    }
+};
+
 #[cfg(feature = "profiler")]
 use {
     core::{
-        cell::Cell,
-        hint,
+        mem,
         ptr,
-        sync::atomic::{AtomicU8, AtomicU64, AtomicUsize, AtomicPtr, Ordering}
+        slice,
+        sync::atomic::{AtomicU64, Ordering}
     }
 };
 
@@ -44,22 +51,48 @@ use {
 #[cfg(target_arch = "aarch64")] // FIXME: Remove this condition.
 use crate::syscall;
 
+#[cfg(feature = "profiler")]
+extern {
+    static __profile_probes_start: c_void;
+    static __profile_probes_end:   c_void;
+}
+
+/// Does some setup to prepare for defining one or more probes in the same file. This macro defines
+/// items rather than running code, so it should be invoked outside of function scope.
+#[macro_export]
+macro_rules! profiler_setup {
+    () => {
+        const FILENAME_LEN: usize = ::core::file!().len();
+
+        #[cfg(feature = "profiler")]
+        #[link_section = ".profile.strings"]
+        #[export_name = concat!("profile: ", ::core::file!())]
+        static FILENAME: $crate::profiler::ProbeFilename<FILENAME_LEN> =
+            $crate::profiler::ProbeFilename::<FILENAME_LEN>::new(::core::file!());
+    }
+}
+
 /// Defines a probe that counts every time the calling line is visited (thereby measuring
-/// throughput) and returns a reference to it. If an argument is given, that argument must be a
-/// reference to a pre-existing probe. In that case, the pair of probes measures latency in addition
-/// to throughput.
+/// throughput). If the a previous probe's identifier is given, the pair of probes measures
+/// latency in addition to throughput.
+///
+/// This macro requires [`profiler_setup`] to be called exactly once in the same file.
 #[macro_export]
 macro_rules! profiler_probe {
-    () => {{
+    (@static) => {{
         #[cfg(feature = "profiler")] {
+            extern {
+                #[link_name = concat!("profile: ", ::core::file!())]
+                static FILENAME: $crate::profiler::ProbeFilename<0>;
+            }
+
+            #[link_section = ".profile"]
             static PROBE: $crate::profiler::Probe = $crate::profiler::Probe::new(
-                file!(),
-                line!(),
-                column!(),
-                module_path!()
+                unsafe { &FILENAME as *const _ },
+                ::core::line!(),
+                ::core::column!(),
+                None
             );
-            PROBE.register(None);
-            PROBE.visit();
             &PROBE
         }
         #[cfg(not(feature = "profiler"))] {
@@ -67,16 +100,20 @@ macro_rules! profiler_probe {
         }
     }};
 
-    ($prev_probe:expr) => {{
+    (@static $prev_probe:expr) => {{
         #[cfg(feature = "profiler")] {
+            extern {
+                #[link_name = concat!("profile: ", ::core::file!())]
+                static FILENAME: $crate::profiler::ProbeFilename<0>;
+            }
+
+            #[link_section = ".profile"]
             static PROBE: $crate::profiler::Probe = $crate::profiler::Probe::new(
-                file!(),
-                line!(),
-                column!(),
-                module_path!()
+                unsafe { &FILENAME as *const _ },
+                ::core::line!(),
+                ::core::column!(),
+                Some($prev_probe.probe)
             );
-            PROBE.register(Some($prev_probe));
-            PROBE.visit();
             &PROBE
         }
         #[cfg(not(feature = "profiler"))] {
@@ -84,70 +121,75 @@ macro_rules! profiler_probe {
             &$crate::profiler::Probe
         }
     }};
+
+    ($($prev_probe:expr)?) => {
+        static PROBE: &$crate::profiler::Probe = $crate::profiler_probe!(@static $($prev_probe)?);
+        PROBE.visit();
+    };
+
+    ($($prev_probe:expr)? => $name:ident) => {
+        static $name: $crate::profiler::ProbeHandle = $crate::profiler::ProbeHandle {
+            probe: $crate::profiler_probe!(@static $($prev_probe)?)
+        };
+        $name.probe.visit();
+    }
+}
+
+/// An opaque handle returned by [`profiler_probe!`], which can also be passed back to that macro
+/// to represent the previous probe.
+pub struct ProbeHandle {
+    #[doc(hidden)]
+    pub probe: &'static Probe
 }
 
 /// Resets the profiler by setting all visit counts to 0.
 pub fn reset() {
     #[cfg(feature = "profiler")] {
-        for i in 0 .. PROBES_COUNT.load(Ordering::Acquire) {
-            let probe_ptr = ALL_PROBES[i].load(Ordering::Acquire);
-            if !probe_ptr.is_null() {
-                // SAFETY: All probes have static lifetimes. A non-null pointer guarantees a valid
-                //         probe.
-                unsafe {
-                    (*probe_ptr).reset();
-                }
-            }
+        for probe in probes() {
+            probe.reset();
         }
     }
 }
 
-/// Returns an iterator over all the probes that have been visited so far.
-pub fn all_probes() -> impl Iterator<Item = &'static Probe> {
+/// Returns an iterator over all the probes that have been visited in this process so far.
+pub fn probes<'a>() -> impl Iterator<Item = ProbeRef<'a>> {
     #[cfg(feature = "profiler")] {
-        struct Probes {
-            index: usize,
-            limit: usize
-        }
-        impl Iterator for Probes {
-            type Item = &'static Probe;
-
-            fn next(&mut self) -> Option<Self::Item> {
-                loop {
-                    let i = self.index;
-                    if i >= self.limit {
-                        return None;
-                    }
-                    self.index += 1;
-
-                    let ptr = ALL_PROBES[i].load(Ordering::Acquire);
-                    if !ptr.is_null() {
-                        // SAFETY: All probes have static lifetimes. A non-null pointer guarantees a
-                        //         valid probe.
-                        return Some(unsafe { &*ptr });
-                    }
-                }
-            }
-        }
-        Probes {
-            index: 0,
-            limit: PROBES_COUNT.load(Ordering::Acquire)
-        }
+        let base_ptr = unsafe { &__profile_probes_start as *const _ };
+        let probes = PROBES_HEADER.probes(base_ptr);
+        let len = probes.len();
+        (0 .. len).map(move |idx| ProbeRef { probes, idx, base_ptr })
     }
     #[cfg(not(feature = "profiler"))] {
-        [].iter()
+        (0 .. 0).map(|_| unreachable!())
     }
 }
 
+/// Returns an iterator over all the probes in the kernel's profile that have been visited so far.
+#[cfg(not(feature = "kernelspace"))]
+pub async fn kernel_probes<'a>() -> impl Iterator<Item = ProbeRef<'a>> {
+    #[cfg(feature = "profiler")] {
+        let profile_start;
+        #[cfg(not(target_arch = "aarch64"))] { // TODO: Remove this.
+            profile_start = unimplemented!();
+        }
+        #[cfg(target_arch = "aarch64")] { // TODO: Make this unconditional.
+            profile_start = syscall::time_view_kernel_profile().await;
+        }
+        let header = unsafe { &*(profile_start as *const ProbesHeader) };
+        let probes_start = (profile_start + mem::size_of::<ProbesHeader>() + 15) % 16;
 
-#[cfg(feature = "profiler")]
-const MAX_PROBES: usize = 1000;
+        let base_ptr = probes_start as *const _;
+        let probes = header.probes(base_ptr);
+        let len = probes.len();
+        (0 .. len).map(move |idx| ProbeRef { probes, idx, base_ptr })
 
-#[cfg(feature = "profiler")]
-static ALL_PROBES: [AtomicPtr<Probe>; MAX_PROBES] = [const { AtomicPtr::new(ptr::null_mut()) }; MAX_PROBES];
+        // TODO: Return an object that acts as an iterator but also, when dropped, asks the kernel to unmap the profile.
+    }
+    #[cfg(not(feature = "profiler"))] {
+        (0 .. 0).map(|_| unreachable!())
+    }
+}
 
-#[cfg(feature = "profiler")]
-static PROBES_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 #[cfg(feature = "profiler")]
 #[cfg(target_machine = "qemu-virt")]
@@ -171,101 +213,213 @@ extern "Rust" {
     fn current_time_nanos_extern() -> u64;
 }
 
-/// A probe used by the profiler to measure performance. Use the [`profiler_probe`] macro to
-/// construct one.
 #[cfg(feature = "profiler")]
+#[link_section = ".profile.header"]
+static PROBES_HEADER: ProbesHeader = ProbesHeader {
+    _version:     0x0000,
+    probes_start: unsafe { &__profile_probes_start as *const _ },
+    probes_end:   unsafe { &__profile_probes_end as *const _ }
+};
+
+#[repr(C)]
+struct ProbesHeader {
+    _version: u16,
+
+    // SAFETY: These pointers are not guaranteed to be valid in the usual sense. For instance, we
+    // may be in userspace, and these may refer to addresses in kernelspace. But the offset between
+    // them is guaranteed to be correct.
+    probes_start: *const c_void,
+    probes_end:   *const c_void
+}
+
+impl ProbesHeader {
+    #[cfg(feature = "profiler")]
+    fn probes(&self, probes_start: *const c_void) -> &[Probe] {
+        let len = (self.probes_end as usize - self.probes_start as usize) / mem::size_of::<Probe>();
+        unsafe { slice::from_raw_parts(probes_start as *const Probe, len) }
+    }
+}
+
+unsafe impl Sync for ProbesHeader {}
+
+#[repr(C)]
 #[derive(Debug)]
+#[doc(hidden)]
+pub struct ProbeFilename<const N: usize> {
+    len:   u16,
+    bytes: [u8; N]
+}
+
+impl<const N: usize> ProbeFilename<N> {
+    #[doc(hidden)]
+    pub const fn new(filename: &str) -> Self {
+        assert!(filename.len() == N);
+        assert!(filename.len() <= u16::max_value() as usize);
+
+        let mut pf = ProbeFilename {
+            len:   filename.len() as u16,
+            bytes: [0; N]
+        };
+        let bytes = filename.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            pf.bytes[i] = bytes[i];
+            i += 1;
+        }
+        pf
+    }
+
+    #[cfg(feature = "profiler")]
+    const fn as_str(&self) -> &str {
+        // SAFETY: The only way to generate a `ProbeFilename` is from a valid `&str`, so we will always
+        // have the right length and valid UTF-8.
+        unsafe {
+            let bytes = slice::from_raw_parts(
+                &self.bytes as *const _ as *const u8,
+                self.len as usize
+            );
+            str::from_utf8_unchecked(bytes)
+        }
+    }
+}
+
+#[cfg(feature = "profiler")]
+#[repr(C)]
+#[derive(Debug)]
+#[doc(hidden)]
 pub struct Probe {
-    file:                            &'static str,
+    // All pointers in here may be invalid except in terms of their offsets from each other.
+    file:                            *const ProbeFilename<0>,
     line:                            u32,
     column:                          u32,
-    module:                          &'static str,
-    // TODO: Also record the function name. This seems to require a procedural macro.
-    prev_probe:                      Cell<Option<&'static Probe>>,
     visits:                          AtomicU64,
     current_visitors:                AtomicU64,
     last_reset_time_nanos:           AtomicU64,
     last_visitors_change_time_nanos: AtomicU64,
     total_visitor_nanos:             AtomicU64,
-    state:                           AtomicU8
+    prev_probe:                      *const Probe
 }
 #[cfg(not(feature = "profiler"))]
 #[derive(Debug)]
 #[doc(hidden)]
 pub struct Probe;
 
-#[cfg(feature = "profiler")]
-#[repr(u8)]
-enum ProbeState {
-    Unregistered = 0,
-    Registering  = 1,
-    Registered   = 2
-}
-
 impl Probe {
     #[cfg(feature = "profiler")]
     #[doc(hidden)]
     pub const fn new(
-        file:       &'static str,
+        file:       *const ProbeFilename<0>,
         line:       u32,
         column:     u32,
-        module:     &'static str
+        prev_probe: Option<&'static Probe>
     ) -> Self {
+        let prev_probe = match prev_probe {
+            Some(p) => p as *const Probe,
+            None => ptr::null()
+        };
+
         Self {
             file,
             line,
             column,
-            module,
-            prev_probe:                      Cell::new(None),
             visits:                          AtomicU64::new(0),
             current_visitors:                AtomicU64::new(0),
             last_reset_time_nanos:           AtomicU64::new(0),
             last_visitors_change_time_nanos: AtomicU64::new(0),
             total_visitor_nanos:             AtomicU64::new(0),
-            state:                           AtomicU8::new(ProbeState::Unregistered as u8)
+            prev_probe
         }
     }
 
+    #[cfg(feature = "profiler")]
+    #[doc(hidden)]
+    pub fn visit(&self) {
+        // Record a visitor entering this section.
+        self.visits.fetch_add(1, Ordering::AcqRel);
+        let now = current_time_nanos();
+        let last_visit_time = self.last_visitors_change_time_nanos.swap(now, Ordering::AcqRel);
+        let old_visitors = self.current_visitors.fetch_add(1, Ordering::AcqRel);
+        self.total_visitor_nanos.fetch_add(
+            (old_visitors as i64).wrapping_mul(now.wrapping_sub(last_visit_time) as i64) as u64,
+            Ordering::AcqRel
+        );
+
+        if !self.prev_probe.is_null() {
+            // Record a visitor leaving the previous section.
+            let prev_probe = unsafe { &*self.prev_probe };
+            let now = current_time_nanos();
+            let last_visit_time = prev_probe.last_visitors_change_time_nanos.swap(now, Ordering::AcqRel);
+            let old_visitors = prev_probe.current_visitors.fetch_sub(1, Ordering::AcqRel);
+            prev_probe.total_visitor_nanos.fetch_add(
+                (old_visitors as i64).wrapping_mul(now.wrapping_sub(last_visit_time) as i64) as u64,
+                Ordering::AcqRel
+            );
+        }
+    }
+}
+
+/// A reference to a probe used by the profiler to measure performance. Use the [`profiler_probe`]
+/// macro to construct a probe and the [`probes`] function to access them.
+#[repr(C)]
+#[derive(Debug)]
+pub struct ProbeRef<'a> {
+    probes:   &'a [Probe],
+    idx:      usize,
+
+    // A pointer, possibly into another address space, by which other pointers can be measured.
+    base_ptr: *const c_void
+}
+
+impl<'a> ProbeRef<'a> {
+    #[cfg(feature = "profiler")]
+    const fn probe(&self) -> &Probe {
+        &self.probes[self.idx]
+    }
+
     /// The file in which the probe is defined.
-    pub const fn file(&self) -> &'static str {
-        #[cfg(feature = "profiler")] { self.file }
+    pub const fn file(&self) -> &str {
+        #[cfg(feature = "profiler")] {
+            unsafe { (*self.probe().file).as_str() }
+        }
         #[cfg(not(feature = "profiler"))] { "" }
     }
 
     /// The line number on which the probe is defined.
     pub const fn line(&self) -> u32 {
-        #[cfg(feature = "profiler")] { self.line }
+        #[cfg(feature = "profiler")] { self.probe().line }
         #[cfg(not(feature = "profiler"))] { 0 }
     }
 
     /// The column number on which the probe is defined.
     pub const fn column(&self) -> u32 {
-        #[cfg(feature = "profiler")] { self.column }
+        #[cfg(feature = "profiler")] { self.probe().column }
         #[cfg(not(feature = "profiler"))] { 0 }
     }
 
-    /// The module in which the probe is defined.
-    pub const fn module(&self) -> &'static str {
-        #[cfg(feature = "profiler")] { self.module }
-        #[cfg(not(feature = "profiler"))] { "" }
-    }
-
     /// The probe immediately before this one, if any.
-    pub fn prev_probe(&self) -> Option<&'static Probe> {
-        #[cfg(feature = "profiler")] { self.prev_probe.get() }
+    pub fn prev_probe(&self) -> Option<ProbeRef<'a>> {
+        #[cfg(feature = "profiler")] {
+            let ptr = self.probe().prev_probe;
+            if ptr.is_null() {
+                None
+            } else {
+                let idx = unsafe { ptr.offset_from(self.base_ptr as *const Probe) } as usize;
+                Some(Self { probes: self.probes, idx: idx, base_ptr: self.base_ptr })
+            }
+        }
         #[cfg(not(feature = "profiler"))] { None }
     }
 
     /// The number of visits recorded since the last reset.
     pub fn visits(&self) -> u64 {
-        #[cfg(feature = "profiler")] { self.visits.load(Ordering::Acquire) }
+        #[cfg(feature = "profiler")] { self.probe().visits.load(Ordering::Acquire) }
         #[cfg(not(feature = "profiler"))] { 0 }
     }
 
     /// The number of visitors that have reached this probe but have not yet reached the next probe
     /// (i.e. a probe whose `prev_probe` is this one).
     pub fn current_visitors(&self) -> u64 {
-        #[cfg(feature = "profiler")] { self.current_visitors.load(Ordering::Acquire) }
+        #[cfg(feature = "profiler")] { self.probe().current_visitors.load(Ordering::Acquire) }
         #[cfg(not(feature = "profiler"))] { 0 }
     }
 
@@ -326,14 +480,14 @@ impl Probe {
     // A timestamp from the last time `reset` was called (or when the probe was created).
     #[cfg(feature = "profiler")]
     fn last_reset_time_nanos(&self) -> u64 {
-        #[cfg(feature = "profiler")] { self.last_reset_time_nanos.load(Ordering::Acquire) }
+        #[cfg(feature = "profiler")] { self.probe().last_reset_time_nanos.load(Ordering::Acquire) }
         #[cfg(not(feature = "profiler"))] { 0 }
     }
 
     // A timestamp from the last time execution entered or exited this probe's section of code.
     #[cfg(feature = "profiler")]
     fn last_visitors_change_time_nanos(&self) -> u64 {
-        #[cfg(feature = "profiler")] { self.last_visitors_change_time_nanos.load(Ordering::Acquire) }
+        #[cfg(feature = "profiler")] { self.probe().last_visitors_change_time_nanos.load(Ordering::Acquire) }
         #[cfg(not(feature = "profiler"))] { 0 }
     }
 
@@ -342,86 +496,18 @@ impl Probe {
     // measuring average latency.
     #[cfg(feature = "profiler")]
     fn total_visitor_nanos(&self) -> u64 {
-        #[cfg(feature = "profiler")] { self.total_visitor_nanos.load(Ordering::Acquire) }
+        #[cfg(feature = "profiler")] { self.probe().total_visitor_nanos.load(Ordering::Acquire) }
         #[cfg(not(feature = "profiler"))] { 0 }
     }
 
     #[cfg(feature = "profiler")]
-    #[doc(hidden)]
-    pub fn register(&'static self, prev_probe: Option<&'static Probe>) {
-        match self.state.compare_exchange(
-                ProbeState::Unregistered as u8,
-                ProbeState::Registering as u8,
-                Ordering::AcqRel,
-                Ordering::Acquire
-        ) {
-            Ok(_) => {},
-            Err(_) => return // Already registered.
-        };
-
-        // Link to the earlier probe, if any.
-        self.prev_probe.set(prev_probe);
-
-        // This is the first time we're visiting the probe.
-        let now = current_time_nanos();
-        self.last_reset_time_nanos.store(now, Ordering::Release);
-        self.last_visitors_change_time_nanos.store(now, Ordering::Release);
-
-        // Register this probe.
-        let idx = PROBES_COUNT.fetch_add(1, Ordering::AcqRel);
-        assert!(idx < MAX_PROBES, "too many profiler probes; only up to {} probes may be used", MAX_PROBES);
-        ALL_PROBES[idx].store(self as *const Probe as *mut Probe, Ordering::Release);
-
-        self.state.store(ProbeState::Registered as u8, Ordering::Release);
-    }
-
-    #[cfg(feature = "profiler")]
-    #[doc(hidden)]
-    pub fn visit(&self) {
-        // Make sure the probe is fully initialized before continuing.
-        'wait: loop {
-            for _ in 0 .. 100 {
-                if self.state.load(Ordering::Acquire) == ProbeState::Registered as u8 {
-                    break 'wait;
-                }
-                hint::spin_loop();
-            }
-            #[cfg(not(feature = "kernelspace"))] {
-                // This is taking a while, so yield to the operating system.
-                #[cfg(target_arch = "aarch64")] // FIXME: Remove this condition.
-                syscall::thread_sleep(0);
-            }
-        }
-
-        // Record a visitor entering this section.
-        self.visits.fetch_add(1, Ordering::AcqRel);
-        let now = current_time_nanos();
-        let last_visit_time = self.last_visitors_change_time_nanos.swap(now, Ordering::AcqRel);
-        let old_visitors = self.current_visitors.fetch_add(1, Ordering::AcqRel);
-        self.total_visitor_nanos.fetch_add(
-            (old_visitors as i64).wrapping_mul(now.wrapping_sub(last_visit_time) as i64) as u64,
-            Ordering::AcqRel
-        );
-
-        if let Some(prev_probe) = self.prev_probe() {
-            // Record a visitor leaving the previous section.
-            let now = current_time_nanos();
-            let last_visit_time = prev_probe.last_visitors_change_time_nanos.swap(now, Ordering::AcqRel);
-            let old_visitors = prev_probe.current_visitors.fetch_sub(1, Ordering::AcqRel);
-            prev_probe.total_visitor_nanos.fetch_add(
-                (old_visitors as i64).wrapping_mul(now.wrapping_sub(last_visit_time) as i64) as u64,
-                Ordering::AcqRel
-            );
-        }
-    }
-
-    #[cfg(feature = "profiler")]
     fn reset(&self) {
-        self.visits.store(0, Ordering::Release);
-        self.current_visitors.store(0, Ordering::Release);
-        self.last_visitors_change_time_nanos.store(current_time_nanos(), Ordering::Release);
-        self.total_visitor_nanos.store(0, Ordering::Release);
-        self.last_reset_time_nanos.store(current_time_nanos(), Ordering::Release);
+        let probe = self.probe();
+        probe.visits.store(0, Ordering::Release);
+        probe.current_visitors.store(0, Ordering::Release);
+        probe.last_visitors_change_time_nanos.store(current_time_nanos(), Ordering::Release);
+        probe.total_visitor_nanos.store(0, Ordering::Release);
+        probe.last_reset_time_nanos.store(current_time_nanos(), Ordering::Release);
     }
 }
 
