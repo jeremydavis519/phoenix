@@ -390,6 +390,17 @@ pub fn time_now_unix_nanos() -> u64 {
     unix_time
 }
 
+/// Resets the kernel's internal performance profile. This should be done right before the code
+/// that will be measured.
+pub fn time_reset_kernel_profile() {
+    unsafe {
+        asm!(
+            "svc 0x0481",
+            options(nomem, nostack, preserves_flags)
+        );
+    }
+}
+
 define_async_syscalls! {
     /// Looks up a physical device by name and claims ownership of it if it exists.
     ///

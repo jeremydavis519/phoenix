@@ -29,6 +29,7 @@ use {
     },
     libphoenix::{
         future::SysCallFutureInternal,
+        profiler,
         syscall::{VirtPhysAddr, TimeSelector}
     },
     devices::DEVICES,
@@ -75,6 +76,7 @@ pub(crate) fn handle_system_call(
         Ok(SystemCall::Time_NowUnix) => time_now_unix(thread, args[0], args[1], result),
         Ok(SystemCall::Time_NowUnixNanos) => time_now_unix_nanos(thread, args[0], args[1], result),
         Ok(SystemCall::Time_ViewKernelProfile) => time_view_kernel_profile(thread, result),
+        Ok(SystemCall::Time_ResetKernelProfile) => time_reset_kernel_profile(thread, result),
 
         // TODO: Remove all of these temporary system calls.
         Ok(SystemCall::Temp_PutChar) => temp_putchar(args[0]),
@@ -93,26 +95,27 @@ ffi_enum! {
     #[repr(u16)]
     #[allow(non_camel_case_types)]
     enum SystemCall {
-        Thread_Exit            = 0x0000,
-        Thread_Sleep           = 0x0001,
-        Thread_Spawn           = 0x0002,
-        Thread_Wait            = 0x0003,
+        Thread_Exit             = 0x0000,
+        Thread_Sleep            = 0x0001,
+        Thread_Spawn            = 0x0002,
+        Thread_Wait             = 0x0003,
 
-        Process_Exit           = 0x0100,
+        Process_Exit            = 0x0100,
 
-        Device_Claim           = 0x0200,
+        Device_Claim            = 0x0200,
 
-        Memory_Free            = 0x0300,
-        Memory_Alloc           = 0x0301,
-        Memory_AllocPhys       = 0x0302,
-        Memory_PageSize        = 0x0380,
+        Memory_Free             = 0x0300,
+        Memory_Alloc            = 0x0301,
+        Memory_AllocPhys        = 0x0302,
+        Memory_PageSize         = 0x0380,
 
-        Time_NowUnix           = 0x0400,
-        Time_NowUnixNanos      = 0x0401,
-        Time_ViewKernelProfile = 0x0480,
+        Time_NowUnix            = 0x0400,
+        Time_NowUnixNanos       = 0x0401,
+        Time_ViewKernelProfile  = 0x0480,
+        Time_ResetKernelProfile = 0x0481,
 
-        Temp_PutChar           = 0xff00,
-        Temp_GetChar           = 0xff01
+        Temp_PutChar            = 0xff00,
+        Temp_GetChar            = 0xff01
     }
 }
 
@@ -540,6 +543,23 @@ fn time_view_kernel_profile(
         },
         Err(_) => 0
     };
+
+    Response::eret()
+}
+
+// Resets the kernel's performance profile.
+fn time_reset_kernel_profile(
+    thread: Option<&mut Thread<File>>,
+    result: &mut usize
+) -> Response {
+    let _thread = thread.expect("kernel thread attempted to reset the kernel's time profile with a system call");
+
+    // FIXME: Add some security around this. We don't want just any old program resetting the profile
+    // and messing with any measurements that might be happening right now.
+
+    profiler::reset();
+
+    *result = 0; // Placeholder for maybe an actual return value
 
     Response::eret()
 }
