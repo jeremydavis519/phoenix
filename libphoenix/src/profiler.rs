@@ -152,7 +152,7 @@ pub fn reset() {
 }
 
 /// Returns an iterator over all the probes that have been visited in this process so far.
-pub fn probes<'a>() -> impl Iterator<Item = ProbeRef<'a>> {
+pub fn probes<'a>() -> impl Iterator<Item = ProbeRef<'a>> + Clone {
     #[cfg(feature = "profiler")] {
         let base_ptr = unsafe { &__profile_probes_start as *const _ };
         let probes = PROBES_HEADER.probes(base_ptr);
@@ -166,7 +166,7 @@ pub fn probes<'a>() -> impl Iterator<Item = ProbeRef<'a>> {
 
 /// Returns an iterator over all the probes in the kernel's profile that have been visited so far.
 #[cfg(not(feature = "kernelspace"))]
-pub async fn kernel_probes<'a>() -> impl Iterator<Item = ProbeRef<'a>> {
+pub async fn kernel_probes<'a>() -> impl Iterator<Item = ProbeRef<'a>> + Clone {
     #[cfg(feature = "profiler")] {
         let profile_start;
         #[cfg(not(target_arch = "aarch64"))] { // TODO: Remove this.
