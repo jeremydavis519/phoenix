@@ -191,7 +191,7 @@ pub async fn kernel_probes<'a>() -> impl Iterator<Item = ProbeRef<'a>> + Clone {
 
 
 #[cfg(feature = "profiler")]
-#[cfg(target_machine = "qemu-virt")]
+#[cfg(target_arch = "aarch64")]
 fn current_time_nanos() -> u64 {
     #[cfg(feature = "kernelspace")] {
         unsafe { current_time_nanos_extern() }
@@ -203,7 +203,7 @@ fn current_time_nanos() -> u64 {
 
 // TODO: Remove this. It's only here to make building on an x86-64 host possible.
 #[cfg(feature = "profiler")]
-#[cfg(not(target_machine = "qemu-virt"))]
+#[cfg(not(target_arch = "aarch64"))]
 fn current_time_nanos() -> u64 { unimplemented!() }
 
 // We can avoid using a system call to get the current time if we're already running in the kernel.
