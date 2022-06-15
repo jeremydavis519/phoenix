@@ -22,6 +22,7 @@ use {
     core::{
         alloc::AllocError,
         convert::{TryFrom, TryInto},
+        ffi::c_void,
         mem,
         num::NonZeroUsize,
         time::Duration
@@ -35,6 +36,7 @@ use {
     io::{println, Read},
     memory::{
         allocator::AllMemAlloc,
+        phys::ptr::PhysPtr,
         virt::paging
     },
     scheduler::{Thread, ThreadStatus},
@@ -43,6 +45,11 @@ use {
     userspace::UserspaceStr,
     super::exceptions::Response
 };
+
+extern {
+    static __profile_start: c_void;
+    static __profile_end:   c_void;
+}
 
 pub(crate) fn handle_system_call(
         thread: Option<&mut Thread<File>>,
@@ -67,6 +74,7 @@ pub(crate) fn handle_system_call(
 
         Ok(SystemCall::Time_NowUnix) => time_now_unix(thread, args[0], args[1], result),
         Ok(SystemCall::Time_NowUnixNanos) => time_now_unix_nanos(thread, args[0], args[1], result),
+        Ok(SystemCall::Time_ViewKernelProfile) => time_view_kernel_profile(thread, result),
 
         // TODO: Remove all of these temporary system calls.
         Ok(SystemCall::Temp_PutChar) => temp_putchar(args[0]),
@@ -85,25 +93,26 @@ ffi_enum! {
     #[repr(u16)]
     #[allow(non_camel_case_types)]
     enum SystemCall {
-        Thread_Exit       = 0x0000,
-        Thread_Sleep      = 0x0001,
-        Thread_Spawn      = 0x0002,
-        Thread_Wait       = 0x0003,
+        Thread_Exit            = 0x0000,
+        Thread_Sleep           = 0x0001,
+        Thread_Spawn           = 0x0002,
+        Thread_Wait            = 0x0003,
 
-        Process_Exit      = 0x0100,
+        Process_Exit           = 0x0100,
 
-        Device_Claim      = 0x0200,
+        Device_Claim           = 0x0200,
 
-        Memory_Free       = 0x0300,
-        Memory_Alloc      = 0x0301,
-        Memory_AllocPhys  = 0x0302,
-        Memory_PageSize   = 0x0380,
+        Memory_Free            = 0x0300,
+        Memory_Alloc           = 0x0301,
+        Memory_AllocPhys       = 0x0302,
+        Memory_PageSize        = 0x0380,
 
-        Time_NowUnix      = 0x0400,
-        Time_NowUnixNanos = 0x0401,
+        Time_NowUnix           = 0x0400,
+        Time_NowUnixNanos      = 0x0401,
+        Time_ViewKernelProfile = 0x0480,
 
-        Temp_PutChar      = 0xff00,
-        Temp_GetChar      = 0xff01
+        Temp_PutChar           = 0xff00,
+        Temp_GetChar           = 0xff01
     }
 }
 
@@ -480,6 +489,57 @@ fn time_now_unix_nanos(
     let time_since_epoch = thread.saved_time.duration_since(time::SystemTime::UNIX_EPOCH)
         .unwrap_or(Duration::ZERO);
     *result = (time_since_epoch.as_nanos() >> (shift_amount as u64)) as usize;
+
+    Response::eret()
+}
+
+// Maps the kernel's internal performance profile to a set of contiguous userspace pages and returns
+// the base address of the first page.
+fn time_view_kernel_profile(
+    thread: Option<&mut Thread<File>>,
+    future_userspace_addr: &mut usize
+) -> Response {
+    let thread = thread.expect("kernel thread attempted to read the kernel's time profile with a system call");
+
+    let phys_base = PhysPtr::from(unsafe { &__profile_start as *const _ }).as_addr_phys();
+    let size = unsafe { &__profile_end as *const _ as usize - &__profile_start as *const _ as usize };
+    let page_size = paging::page_size();
+
+    assert_eq!(phys_base % page_size, 0, "misaligned kernel profile (address = {phys_base:#018x})");
+    assert_eq!(size % page_size, 0, "wrongly sized kernel profile (size = {size:#018x})");
+
+    let root_page_table = thread.exec_image.page_table();
+
+    let virt_base = if let Some(size) = NonZeroUsize::new(size) {
+        // FIXME: Remember where this is mapped so the process can request that it be unmapped.
+        match root_page_table.map(phys_base, None, size, memory::phys::RegionType::Rom) {
+            Ok(addr) => addr,
+            Err(()) => 0
+        }
+    } else {
+        0
+    };
+
+    // FIXME: Use a dedicated slab allocator, owned by the process, to allocate many futures in the
+    //        same page.
+    *future_userspace_addr = match memory::allocator::AllMemAlloc.malloc::<SysCallFutureInternal<usize>>(
+            page_size,
+            NonZeroUsize::new(page_size).unwrap()
+    ) {
+        Ok(future_block) => {
+            unsafe {
+                (*future_block.index(0)).init_ready(virt_base);
+            }
+            let phys_base = future_block.base().as_addr_phys();
+            let size = NonZeroUsize::new(page_size).unwrap();
+            mem::forget(future_block); // FIXME: This should be retained so it can be freed later.
+            match root_page_table.map(phys_base, None, size, memory::phys::RegionType::Rom) {
+                Ok(addr) => addr,
+                Err(()) => 0
+            }
+        },
+        Err(_) => 0
+    };
 
     Response::eret()
 }

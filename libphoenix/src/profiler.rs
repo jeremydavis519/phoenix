@@ -176,12 +176,11 @@ pub async fn kernel_probes<'a>() -> impl Iterator<Item = ProbeRef<'a>> {
             profile_start = syscall::time_view_kernel_profile().await;
         }
         let header = unsafe { &*(profile_start as *const ProbesHeader) };
-        let probes_start = (profile_start + mem::size_of::<ProbesHeader>() + 15) % 16;
+        let probes_start = (profile_start + mem::size_of::<ProbesHeader>() + 15) / 16 * 16;
 
-        let base_ptr = probes_start as *const _;
-        let probes = header.probes(base_ptr);
+        let probes = header.probes(probes_start as *const _);
         let len = probes.len();
-        (0 .. len).map(move |idx| ProbeRef { probes, idx, base_ptr })
+        (0 .. len).map(move |idx| ProbeRef { probes, idx, base_ptr: header.probes_start })
 
         // TODO: Return an object that acts as an iterator but also, when dropped, asks the kernel to unmap the profile.
     }
@@ -377,9 +376,11 @@ impl<'a> ProbeRef<'a> {
     }
 
     /// The file in which the probe is defined.
-    pub const fn file(&self) -> &str {
+    pub fn file(&self) -> &str {
         #[cfg(feature = "profiler")] {
-            unsafe { (*self.probe().file).as_str() }
+            let base = self.probes as *const _ as *const u8;
+            let offset = self.probe().file as usize - self.base_ptr as usize;
+            unsafe { (*(base.add(offset) as *const ProbeFilename<0>)).as_str() }
         }
         #[cfg(not(feature = "profiler"))] { "" }
     }

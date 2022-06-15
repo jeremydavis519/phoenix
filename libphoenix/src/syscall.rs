@@ -31,7 +31,7 @@ use {
 };
 
 macro_rules! define_async_syscall {
-    (@func $(#[$attr:meta])* pub async fn $name:ident() -> $ret_type:ty => $syscall_num:tt;) => {
+    ($(#[$attr:meta])* pub async fn $name:ident() -> $ret_type:ty => $syscall_num:tt;) => {
         $(#[$attr])*
         pub async fn $name() -> $ret_type {
             let addr: usize;
@@ -53,117 +53,18 @@ macro_rules! define_async_syscall {
         }
     };
 
-    (@func $(#[$attr:meta])* pub async fn $name:ident(
-            $($arg1:ident: $type1:ty)? $(=> {$($conv1:tt)*})?
+    ($(#[$attr:meta])* pub async fn $name:ident(
+            $arg1:ident: $type1:ty $(=> {$($conv1:tt)*})?
     ) -> $ret_type:ty => $syscall_num:tt;) => {
         $(#[$attr])*
         pub async fn $name(
-                $($arg1: $type1)?
+                $arg1: $type1
         ) -> $ret_type {
             let addr: usize;
             unsafe {
                 asm!(
                     concat!("svc ", $syscall_num),
-                    in("x2") $($arg1)? $($($conv1)*)?,
-                    lateout("x0") addr,
-                    options(nomem, preserves_flags)
-                );
-            }
-            // FIXME: Offer some recourse if the kernel returns null (which indicates running out of
-            //        memory).
-            unsafe {
-                const N: usize = mem::size_of::<$ret_type>();
-                let retval_raw = SysCallFuture::from_addr::<N>(addr).await;
-                assert_eq!(retval_raw.len(), N, "syscall {}: return value has the wrong size", stringify!($name));
-                mem::transmute(*(&*retval_raw as *const [u8] as *const [u8; N]))
-            }
-        }
-    };
-
-    (@func $(#[$attr:meta])* pub async fn $name:ident(
-        $($arg1:ident: $type1:ty)? $(=> {$($conv1:tt)*})?,
-        $($arg2:ident: $type2:ty)? $(=> {$($conv2:tt)*})?
-    ) -> $ret_type:ty => $syscall_num:tt;) => {
-        $(#[$attr])*
-        pub async fn $name(
-                $($arg1: $type1,)?
-                $($arg2: $type2)?
-        ) -> $ret_type {
-            let addr: usize;
-            unsafe {
-                asm!(
-                    concat!("svc ", $syscall_num),
-                    in("x2") $($arg1)? $($($conv1)*)?,
-                    in("x3") $($arg2)? $($($conv2)*)?,
-                    lateout("x0") addr,
-                    options(nomem, preserves_flags)
-                );
-            }
-            // FIXME: Offer some recourse if the kernel returns null (which indicates running out of
-            //        memory).
-            unsafe {
-                const N: usize = mem::size_of::<$ret_type>();
-                let retval_raw = SysCallFuture::from_addr::<N>(addr).await;
-                assert_eq!(retval_raw.len(), N, "syscall {}: return value has the wrong size", stringify!($name));
-                mem::transmute(*(&*retval_raw as *const [u8] as *const [u8; N]))
-            }
-        }
-    };
-
-    (@func $(#[$attr:meta])* pub async fn $name:ident(
-        $($arg1:ident: $type1:ty)? $(=> {$($conv1:tt)*})?,
-        $($arg2:ident: $type2:ty)? $(=> {$($conv2:tt)*})?,
-        $($arg3:ident: $type3:ty)? $(=> {$($conv3:tt)*})?
-    ) -> $ret_type:ty => $syscall_num:tt;) => {
-        $(#[$attr])*
-        pub async fn $name(
-                $($arg1: $type1,)?
-                $($arg2: $type2,)?
-                $($arg3: $type3)?
-        ) -> $ret_type {
-            let addr: usize;
-            unsafe {
-                asm!(
-                    concat!("svc ", $syscall_num),
-                    in("x2") $($arg1)? $($($conv1)*)?,
-                    in("x3") $($arg2)? $($($conv2)*)?,
-                    in("x4") $($arg3)? $($($conv3)*)?,
-                    lateout("x0") addr,
-                    options(nomem, preserves_flags)
-                );
-            }
-            // FIXME: Offer some recourse if the kernel returns null (which indicates running out of
-            //        memory).
-            unsafe {
-                const N: usize = mem::size_of::<$ret_type>();
-                let retval_raw = SysCallFuture::from_addr::<N>(addr).await;
-                assert_eq!(retval_raw.len(), N, "syscall {}: return value has the wrong size", stringify!($name));
-                mem::transmute(*(&*retval_raw as *const [u8] as *const [u8; N]))
-            }
-        }
-    };
-
-    (@func $(#[$attr:meta])* pub async fn $name:ident(
-        $($arg1:ident: $type1:ty)? $(=> {$($conv1:tt)*})?,
-        $($arg2:ident: $type2:ty)? $(=> {$($conv2:tt)*})?,
-        $($arg3:ident: $type3:ty)? $(=> {$($conv3:tt)*})?,
-        $($arg4:ident: $type4:ty)? $(=> {$($conv4:tt)*})?
-    ) -> $ret_type:ty => $syscall_num:tt;) => {
-        $(#[$attr])*
-        pub async fn $name(
-                $($arg1: $type1,)?
-                $($arg2: $type2,)?
-                $($arg3: $type3,)?
-                $($arg4: $type4)?
-        ) -> $ret_type {
-            let addr: usize;
-            unsafe {
-                asm!(
-                    concat!("svc ", $syscall_num),
-                    in("x2") $($arg1)? $($($conv1)*)?,
-                    in("x3") $($arg2)? $($($conv2)*)?,
-                    in("x4") $($arg3)? $($($conv3)*)?,
-                    in("x5") $($arg4)? $($($conv4)*)?,
+                    in("x2") $arg1 $($($conv1)*)?,
                     lateout("x0") addr,
                     options(nomem, preserves_flags)
                 );
@@ -180,12 +81,101 @@ macro_rules! define_async_syscall {
     };
 
     ($(#[$attr:meta])* pub async fn $name:ident(
-        $($($arg:ident: $typ:ty)? $(=> {$($conv:tt)*})?),*
+        $arg1:ident: $type1:ty $(=> {$($conv1:tt)*})?,
+        $($arg2:ident: $type2:ty)? $(=> {$($conv2:tt)*})?
     ) -> $ret_type:ty => $syscall_num:tt;) => {
-        define_async_syscall! {
-            @func
-            $(#[$attr])*
-            pub async fn $name($($($arg: $typ)? $(=> {$($conv)*})?),*) -> $ret_type => $syscall_num;
+        $(#[$attr])*
+        pub async fn $name(
+                $arg1: $type1,
+                $($arg2: $type2)?
+        ) -> $ret_type {
+            let addr: usize;
+            unsafe {
+                asm!(
+                    concat!("svc ", $syscall_num),
+                    in("x2") $arg1 $($($conv1)*)?,
+                    in("x3") $($arg2)? $($($conv2)*)?,
+                    lateout("x0") addr,
+                    options(nomem, preserves_flags)
+                );
+            }
+            // FIXME: Offer some recourse if the kernel returns null (which indicates running out of
+            //        memory).
+            unsafe {
+                const N: usize = mem::size_of::<$ret_type>();
+                let retval_raw = SysCallFuture::from_addr::<N>(addr).await;
+                assert_eq!(retval_raw.len(), N, "syscall {}: return value has the wrong size", stringify!($name));
+                mem::transmute(*(&*retval_raw as *const [u8] as *const [u8; N]))
+            }
+        }
+    };
+
+    ($(#[$attr:meta])* pub async fn $name:ident(
+        $arg1:ident: $type1:ty $(=> {$($conv1:tt)*})?,
+        $($arg2:ident: $type2:ty)? $(=> {$($conv2:tt)*})?,
+        $($arg3:ident: $type3:ty)? $(=> {$($conv3:tt)*})?
+    ) -> $ret_type:ty => $syscall_num:tt;) => {
+        $(#[$attr])*
+        pub async fn $name(
+                $arg1: $type1,
+                $($arg2: $type2,)?
+                $($arg3: $type3)?
+        ) -> $ret_type {
+            let addr: usize;
+            unsafe {
+                asm!(
+                    concat!("svc ", $syscall_num),
+                    in("x2") $arg1 $($($conv1)*)?,
+                    in("x3") $($arg2)? $($($conv2)*)?,
+                    in("x4") $($arg3)? $($($conv3)*)?,
+                    lateout("x0") addr,
+                    options(nomem, preserves_flags)
+                );
+            }
+            // FIXME: Offer some recourse if the kernel returns null (which indicates running out of
+            //        memory).
+            unsafe {
+                const N: usize = mem::size_of::<$ret_type>();
+                let retval_raw = SysCallFuture::from_addr::<N>(addr).await;
+                assert_eq!(retval_raw.len(), N, "syscall {}: return value has the wrong size", stringify!($name));
+                mem::transmute(*(&*retval_raw as *const [u8] as *const [u8; N]))
+            }
+        }
+    };
+
+    ($(#[$attr:meta])* pub async fn $name:ident(
+        $arg1:ident: $type1:ty $(=> {$($conv1:tt)*})?,
+        $($arg2:ident: $type2:ty)? $(=> {$($conv2:tt)*})?,
+        $($arg3:ident: $type3:ty)? $(=> {$($conv3:tt)*})?,
+        $($arg4:ident: $type4:ty)? $(=> {$($conv4:tt)*})?
+    ) -> $ret_type:ty => $syscall_num:tt;) => {
+        $(#[$attr])*
+        pub async fn $name(
+                $arg1: $type1,
+                $($arg2: $type2,)?
+                $($arg3: $type3,)?
+                $($arg4: $type4)?
+        ) -> $ret_type {
+            let addr: usize;
+            unsafe {
+                asm!(
+                    concat!("svc ", $syscall_num),
+                    in("x2") $arg1 $($($conv1)*)?,
+                    in("x3") $($arg2)? $($($conv2)*)?,
+                    in("x4") $($arg3)? $($($conv3)*)?,
+                    in("x5") $($arg4)? $($($conv4)*)?,
+                    lateout("x0") addr,
+                    options(nomem, preserves_flags)
+                );
+            }
+            // FIXME: Offer some recourse if the kernel returns null (which indicates running out of
+            //        memory).
+            unsafe {
+                const N: usize = mem::size_of::<$ret_type>();
+                let retval_raw = SysCallFuture::from_addr::<N>(addr).await;
+                assert_eq!(retval_raw.len(), N, "syscall {}: return value has the wrong size", stringify!($name));
+                mem::transmute(*(&*retval_raw as *const [u8] as *const [u8; N]))
+            }
         }
     };
 }
@@ -466,6 +456,17 @@ define_async_syscalls! {
         align: usize,
         max_bits: usize
     ) -> VirtPhysAddr => 0x0302;
+
+    /// *Note:* This function is not designed to be used directly. Applications should use
+    /// [`crate::profiler::kernel_probes`] instead.
+    ///
+    /// Maps the kernel's internal performance profile directly to a set of contiguous pages in this
+    /// process's address space. This is not a snapshot; it is updated in real time as different
+    /// parts of the kernel are executed.
+    ///
+    /// Note that the kernel may have been compiled without profiling support. In that case, any call
+    /// to this function will just return 0, representing a null pointer.
+    pub async fn time_view_kernel_profile() -> usize => 0x0480;
 }
 
 
