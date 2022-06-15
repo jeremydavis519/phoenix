@@ -41,6 +41,7 @@ use {
     bitflags::bitflags,
     libphoenix::{
         future::SysCallExecutor,
+        profiler,
         syscall
     },
     libdriver::Device,
@@ -61,14 +62,19 @@ const MAX_SCANOUTS: usize = 16;
 fn main() {
     SysCallExecutor::new()
         .spawn(async {
+            let mut kernel_profile = profiler::kernel_probes().await;
+            syscall::time_reset_kernel_profile();
+            let start_time_nanos = syscall::time_now_unix_nanos();
+
             let device = Device::claim("mmio/virtio-16").await
                 .expect("no VirtIO GPU found");
-            run_driver(device);
+            run_driver(kernel_profile, start_time_nanos, device);
         })
         .block_on_all();
 }
 
-fn run_driver(device: Device) {
+fn run_driver<'a, I>(kernel_profile: I, start_time_nanos: u64, device: Device<'_>)
+        where I: Iterator<Item = profiler::ProbeRef<'a>> {
     let mut device_details = match virtio::init(
             &device,
             DEVICE_TYPE_GPU,
@@ -113,6 +119,8 @@ fn run_driver(device: Device) {
             fb.flush_all().await
                 .expect("failed to flush the framebuffer");
 
+            print_profile(kernel_profile, start_time_nanos);
+
             let _ = writeln!(KernelWriter, "GPU test done");
             loop {}
         })
@@ -124,6 +132,28 @@ fn run_driver(device: Device) {
         // TODO: Handle events.
         return;
     }
+}
+
+fn print_profile<'a, I>(profile: I, start_time_nanos: u64) where I: Iterator<Item = profiler::ProbeRef<'a>> {
+    let now_nanos = syscall::time_now_unix_nanos();
+    let seconds_elapsed = now_nanos.saturating_sub(start_time_nanos) as f64 / 1_000_000_000.0;
+
+    for probe in profile {
+        let visits = probe.visits();
+        let _ = writeln!(KernelWriter, "{}:{}:{}", probe.file(), probe.line(), probe.column());
+        let _ = writeln!(KernelWriter, "Visits: {}", visits);
+        let _ = writeln!(KernelWriter, "Throughput: {} visits/sec", probe.avg_throughput_hz());
+        if let Some(latency) = probe.avg_latency_secs() {
+            let total_time = latency * visits as f64;
+            let _ = writeln!(KernelWriter, "Latency: {} sec", latency);
+            let _ = writeln!(KernelWriter,
+                "Total time consumed: {} sec ({:.2}%)", total_time, total_time * 100.0 / seconds_elapsed
+            );
+        }
+        let _ = writeln!(KernelWriter);
+    }
+
+    let _ = writeln!(KernelWriter, "Total time elapsed: {} sec", seconds_elapsed);
 }
 
 // FIXME: Remove this debugging aid.
