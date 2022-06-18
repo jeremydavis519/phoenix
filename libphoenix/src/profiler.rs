@@ -77,49 +77,39 @@ macro_rules! profiler_setup {
 /// latency in addition to throughput.
 ///
 /// This macro requires [`profiler_setup`] to be called exactly once in the same file.
+#[cfg(feature = "profiler")]
 #[macro_export]
 macro_rules! profiler_probe {
     (@static) => {{
-        #[cfg(feature = "profiler")] {
-            extern {
-                #[link_name = concat!("profile: ", ::core::file!())]
-                static FILENAME: $crate::profiler::ProbeFilename<0>;
-            }
+        extern {
+            #[link_name = concat!("profile: ", ::core::file!())]
+            static FILENAME: $crate::profiler::ProbeFilename<0>;
+        }
 
-            #[link_section = ".profile"]
-            static PROBE: $crate::profiler::Probe = $crate::profiler::Probe::new(
-                unsafe { &FILENAME as *const _ },
-                ::core::line!(),
-                ::core::column!(),
-                None
-            );
-            &PROBE
-        }
-        #[cfg(not(feature = "profiler"))] {
-            &$crate::profiler::Probe
-        }
+        #[link_section = ".profile"]
+        static PROBE: $crate::profiler::Probe = $crate::profiler::Probe::new(
+            unsafe { &FILENAME as *const _ },
+            ::core::line!(),
+            ::core::column!(),
+            None
+        );
+        &PROBE
     }};
 
     (@static $prev_probe:expr) => {{
-        #[cfg(feature = "profiler")] {
-            extern {
-                #[link_name = concat!("profile: ", ::core::file!())]
-                static FILENAME: $crate::profiler::ProbeFilename<0>;
-            }
+        extern {
+            #[link_name = concat!("profile: ", ::core::file!())]
+            static FILENAME: $crate::profiler::ProbeFilename<0>;
+        }
 
-            #[link_section = ".profile"]
-            static PROBE: $crate::profiler::Probe = $crate::profiler::Probe::new(
-                unsafe { &FILENAME as *const _ },
-                ::core::line!(),
-                ::core::column!(),
-                Some($prev_probe.probe)
-            );
-            &PROBE
-        }
-        #[cfg(not(feature = "profiler"))] {
-            $prev_probe;
-            &$crate::profiler::Probe
-        }
+        #[link_section = ".profile"]
+        static PROBE: $crate::profiler::Probe = $crate::profiler::Probe::new(
+            unsafe { &FILENAME as *const _ },
+            ::core::line!(),
+            ::core::column!(),
+            Some($prev_probe.probe)
+        );
+        &PROBE
     }};
 
     ($($prev_probe:expr)?) => {
@@ -132,6 +122,16 @@ macro_rules! profiler_probe {
             probe: $crate::profiler_probe!(@static $($prev_probe)?)
         };
         $name.probe.visit();
+    }
+}
+
+#[cfg(not(feature = "profiler"))]
+#[macro_export]
+#[doc(hidden)]
+macro_rules! profiler_probe {
+    ($($prev_probe:expr)? $(=> $name:ident)?) {
+        $($prev_probe;)?
+        &$crate::profiler::Probe
     }
 }
 
