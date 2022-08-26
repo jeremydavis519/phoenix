@@ -42,7 +42,8 @@ use {
     libphoenix::{
         future::SysCallExecutor,
         profiler,
-        syscall
+        syscall,
+        profiler_probe, profiler_setup
     },
     libdriver::Device,
     virtio::{
@@ -56,18 +57,22 @@ use {
 mod api;
 mod msg;
 
+profiler_setup!();
+
 const DEVICE_TYPE_GPU: u32 = 16;
 const MAX_SCANOUTS: usize = 16;
 
 fn main() {
     SysCallExecutor::new()
         .spawn(async {
-            let mut kernel_profile = profiler::kernel_probes().await;
+            let kernel_profile = profiler::kernel_probes().await;
             syscall::time_reset_kernel_profile();
             let start_time_nanos = syscall::time_now_unix_nanos();
 
+            profiler_probe!(=> DEVICE_CLAIM);
             let device = Device::claim("mmio/virtio-16").await
                 .expect("no VirtIO GPU found");
+            profiler_probe!(DEVICE_CLAIM);
             run_driver(kernel_profile, start_time_nanos, device);
         })
         .block_on_all();
@@ -75,6 +80,7 @@ fn main() {
 
 fn run_driver<'a, I>(kernel_profile: I, start_time_nanos: u64, device: Device<'_>)
         where I: Iterator<Item = profiler::ProbeRef<'a>> {
+    profiler_probe!(=> VIRTIO_INIT);
     let mut device_details = match virtio::init(
             &device,
             DEVICE_TYPE_GPU,
@@ -86,6 +92,7 @@ fn run_driver<'a, I>(kernel_profile: I, start_time_nanos: u64, device: Device<'_
         Ok(x) => x,
         Err(e) => panic!("failed to initialize the VirtIO GPU: {}", e)
     };
+    profiler_probe!(VIRTIO_INIT);
 
     let virtqueues = device_details.virtqueues();
     let control_q = &virtqueues[QueueIndex::Control as usize];
@@ -93,17 +100,21 @@ fn run_driver<'a, I>(kernel_profile: I, start_time_nanos: u64, device: Device<'_
 
     let config_space = ConfigurationSpace::new(&mut device_details);
 
+    profiler_probe!(=> EXECUTOR_SPAWN);
     Executor::new()
         .spawn(async {
+            profiler_probe!(EXECUTOR_SPAWN => DISPLAY_INFO);
             let display_info = api::DisplayInfo::one(control_q, 0).await
                 .expect("failed to retrieve display info");
             assert!(display_info.flags.contains(DisplayInfoFlags::ENABLED));
 
+            profiler_probe!(DISPLAY_INFO => IMAGE_NEW);
             let mut fb = Image::new(Some(control_q), 0, 1, 32, display_info.rect.width, display_info.rect.height).await
                 .expect("failed to create framebuffer");
             set_display_framebuffer(control_q, 0, &fb).await
                 .expect("failed to set display framebuffer");
 
+            profiler_probe!(IMAGE_NEW => DRAW);
             fb.set_colors(0, &[Color(0xffff00ff)]);
             fb.draw_rect_region(Rectangle {
                 x: 0, y: 0,
@@ -114,10 +125,13 @@ fn run_driver<'a, I>(kernel_profile: I, start_time_nanos: u64, device: Device<'_
                 x: 320, y: 240,
                 width: 320, height: 240
             }, Tile(0));
+            profiler_probe!(DRAW => SEND);
             fb.send_all().await
                 .expect("failed to send the framebuffer to the host");
+            profiler_probe!(SEND => FLUSH);
             fb.flush_all().await
                 .expect("failed to flush the framebuffer");
+            profiler_probe!(FLUSH);
 
             print_profile(kernel_profile, start_time_nanos);
 
@@ -138,6 +152,24 @@ fn print_profile<'a, I>(profile: I, start_time_nanos: u64) where I: Iterator<Ite
     let now_nanos = syscall::time_now_unix_nanos();
     let seconds_elapsed = now_nanos.saturating_sub(start_time_nanos) as f64 / 1_000_000_000.0;
 
+    let _ = writeln!(KernelWriter, "***Userspace Profile***");
+    for probe in profiler::probes() {
+        let visits = probe.visits();
+        let _ = writeln!(KernelWriter, "{}:{}:{}", probe.file(), probe.line(), probe.column());
+        let _ = writeln!(KernelWriter, "Visits: {}", visits);
+        let _ = writeln!(KernelWriter, "Throughput: {} visits/sec", probe.avg_throughput_hz());
+        if let Some(latency) = probe.avg_latency_secs() {
+            let total_time = latency * visits as f64;
+            let _ = writeln!(KernelWriter, "Latency: {} sec", latency);
+            let _ = writeln!(KernelWriter,
+                "Total time consumed: {} sec ({:.2}%)", total_time, total_time * 100.0 / seconds_elapsed
+            );
+        }
+        let _ = writeln!(KernelWriter);
+    }
+    let _ = writeln!(KernelWriter);
+
+    let _ = writeln!(KernelWriter, "***Kernel Profile***");
     for probe in profile {
         let visits = probe.visits();
         let _ = writeln!(KernelWriter, "{}:{}:{}", probe.file(), probe.line(), probe.column());
