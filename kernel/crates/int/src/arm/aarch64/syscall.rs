@@ -29,7 +29,7 @@ use {
     },
     libphoenix::{
         future::SysCallFutureInternal,
-        profiler,
+        profiler, profiler_probe, profiler_setup,
         syscall::{VirtPhysAddr, TimeSelector}
     },
     devices::DEVICES,
@@ -51,6 +51,8 @@ extern {
     static __profile_start: c_void;
     static __profile_end:   c_void;
 }
+
+profiler_setup!();
 
 pub(crate) fn handle_system_call(
         thread: Option<&mut Thread<File>>,
@@ -154,6 +156,7 @@ fn thread_spawn(
         max_stack_size: usize,
         handle: &mut usize
 ) -> Response {
+    profiler_probe!(=> ENTRANCE);
     let parent_thread = thread.expect("attempted to spawn a new kernel thread");
     let entry_point = usize::try_from(entry_point).unwrap();
     // TODO: A priority of 0 should maybe mean real-time (i.e. cooperative scheduling only). We'll
@@ -163,6 +166,7 @@ fn thread_spawn(
     }
     *handle = scheduler::spawn_thread(parent_thread.exec_image.clone(), entry_point, max_stack_size, priority)
         .unwrap_or(0);
+    profiler_probe!(ENTRANCE);
     Response::eret()
 }
 
@@ -201,6 +205,7 @@ fn device_claim(
         dev_name_len: usize,
         future_userspace_addr: &mut usize
 ) -> Response {
+    profiler_probe!(=> ENTRANCE);
     let thread = thread.expect("kernel thread attempted to get a device");
 
     let root_page_table = thread.exec_image.page_table();
@@ -242,6 +247,7 @@ fn device_claim(
         Err(_) => 0
     };
 
+    profiler_probe!(ENTRANCE);
     Response::eret()
 }
 
@@ -253,6 +259,7 @@ fn memory_free(
     userspace_addr: usize,
     future_userspace_addr: &mut usize
 ) -> Response {
+    profiler_probe!(=> ENTRANCE);
     let thread = thread.expect("kernel thread attempted to free memory with a system call");
     let root_page_table = thread.exec_image.page_table();
 
@@ -286,6 +293,7 @@ fn memory_free(
         Err(_) => 0
     };
 
+    profiler_probe!(ENTRANCE);
     Response::eret()
 }
 
@@ -298,6 +306,7 @@ fn memory_alloc(
     align: usize,
     future_userspace_addr: &mut usize
 ) -> Response {
+    profiler_probe!(=> ENTRANCE);
     let thread = thread.expect("kernel thread attempted to allocate memory with a system call");
     let page_size = paging::page_size();
 
@@ -355,6 +364,7 @@ fn memory_alloc(
     // FIXME: Instead of forgetting the block, attach it to the process.
     mem::forget(maybe_block);
 
+    profiler_probe!(ENTRANCE);
     Response::eret()
 }
 
@@ -372,6 +382,7 @@ fn memory_alloc_phys(
     max_bits: usize,
     future_userspace_addr: &mut usize
 ) -> Response {
+    profiler_probe!(=> ENTRANCE);
     let thread = thread.expect("kernel thread attempted to allocate memory with a system call");
     let page_size = paging::page_size();
 
@@ -434,6 +445,7 @@ fn memory_alloc_phys(
     // FIXME: Instead of forgetting the block, attach it to the process.
     mem::forget(maybe_block);
 
+    profiler_probe!(ENTRANCE);
     Response::eret()
 }
 
@@ -455,6 +467,7 @@ fn time_now_unix(
     shift_amount: usize,
     result: &mut usize
 ) -> Response {
+    profiler_probe!(=> ENTRANCE);
     let thread = thread.expect("kernel thread attempted to read the time with a system call");
 
     let time_selector = TimeSelector::try_from(time_selector).unwrap_or(TimeSelector::Now);
@@ -467,6 +480,7 @@ fn time_now_unix(
         .unwrap_or(Duration::ZERO);
     *result = (time_since_epoch.as_secs() >> (shift_amount as u64)) as usize;
 
+    profiler_probe!(ENTRANCE);
     Response::eret()
 }
 
@@ -481,6 +495,7 @@ fn time_now_unix_nanos(
     shift_amount: usize,
     result: &mut usize
 ) -> Response {
+    profiler_probe!(=> ENTRANCE);
     let thread = thread.expect("kernel thread attempted to read the time with a system call");
 
     let time_selector = TimeSelector::try_from(time_selector).unwrap_or(TimeSelector::Now);
@@ -493,6 +508,7 @@ fn time_now_unix_nanos(
         .unwrap_or(Duration::ZERO);
     *result = (time_since_epoch.as_nanos() >> (shift_amount as u64)) as usize;
 
+    profiler_probe!(ENTRANCE);
     Response::eret()
 }
 
@@ -502,6 +518,7 @@ fn time_view_kernel_profile(
     thread: Option<&mut Thread<File>>,
     future_userspace_addr: &mut usize
 ) -> Response {
+    profiler_probe!(=> ENTRANCE);
     let thread = thread.expect("kernel thread attempted to read the kernel's time profile with a system call");
 
     let phys_base = PhysPtr::from(unsafe { &__profile_start as *const _ }).as_addr_phys();
@@ -544,6 +561,7 @@ fn time_view_kernel_profile(
         Err(_) => 0
     };
 
+    profiler_probe!(ENTRANCE);
     Response::eret()
 }
 
@@ -552,6 +570,7 @@ fn time_reset_kernel_profile(
     thread: Option<&mut Thread<File>>,
     result: &mut usize
 ) -> Response {
+    profiler_probe!(=> ENTRANCE);
     let _thread = thread.expect("kernel thread attempted to reset the kernel's time profile with a system call");
 
     // FIXME: Add some security around this. We don't want just any old program resetting the profile
@@ -561,6 +580,7 @@ fn time_reset_kernel_profile(
 
     *result = 0; // Placeholder for maybe an actual return value
 
+    profiler_probe!(ENTRANCE);
     Response::eret()
 }
 
