@@ -19,7 +19,7 @@
 use {
     core::{
         convert::TryFrom,
-        mem::size_of,
+        mem::{size_of, ManuallyDrop},
         ptr
     },
     i18n::Text,
@@ -69,16 +69,16 @@ impl ElfHeader {
     /// type is more cumbersome.
     pub(crate) fn ex_64(self) -> ElfHeaderEx64 {
         match self.class {
-            ElfClass::Bits32 => unsafe { self.header_ex.header_32 }.into(),
-            ElfClass::Bits64 => unsafe { self.header_ex.header_64 }
+            ElfClass::Bits32 => ManuallyDrop::into_inner(unsafe { self.header_ex.header_32 }).into(),
+            ElfClass::Bits64 => ManuallyDrop::into_inner(unsafe { self.header_ex.header_64 })
         }
     }
 }
 
 #[repr(C)]
 pub(crate) union ElfHeaderEx {
-    header_32: ElfHeaderEx32,
-    header_64: ElfHeaderEx64
+    header_32: ManuallyDrop<ElfHeaderEx32>,
+    header_64: ManuallyDrop<ElfHeaderEx64>
 }
 
 #[repr(C, packed)]

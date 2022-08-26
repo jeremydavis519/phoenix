@@ -24,7 +24,6 @@
 
 #![feature(allocator_api)]
 #![feature(coerce_unsized, unsize)]
-#![feature(const_slice_from_raw_parts)]
 #![feature(inline_const)]
 #![feature(lang_items)]
 #![feature(layout_for_ptr)]
