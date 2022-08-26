@@ -33,6 +33,10 @@ SECTIONS {
     .data BLOCK(0x10000) : {
         *(.data) *(.data.*)
         *(.got) *(.got.plt)
+        __profile_probes_start = .;
+        *(.profile)
+        __profile_probes_end = .;
+        *(.profile.strings)
         *(.bss) *(.bss.*)
         *(COMMON)
     }

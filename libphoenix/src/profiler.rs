@@ -23,6 +23,19 @@
 //! causal profiler for userspace programs. The main benefit of implementing one as part of Phoenix is
 //! that the kernel can benefit from it too.
 //!
+//! In order to compile a program with the profiler enabled, enable the "profiler" feature in Cargo.toml
+//! and add these lines to your linker script in the `SECTIONS` block (assuming you're linking with LD):
+//! ```text
+//! __profile_probes_start = .;
+//! .profile : {
+//!     *(.profile)
+//! }
+//! __profile_probes_end = .;
+//! .profile.strings : {
+//!     *(.profile.strings)
+//! }
+//! ```
+//!
 //! TODO: Once the API stabilizes, provide examples of how to use this.
 //!
 //! An effort has been made to minimize the overhead associated with using this profiler, but it is not
@@ -59,17 +72,23 @@ extern {
 
 /// Does some setup to prepare for defining one or more probes in the same file. This macro defines
 /// items rather than running code, so it should be invoked outside of function scope.
+#[cfg(feature = "profiler")]
 #[macro_export]
 macro_rules! profiler_setup {
     () => {
         const FILENAME_LEN: usize = ::core::file!().len();
 
-        #[cfg(feature = "profiler")]
         #[link_section = ".profile.strings"]
         #[export_name = concat!("profile: ", ::core::file!())]
         static FILENAME: $crate::profiler::ProbeFilename<FILENAME_LEN> =
             $crate::profiler::ProbeFilename::<FILENAME_LEN>::new(::core::file!());
-    }
+    };
+}
+
+#[cfg(not(feature = "profiler"))]
+#[macro_export]
+macro_rules! profiler_setup {
+    () => {};
 }
 
 /// Defines a probe that counts every time the calling line is visited (thereby measuring
@@ -122,7 +141,7 @@ macro_rules! profiler_probe {
             probe: $crate::profiler_probe!(@static $($prev_probe)?)
         };
         $name.probe.visit();
-    }
+    };
 }
 
 #[cfg(not(feature = "profiler"))]
@@ -132,7 +151,7 @@ macro_rules! profiler_probe {
     ($($prev_probe:expr)? $(=> $name:ident)?) {
         $($prev_probe;)?
         &$crate::profiler::Probe
-    }
+    };
 }
 
 /// An opaque handle returned by [`profiler_probe!`], which can also be passed back to that macro
