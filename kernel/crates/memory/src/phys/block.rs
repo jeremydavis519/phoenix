@@ -115,6 +115,16 @@ macro_rules! impl_phys_block_common {
                 unsafe { self.base.add(index) }
             }
         }
+
+        impl<T> Drop for $generic<T> {
+            fn drop(&mut self) {
+                for i in 0 .. self.size() {
+                    unsafe {
+                        self.index(i).drop_in_place();
+                    }
+                }
+            }
+        }
     };
 }
 
