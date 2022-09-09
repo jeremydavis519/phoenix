@@ -156,7 +156,7 @@ pub(crate) fn malloc_low(
     let mut map = MEMORY_MAP.clone();
     let _ = map.remove_region(max_addr, NonZeroUsize::new(0_usize.wrapping_sub(max_addr)).unwrap());
     let (ptr, allocation) = malloc_with_map(size, align, &map)?;
-    if ptr.as_addr_phys() >= max_addr {
+    if ptr.as_addr_phys().saturating_add(size.get()) > max_addr {
         // This can only happen if removing the region from the map failed.
         return Err(AllocError);
     }
