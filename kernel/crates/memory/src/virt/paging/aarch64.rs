@@ -1,4 +1,4 @@
-/* Copyright (c) 2018-2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2018-2022 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -298,8 +298,8 @@ macro_rules! define_root_page_table {
                     NonZeroUsize::new(mem::align_of::<RootPageTable>()).unwrap()
                 )?;
                 let root = unsafe { &mut *block.index(0) };
-                root.exception_level = ExceptionLevel::El1;
-                root.asid = asid;
+                mem::forget(mem::replace(&mut root.exception_level, ExceptionLevel::El1));
+                mem::forget(mem::replace(&mut root.asid, asid));
 
                 match page_size {
                     $(
@@ -311,7 +311,7 @@ macro_rules! define_root_page_table {
                             unsafe {
                                 <$table_root>::identity_map(table_block.index(0), regions)?;
                             }
-                            root.internals = RootPageTableInternal::$table(table_block);
+                            mem::forget(mem::replace(&mut root.internals, RootPageTableInternal::$table(table_block)));
                         },
                     )*
                     _ => panic!("unsupported page size {:#x}", page_size)
