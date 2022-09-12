@@ -89,9 +89,9 @@ pub extern fn kmain() -> ! {
     #[cfg(feature = "profiler")] {
         println!("Bootloader profile");
         println!("------------------");
+        print_profile(time::SystemTime::from_raw_nanosecs(unsafe { PROFILER_START_TIME_NANOSECS }));
+        println!();
     }
-    print_profile(time::SystemTime::from_raw_nanosecs(unsafe { PROFILER_START_TIME_NANOSECS }));
-    println!();
 
     // TODO: Instead of starting a shell in the kernel, run some programs and drivers.
     shell();
@@ -100,6 +100,7 @@ pub extern fn kmain() -> ! {
     scheduler::run(threads);
 }
 
+#[cfg(feature = "profiler")]
 #[cfg(target_machine = "qemu-virt")]
 fn print_profile(profiler_start_time: time::SystemTime) {
     let now = time::SystemTime::now();
