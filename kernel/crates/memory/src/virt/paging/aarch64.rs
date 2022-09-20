@@ -309,7 +309,9 @@ macro_rules! define_root_page_table {
                                 NonZeroUsize::new(mem::align_of::<$table_root>()).unwrap()
                             )?;
                             unsafe {
-                                <$table_root>::identity_map(table_block.index(0), regions)?;
+                                let table_ptr = table_block.index(0);
+                                <$table_root>::make_new(table_ptr);
+                                <$table_root>::identity_map(table_ptr, regions)?;
                             }
                             mem::forget(mem::replace(&mut root.internals, RootPageTableInternal::$table(table_block)));
                         },
@@ -1666,7 +1668,7 @@ extern fn init_page_tables(page_size: usize, max_virt_bits: u8, max_phys_bits: u
     match ROOT_PAGE_TABLE.load(Ordering::Acquire) {
         root_ptr if !root_ptr.is_null() => return root_ptr as *const c_void,
         _ => {}
-    }
+    };
 
     // Save the page size and numbers of addressable bits for later.
     match PAGE_SIZE.compare_exchange(0, page_size, Ordering::AcqRel, Ordering::Acquire) {
