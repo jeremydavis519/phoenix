@@ -50,7 +50,8 @@ pub mod syscall;
 #[cfg(target_arch = "aarch64")]
 pub mod thread;
 
-#[cfg(not(feature = "no-start"))]
+#[cfg(target_arch = "aarch64")]
+#[cfg(not(any(feature = "no-start", test)))]
 #[lang = "start"]
 fn lang_start<T: 'static+ProcessReturnValue>(
     main: fn() -> T,
@@ -58,7 +59,7 @@ fn lang_start<T: 'static+ProcessReturnValue>(
     _argv: *const *const u8
 ) -> isize {
     let retval = main().retval();
-    syscall::process_exit(retval);
+    syscall::process_exit(retval)
 }
 
 /// A value that can be returned from `main`.
