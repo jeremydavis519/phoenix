@@ -168,11 +168,14 @@ impl<T: Read> Iterator for Bytes<T> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut buf = [0u8; 1];
-        match self.reader.read(&mut buf) {
-            Ok(0) => None,
-            Ok(1) => Some(Ok(buf[0])),
-            Ok(_) => panic!("{}", Text::ReadPastBuffer),
-            Err(e) => Some(Err(e))
+        loop {
+            match self.reader.read(&mut buf) {
+                Ok(0) => return None,
+                Ok(1) => return Some(Ok(buf[0])),
+                Ok(_) => panic!("{}", Text::ReadPastBuffer),
+                Err(e) if e.kind() == ErrorKind::Interrupted => {},
+                Err(e) => return Some(Err(e)),
+            };
         }
     }
 }
