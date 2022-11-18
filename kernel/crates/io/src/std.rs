@@ -113,7 +113,8 @@ pub trait Read {
     /// Reads bytes into the given buffer until either it is filled or an error occurs.
     ///
     /// # Returns
-    /// `Ok(x)` after having read `x` bytes into the buffer. `Ok(0)` is possible.
+    /// `Ok(x)` after having read `x` bytes into the buffer. `Ok(0)` is possible and indicates that
+    /// either an EOF was reached or the provided buffer was 0 bytes long.
     ///
     /// `Err` if an error prevents reading even one byte.
     fn read(&mut self, buf: &mut [u8]) -> Result<usize>;
