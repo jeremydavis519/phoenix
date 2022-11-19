@@ -123,7 +123,7 @@ test:
 	CARGO_FEATURES="$(CARGO_FEATURES),self-test" $(MAKE)
 
 kernel: $(ARCH_OBJ) cargo
-	@mkdir -p "$(shell dirname $@)"
+	mkdir -p "$(shell dirname $(KERNEL_BIN))"
 	$(LINKER) $(LD_PARAMS) $(LD_RELEASE) -o "$(KERNEL_BIN).elf" -T $(LINKER_SCRIPT) $(KERNEL_LIB)
 	$(OBJCOPY) $(OBJCOPY_PARAMS) "$(KERNEL_BIN).elf" "$(KERNEL_BIN)"
 
