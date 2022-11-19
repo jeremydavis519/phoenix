@@ -792,7 +792,7 @@ macro_rules! impl_branch_table {
                     <$next>::make_new(subtables.index(i) as *mut $next);
                 }
 
-                let mut subtable_addr = subtables.index(0) as usize;
+                let mut subtable_addr = subtables.get_ptr_phys(0).as_addr_phys();
                 for &(base, size, region_type, shareability) in regions {
                     subtable_addr = Self::identity_map_single_region(&mut *table, base, size, region_type, shareability, subtable_addr);
                 }
@@ -982,10 +982,7 @@ macro_rules! impl_branch_table {
                         unsafe {
                             <$next>::make_new(subtable_block.index(0));
                         }
-                        // FIXME: We should cast through `PhysPtr` here, and throughout this file.
-                        // We've assumed many times that the kernel's address space is
-                        // identity-mapped.
-                        let subtable_addr = subtable_block.index(0) as usize; 
+                        let subtable_addr = subtable_block.get_ptr_phys(0).as_addr_phys();
                         let access_flags = match exception_level {
                             ExceptionLevel::El0 => PageTableEntry::PXN,
                             ExceptionLevel::El1 => PageTableEntry::UXN | PageTableEntry::EL1
@@ -1020,24 +1017,24 @@ macro_rules! impl_branch_table {
                                 mem::forget(subtable_block);
                             },
                             Err(desc) => {
-                                unsafe {
-                                    let subtable_addr = desc.table.address($granule_size) as usize;
-                                    let subtable = &*(subtable_addr as *const $next);
-                                    if let Err(next_addr) = subtable.map(
-                                            addr_phys,
-                                            addr_virt,
-                                            subsize,
-                                            exception_level,
-                                            asid,
-                                            page_flags,
-                                            expected
-                                    ) {
-                                        // At least one page has been mapped in this block.
-                                        if let Some(mapped_size) = NonZeroUsize::new(addr_virt - virt_base) {
-                                            self.unmap(virt_base, mapped_size, asid, expected);
-                                        }
-                                        return Err(next_addr);
+                                let subtable = unsafe {
+                                    &*PhysPtr::<$next, *const $next>::from_addr_phys(desc.table.address($granule_size) as usize)
+                                        .as_virt_unchecked()
+                                };
+                                if let Err(next_addr) = subtable.map(
+                                        addr_phys,
+                                        addr_virt,
+                                        subsize,
+                                        exception_level,
+                                        asid,
+                                        page_flags,
+                                        expected
+                                ) {
+                                    // At least one page has been mapped in this block.
+                                    if let Some(mapped_size) = NonZeroUsize::new(addr_virt - virt_base) {
+                                        self.unmap(virt_base, mapped_size, asid, expected);
                                     }
+                                    return Err(next_addr);
                                 }
                             }
                         };
@@ -1077,8 +1074,11 @@ macro_rules! impl_branch_table {
                     if subtable_entry.contains(PageTableEntry::ONE) {
                         // Delegate the task to the subtable.
                         if let Some(size) = NonZeroUsize::new(usize::min(end_virt, addr_virt + block_size) - addr_virt) {
-                            let subtable_ptr = subtable_entry.address($granule_size) as usize as *mut $next;
-                            unsafe { (*subtable_ptr).unmap(addr_virt, size, asid, new_entry) };
+                            let subtable = unsafe {
+                                &mut *PhysPtr::<$next, *mut $next>::from_addr_phys(subtable_entry.address($granule_size) as usize)
+                                    .as_virt_unchecked()
+                            };
+                            subtable.unmap(addr_virt, size, asid, new_entry);
                         }
                     } else if unsafe { desc.page.contains(PageEntry::ONE) } {
                         // Unmap the page.
