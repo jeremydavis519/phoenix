@@ -833,7 +833,7 @@ macro_rules! impl_branch_table {
                         };
                         let new_descriptor = Descriptor {
                             page: PageEntry::UXN
-                                | PageEntry::from_address(addr as u64).unwrap()
+                                | PageEntry::from_address(addr as u64)
                                 | PageEntry::ACCESSED
                                 | shareability_flags
                                 | type_flags
@@ -864,7 +864,7 @@ macro_rules! impl_branch_table {
                         // to a subtable.
                         let new_descriptor = Descriptor {
                             table: PageTableEntry::UXN
-                                | PageTableEntry::from_address(subtable_addr as u64).unwrap()
+                                | PageTableEntry::from_address(subtable_addr as u64)
                                 | PageTableEntry::ONE
                         };
                         match (*dest).entries[index].compare_exchange(Descriptor { table: PageTableEntry::UNMAPPED },
@@ -946,7 +946,7 @@ macro_rules! impl_branch_table {
                         // We can map a whole large page here.
                         let new_descriptor = Descriptor {
                             page: page_flags
-                                | PageEntry::from_address(addr_phys.unwrap_or(0) as u64 & max_virt_bits_mask).unwrap()
+                                | PageEntry::from_address(addr_phys.unwrap_or(0) as u64 & max_virt_bits_mask)
                         };
                         match self.entries[index].compare_exchange(Descriptor { page: expected },
                                 new_descriptor, Ordering::AcqRel, Ordering::Acquire) {
@@ -989,7 +989,7 @@ macro_rules! impl_branch_table {
                         };
                         let new_descriptor = Descriptor {
                             table: access_flags
-                                | PageTableEntry::from_address(subtable_addr as u64).unwrap()
+                                | PageTableEntry::from_address(subtable_addr as u64)
                                 | PageTableEntry::ONE
                         };
                         let subsize = NonZeroUsize::new(
@@ -1260,7 +1260,7 @@ macro_rules! impl_leaf_table {
                             RegionType::Rom => PageEntry::normal_memory(),
                             RegionType::Mmio => PageEntry::device_memory() | PageEntry::UXN,
                         };
-                        let new_entry = PageEntry::from_address(base as u64).unwrap()
+                        let new_entry = PageEntry::from_address(base as u64)
                             | type_flags
                             | PageEntry::PXN
                             | PageEntry::SHAREABLE
@@ -1330,7 +1330,7 @@ macro_rules! impl_leaf_table {
                         ShareabilityDomain::Outer => PageEntry::SHAREABLE
                     };
                     let new_entry = PageEntry::UXN
-                        | PageEntry::from_address(addr as u64).unwrap()
+                        | PageEntry::from_address(addr as u64)
                         | PageEntry::ACCESSED
                         | shareability_flags
                         | type_flags
@@ -1394,7 +1394,7 @@ macro_rules! impl_leaf_table {
 
                     // Map the next page.
                     let new_entry = page_flags
-                        | PageEntry::from_address(addr_phys.unwrap_or(0) as u64).unwrap();
+                        | PageEntry::from_address(addr_phys.unwrap_or(0) as u64);
                     match self.entries[index].compare_exchange(expected, new_entry, Ordering::AcqRel, Ordering::Acquire) {
                         Ok(_) => {}, // Success!
                         Err(entry) => {
@@ -1638,11 +1638,11 @@ impl PageTableEntry {
         }
     }
 
-    fn from_address(addr: u64) -> Option<PageTableEntry> {
+    fn from_address(addr: u64) -> PageTableEntry {
         assert_eq!(addr & !((1 << 52) - 1), 0, "{}", Text::AddrUsesTooManyBits(addr as usize, 52));
         let addr_0_47 = addr & ((1 << 48) - 1);
         let addr_48_51 = addr & !((1 << 48) - 1);
-        PageTableEntry::from_bits(addr_0_47 | (addr_48_51 >> 36))
+        PageTableEntry::from_bits(addr_0_47 | (addr_48_51 >> 36)).unwrap()
     }
 
     /*fn children_count(&self) -> u64 {
@@ -1685,11 +1685,11 @@ impl PageEntry {
         }
     }
 
-    fn from_address(addr: u64) -> Option<PageEntry> {
+    fn from_address(addr: u64) -> PageEntry {
         assert_eq!(addr & !((1 << 52) - 1), 0, "{}", Text::AddrUsesTooManyBits(addr as usize, 52));
         let addr_0_47 = addr & ((1 << 48) - 1);
         let addr_48_51 = addr & !((1 << 48) - 1);
-        PageEntry::from_bits(addr_0_47 | (addr_48_51 >> 36))
+        PageEntry::from_bits(addr_0_47 | (addr_48_51 >> 36)).unwrap()
     }
 }
 
