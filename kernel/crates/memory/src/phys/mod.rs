@@ -30,6 +30,7 @@ pub use self::map::RegionType;
 pub mod ptr;
 pub mod block;
 pub(crate) mod heap;
+pub(crate) mod slab;
 
 #[cfg(target_arch = "aarch64")]
 lazy_static! {
@@ -40,7 +41,7 @@ lazy_static! {
             asm!(
                 "mrs {}, ID_AA64MMFR0_EL1",
                 out(reg) flags,
-                options(nomem, nostack, preserves_flags)
+                options(nomem, nostack, preserves_flags),
             );
             match flags & 0xf {
                 0b0000 => 32,
@@ -50,7 +51,7 @@ lazy_static! {
                 0b0100 => 44,
                 0b0101 => 48,
                 0b0110 => 52,
-                _ => panic!("{}", Text::Aarch64UnrecognizedPhysAddrSize(flags))
+                _ => panic!("{}", Text::Aarch64UnrecognizedPhysAddrSize(flags)),
             }
         };
     }
@@ -69,7 +70,7 @@ lazy_static! {
             /*let mut max_address: usize = 0;
             let map = match map::memory_map() {
                 Ok(map) => map,
-                Err(()) => panic!("{}", Text::MemoryMapNotRetrieved)
+                Err(()) => panic!("{}", Text::MemoryMapNotRetrieved),
             };
             for region in map.try_read().unwrap().present_regions() {
                 let address = region.base.wrapping_add(region.size).wrapping_sub(1);
@@ -81,4 +82,11 @@ lazy_static! {
             63
         };
     }
+}
+
+// An RAII guard that frees a block of memory when it is dropped.
+#[derive(Debug)]
+pub(crate) enum Allocation<'a> {
+    Heap(self::heap::Allocation),
+    Slab(self::slab::Allocation<'a>),
 }

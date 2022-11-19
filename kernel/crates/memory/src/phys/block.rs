@@ -1,4 +1,4 @@
-/* Copyright (c) 2017-2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2017-2022 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -23,10 +23,12 @@
 //! entire block is present in virtual memory at all times.
 
 use {
+    core::mem,
+
     i18n::Text,
 
     crate::phys::{
-        heap::Allocation,
+        Allocation,
         ptr::PhysPtr
     }
 };
@@ -42,7 +44,7 @@ pub struct BlockMut<T> {
     size: usize,
 
     /// An object that will free this block when dropped, or `None` for a zero-sized block.
-    _allocation: Option<Allocation>
+    allocation: Option<Allocation<'static>>,
 }
 
 /// A block of physical memory that is specifically for memory-mapped I/O rather than RAM.
@@ -59,7 +61,7 @@ pub struct Mmio<T> {
     size: usize,
 
     /// An object that will free this block when dropped, or `None` for a zero-sized block.
-    _allocation: Option<Allocation>
+    allocation: Option<Allocation<'static>>,
 }
 
 // impl<T> !Sync for BlockMut<T> {} // This type provides internal mutability with no thread-safety.
@@ -76,13 +78,9 @@ macro_rules! impl_phys_block_common {
             pub(crate) const fn new(
                     base: PhysPtr<T, *mut T>,
                     size: usize,
-                    allocation: Option<Allocation>
+                    allocation: Option<Allocation<'static>>
             ) -> $generic<T> {
-                $generic {
-                    base,
-                    size,
-                    _allocation: allocation
-                }
+                $generic { base, size, allocation }
             }
 
             /// Returns the base address of the block.
@@ -113,6 +111,18 @@ macro_rules! impl_phys_block_common {
                 assert!(index < self.size(),
                     "{}", Text::PhysBlockIndexOOB(self.base.as_addr_phys(), self.size(), index));
                 unsafe { self.base.add(index) }
+            }
+
+            /// Unsafely transmutes a `$generic<T>` into a `$generic<U>`. The contents of memory are
+            /// left unchanged by this operation, so it can't guarantee in general that the `U`
+            /// values will be sensible, or even valid. Always make sure you know why you need to
+            /// use this function before you decide to use it.
+            pub unsafe fn transmute<U>(mut self) -> $generic<U> {
+                $generic {
+                    base: PhysPtr::<U, *mut U>::from_addr_phys(self.base.as_addr_phys()),
+                    size: self.size * mem::size_of::<T>() / mem::size_of::<U>(),
+                    allocation: mem::replace(&mut self.allocation, None),
+                }
             }
         }
 

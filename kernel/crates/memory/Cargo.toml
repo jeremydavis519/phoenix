@@ -16,6 +16,7 @@ libphoenix = { path = "../../../libphoenix", default-features = false, features 
 
 phoenix-kernel-collections = { path = "../collections" }
 phoenix-kernel-i18n = { path = "../i18n" }
+phoenix-kernel-locks = { path = "../locks" }
 phoenix-kernel-macros-unreachable = { path = "../macros/unreachable" }
 phoenix-kernel-shared = { path = "../shared" }
 phoenix-kernel-tagged-ptr = { path = "../tagged-ptr" }

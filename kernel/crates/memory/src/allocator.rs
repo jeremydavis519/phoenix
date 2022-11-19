@@ -20,33 +20,33 @@
 //! as the global allocator allows most of the kernel to use abstractions like `Box`, `Vec`, and
 //! `String` by importing them from the `alloc` crate.
 
-// PERF: Implement multiple levels of heaps. The thread-safe, lock-free, linked-list-based heap we
-//       have now is extremely flexible, but it seems like it would be slow for lots of small
-//       allocations. Instead, we can use it to allocate large chunks of CPU-local memory that can
-//       be managed by a faster heap (perhaps based on a bitmap or a stack of free pages) that
-//       doesn't have to be thread-safe.
-
 // TODO: Write a low-priority daemon that tests all of the system's RAM, and prefer RAM that's been
 //       tested when fulfilling malloc requests. Don't block until the RAM is tested, though--it's
 //       probably fine, and the user would notice that slow-down. Maybe we can also have a boot
 //       option to test all of the system's RAM before allowing the heap to be used.
 
 use {
+    alloc::alloc::{Layout, Allocator, AllocError},
     core::{
-        alloc::{Layout, Allocator, AllocError},
         any::type_name,
         mem,
         num::NonZeroUsize,
-        ptr::{self, NonNull}
+        ptr::{self, NonNull},
+        sync::atomic::{AtomicPtr, AtomicUsize, Ordering},
     },
 
     libphoenix::{profiler_probe, profiler_setup},
 
-    crate::phys::{
-        block::{BlockMut, Mmio},
-        heap,
-        ptr::PhysPtr
-    }
+    crate::{
+        phys::{
+            Allocation,
+            block::{BlockMut, Mmio},
+            heap,
+            ptr::PhysPtr,
+            slab::SlabAllocator,
+        },
+        virt::paging::page_size,
+    },
 };
 
 profiler_setup!();
@@ -75,15 +75,15 @@ impl AllMemAlloc {
             "size = {:#x}, size of {} = {:#x}", size, type_name::<T>(), mem::size_of::<T>()
         );
 
-        let node = if let Some(size) = NonZeroUsize::new(size) {
-            Some(heap::reserve_mmio(PhysPtr::<u8, *mut _>::from_addr_phys(base), size)?)
+        let allocation = if let Some(size) = NonZeroUsize::new(size) {
+            Some(Allocation::Heap(heap::reserve_mmio(PhysPtr::<u8, *mut _>::from_addr_phys(base), size)?))
         } else {
             None
         };
         let block = Mmio::<T>::new(
             PhysPtr::<_, *mut _>::from_addr_phys(base),
             size / mem::size_of::<T>(),
-            node
+            allocation,
         );
         profiler_probe!(ENTRANCE);
         Ok(block)
@@ -107,9 +107,57 @@ impl AllMemAlloc {
             "size = {:#x}, size of {} = {:#x}", size, type_name::<T>(), mem::size_of::<T>()
         );
 
-        let (base, node) = if let Some(size) = NonZeroUsize::new(size) {
-            let (ptr, node) = heap::malloc(size, align)?;
-            (ptr.as_addr_phys(), Some(node))
+        let page_size = page_size();
+        if size == page_size && align.get() == page_size {
+            // Try using a slab allocator anytime we need a page.
+            let mut allocators = SLAB_ALLOCATORS.load(Ordering::Acquire);
+            while !allocators.is_null() {
+                let allocator = unsafe { &(*allocators).head };
+                match allocator.try_alloc() {
+                    Ok(block) => {
+                        profiler_probe!(ENTRANCE);
+                        return unsafe { Ok(BlockMut::transmute(block)) };
+                    },
+                    Err(_) => allocators = unsafe { (*allocators).tail.load(Ordering::Acquire) },
+                };
+            }
+
+            // Try making a new slab allocator if none of the existing ones could take our request.
+            let mut allocators = SLAB_ALLOCATORS.load(Ordering::Acquire);
+            if let Ok(new_allocator_node) = SlabAllocatorList::try_new(allocators) {
+                let new_allocator_node_ptr = new_allocator_node as *mut _;
+
+                // Allocating a slab can't fail now because the only reference to the allocator is
+                // stored in a local variable and we know that it has some free slabs.
+                let block = new_allocator_node.head.try_alloc()
+                    .expect("new slab allocator failed to allocate a slab");
+
+                // Prepend the new allocator to the list. (This is better than appending because it
+                // ensures that the first allocator in the list will usually have some free slabs.)
+                loop {
+                    match SLAB_ALLOCATORS.compare_exchange_weak(
+                            allocators,
+                            new_allocator_node_ptr,
+                            Ordering::AcqRel,
+                            Ordering::Acquire,
+                    ) {
+                        Ok(_) => break,
+                        Err(x) => {
+                            allocators = x;
+                            new_allocator_node.tail.store(allocators, Ordering::Release);
+                        },
+                    };
+                }
+
+                profiler_probe!(ENTRANCE);
+                return unsafe { Ok(BlockMut::transmute(block)) };
+            }
+        }
+
+        // As a last resort, try allocating directly from the heap.
+        let (base, allocation) = if let Some(size) = NonZeroUsize::new(size) {
+            let (ptr, allocation) = heap::malloc(size, align)?;
+            (ptr.as_addr_phys(), Some(Allocation::Heap(allocation)))
         } else {
             // No need to touch the heap if we're allocating zero bytes.
             (align.get(), None)
@@ -117,7 +165,7 @@ impl AllMemAlloc {
         let block = BlockMut::<T>::new(
             PhysPtr::<_, *mut _>::from_addr_phys(base),
             size / mem::size_of::<T>(),
-            node
+            allocation,
         );
         profiler_probe!(ENTRANCE);
         Ok(block)
@@ -132,7 +180,8 @@ impl AllMemAlloc {
     ///   * `Ok(block)` if the block was successfully reserved, where `block` is a `BlockMut` representing
     ///         the reserved block.
     ///   * `Err(AllocErr)` on failure.
-    pub fn malloc_low<T>(&self, size: usize, align: NonZeroUsize, max_bits: usize) -> Result<BlockMut<T>, AllocError> {
+    pub fn malloc_low<T>(&self, size: usize, align: NonZeroUsize, max_bits: usize)
+            -> Result<BlockMut<T>, AllocError> {
         profiler_probe!(=> ENTRANCE);
         assert_eq!(
             align.get() % mem::align_of::<T>(), 0,
@@ -148,9 +197,9 @@ impl AllMemAlloc {
             return Err(AllocError);
         }
 
-        let (base, node) = if let Some(size) = NonZeroUsize::new(size) {
-            let (ptr, node) = heap::malloc_low(size, align, max_bits)?;
-            (ptr.as_addr_phys(), Some(node))
+        let (base, allocation) = if let Some(size) = NonZeroUsize::new(size) {
+            let (ptr, allocation) = heap::malloc_low(size, align, max_bits)?;
+            (ptr.as_addr_phys(), Some(Allocation::Heap(allocation)))
         } else {
             // No need to touch the heap if we're allocating zero bytes.
             (align.get(), None)
@@ -158,7 +207,7 @@ impl AllMemAlloc {
         let block = BlockMut::<T>::new(
             PhysPtr::<_, *mut _>::from_addr_phys(base),
             size / mem::size_of::<T>(),
-            node
+            allocation,
         );
         profiler_probe!(ENTRANCE);
         Ok(block)
@@ -170,13 +219,32 @@ impl AllMemAlloc {
     /// the block.
     pub fn free<T>(&self, ptr: *mut T) {
         profiler_probe!(=> ENTRANCE);
+
+        let phys_ptr = PhysPtr::<_, *mut _>::from_virt(ptr as *mut u8);
+        let phys_addr = phys_ptr.as_addr_phys();
+
         // TODO: It might be useful to keep a hash table of recently allocated blocks. Then, we
         // could find those ones in constant time and only use this linear-time alternative as a
         // fallback for when the relevant entry in that table has been overwritten. The hash table
         // should be stored in the AllMemAlloc, not the heap, because that optimization will be useful
         // only for blocks that have been allocated by `Allocator::allocate`. In all other cases, we can
         // assume the block will be dropped, which will deallocate it.
-        heap::dealloc(PhysPtr::<_, *mut _>::from_virt(ptr as *mut u8));
+
+        // Free the block with a slab allocator if it was allocated from one.
+        let mut allocators = SLAB_ALLOCATORS.load(Ordering::Acquire);
+        while !allocators.is_null() {
+            unsafe {
+                if (*allocators).head.owns_slab(phys_addr) {
+                    (*allocators).head.free(phys_addr);
+                    profiler_probe!(ENTRANCE);
+                    return;
+                }
+                allocators = (*allocators).tail.load(Ordering::Acquire);
+            }
+        }
+
+        // Otherwise, the block must have been allocated directly on the heap.
+        heap::dealloc(phys_ptr);
         profiler_probe!(ENTRANCE);
     }
 }
@@ -275,3 +343,94 @@ unsafe impl Allocator for AllMemAlloc {
         }
     }
 }
+
+// Slab allocators for fast page-sized allocations
+
+#[derive(Debug)]
+struct SlabAllocatorList {
+    head: SlabAllocator,
+    tail: AtomicPtr<SlabAllocatorList>,
+
+    // This must be last to ensure it is dropped last.
+    _self_allocation: heap::Allocation,
+}
+
+static SLAB_ALLOCATORS: AtomicPtr<SlabAllocatorList> = AtomicPtr::new(ptr::null_mut());
+static MAX_SLABS_PER_ALLOCATOR: usize = 256;
+
+impl SlabAllocatorList {
+    fn try_new(tail: *mut SlabAllocatorList) -> Result<&'static mut Self, AllocError> {
+        let page_size = page_size();
+
+        // Allocate an arena and a buffer for as many slabs as possible.
+        let mut slabs_count = MAX_SLABS_PER_ALLOCATOR;
+        loop {
+            match heap::malloc(
+                        unsafe { NonZeroUsize::new_unchecked(slabs_count * page_size) },
+                        unsafe { NonZeroUsize::new_unchecked(page_size) },
+                    )
+                    .map(|(arena_ptr, allocation)| BlockMut::<u8>::new(
+                        PhysPtr::<_, *mut _>::from_addr_phys(arena_ptr.as_addr_phys()),
+                        slabs_count * page_size,
+                        Some(Allocation::Heap(allocation)),
+                    ))
+                    .and_then(|arena|
+                        heap::malloc(
+                            unsafe { NonZeroUsize::new_unchecked(mem::size_of::<AtomicUsize>() * slabs_count) },
+                            unsafe { NonZeroUsize::new_unchecked(mem::align_of::<AtomicUsize>()) },
+                        )
+                        .map(|(buf_ptr, allocation)| BlockMut::<AtomicUsize>::new(
+                            PhysPtr::<_, *mut _>::from_addr_phys(buf_ptr.as_addr_phys()),
+                            slabs_count,
+                            Some(Allocation::Heap(allocation)),
+                        ))
+                        .map(|buffer| (arena, buffer))
+                    )
+                    .and_then(|(arena, buffer)|
+                        heap::malloc(
+                            unsafe { NonZeroUsize::new_unchecked(mem::size_of::<Self>()) },
+                            unsafe { NonZeroUsize::new_unchecked(mem::align_of::<Self>()) },
+                        )
+                        .map(|(allocs_ptr, allocation)| (arena, buffer, allocs_ptr, allocation))
+                    ) {
+                Ok((arena, buffer, allocs_ptr, allocation)) => {
+                    let allocators = unsafe { &mut *(allocs_ptr.as_virt_unchecked() as *mut SlabAllocatorList) };
+                    mem::forget(mem::replace(
+                        allocators,
+                        Self {
+                            head: SlabAllocator::new(arena, buffer, unsafe { NonZeroUsize::new_unchecked(page_size) }),
+                            tail: AtomicPtr::new(tail),
+                            _self_allocation: allocation,
+                        },
+                    ));
+                    return Ok(allocators);
+                },
+                Err(AllocError) => {
+                    if slabs_count == 1 {
+                        // We can't even make a slab allocator for one page.
+                        return Err(AllocError);
+                    }
+                    // Retry with a smaller number of slabs.
+                    slabs_count /= 2;
+                    continue;
+                },
+            };
+        }
+    }
+}
+
+impl Drop for SlabAllocatorList {
+    fn drop(&mut self) {
+        let tail = self.tail.load(Ordering::Acquire);
+        if !tail.is_null() {
+            unsafe { tail.drop_in_place(); }
+        }
+    }
+}
+
+// TODO: Bump allocators for smaller-than-page-sized allocations
+//       Make a bump allocator from a slab for smaller-than-a-page allocations. Keep using that bump
+//       allocator until the next allocation would overflow, then make a new one. After a given bump
+//       allocator has been made obsolete in this way, whenever everything in that slab has been freed,
+//       free the slab. A bump allocator can handle deallocation just by adding to an atomic number of
+//       bytes freed.
