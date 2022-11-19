@@ -201,6 +201,7 @@ fn device_claim(
 
     let dev_path = match UserspaceStr::from_raw_parts(
             root_page_table,
+            thread.exec_image.virt_reader(),
             dev_name_userspace_addr,
             dev_name_len,
     ) {

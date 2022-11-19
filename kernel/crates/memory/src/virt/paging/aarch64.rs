@@ -272,12 +272,17 @@ macro_rules! define_root_page_table {
 
             /// Returns an address in kernelspace that is mapped to the same byte as the given address
             /// in userspace.
-            pub fn userspace_addr_to_kernel_addr(&self, userspace_addr: usize) -> Option<usize> {
+            pub fn userspace_addr_to_kernel_addr<E: FnOnce(usize, &mut [u8]) -> Result<(), ()>>(
+                &self,
+                userspace_addr: usize,
+                region_type: RegionType,
+                read_exe_file: E,
+            ) -> Option<usize> {
                 let phys_addr = match self.internals {
                     $(
                         RootPageTableInternal::$table(ref table_block) => {
                             let table = unsafe { &mut *table_block.index(0) };
-                            table.virt_addr_to_phys_addr(userspace_addr)?
+                            table.virt_addr_to_phys_addr(userspace_addr, region_type, read_exe_file)?
                         }
                     ),*
                 };
@@ -703,7 +708,12 @@ macro_rules! impl_branch_table {
                 }
             }
 
-            fn virt_addr_to_phys_addr(&self, virt_addr: usize) -> Option<usize> {
+            fn virt_addr_to_phys_addr<E: FnOnce(usize, &mut [u8]) -> Result<(), ()>>(
+                &self,
+                virt_addr: usize,
+                region_type: RegionType,
+                read_exe_file: E,
+            ) -> Option<usize> {
                 let block_size = 1 << $bits_lo;
                 let page_size = page_size();
                 let bigger_block_size = 2 << $bits_hi;
@@ -715,7 +725,7 @@ macro_rules! impl_branch_table {
                 let desc = self.entries[index].load(Ordering::Acquire);
                 if unsafe { desc.table.contains(PageTableEntry::ONE) } {
                     let subtable = unsafe { &mut *(desc.table.address($granule_size) as *mut $next) };
-                    subtable.virt_addr_to_phys_addr(virt_addr)
+                    subtable.virt_addr_to_phys_addr(virt_addr, region_type, read_exe_file)
                 } else if unsafe { desc.page.contains(PageEntry::ONE) } {
                     let base = unsafe { desc.page.address($granule_size) } as usize;
                     Some(base + virt_addr % block_size)
@@ -1194,7 +1204,12 @@ macro_rules! impl_leaf_table {
                 }
             }
 
-            fn virt_addr_to_phys_addr(&self, virt_addr: usize) -> Option<usize> {
+            fn virt_addr_to_phys_addr<E: FnOnce(usize, &mut [u8]) -> Result<(), ()>>(
+                &self,
+                virt_addr: usize,
+                region_type: RegionType,
+                read_exe_file: E,
+            ) -> Option<usize> {
                 let block_size = 1 << $bits_lo;
                 let page_size = page_size();
                 let bigger_block_size = 2 << $bits_hi;
@@ -1202,15 +1217,69 @@ macro_rules! impl_leaf_table {
 
                 assert!(page_size.is_power_of_two(), "page size {:#x} is not a power of 2", page_size);
 
+                enum ReaderOrPage<F> {
+                    Reader(F),
+                    Page(BlockMut<u8>),
+                }
+                use ReaderOrPage::*;
+
                 let index = (virt_addr - bigger_base) / block_size;
-                let entry = self.entries[index].load(Ordering::Acquire);
-                if entry.contains(PageEntry::ONE | PageEntry::LEVEL_3) {
-                    let base = entry.address($granule_size) as usize;
-                    Some(base + virt_addr % block_size)
-                } else {
-                    // FIXME: If the page isn't currently in RAM (i.e. it's in a swapfile or the executable file),
-                    //        load it into RAM and return that address.
-                    None
+                let mut exe_reader_or_page = Reader(read_exe_file);
+                loop {
+                    let entry = self.entries[index].load(Ordering::Acquire);
+                    if entry.contains(PageEntry::ONE) {
+                        assert!(entry.contains(PageEntry::LEVEL_3));
+                        let base = entry.address($granule_size) as usize;
+                        return Some(base + virt_addr % block_size);
+                    } else if entry.contains(PageEntry::IN_SWAPFILE) {
+                        // FIXME: Read the page from the swapfile.
+                        todo!("Read the page from the swapfile.");
+                    } else if entry.contains(PageEntry::IN_EXE_FILE) {
+                        // Read the page from the executable file.
+                        let page = match exe_reader_or_page {
+                            Reader(read_exe_file) => {
+                                let page = match AllMemAlloc.malloc(page_size, unsafe { NonZeroUsize::new_unchecked(page_size) }) {
+                                    Ok(page) => page,
+                                    Err(AllocError) => return None, // FIXME: Swap out another page and retry.
+                                };
+
+                                let virt_base = virt_addr & !(page_size - 1);
+                                let buffer = unsafe { slice::from_raw_parts_mut(page.index(0), page.size()) };
+                                if read_exe_file(virt_base, buffer).is_err() { return None; }
+
+                                page
+                            },
+                            Page(page) => page,
+                        };
+
+                        // Map the page.
+                        let base = page.base().as_addr_phys();
+                        exe_reader_or_page = Page(page);
+                        let type_flags = match region_type {
+                            RegionType::Ram => PageEntry::normal_memory() | PageEntry::UXN | PageEntry::DBM,
+                            RegionType::Rom => PageEntry::normal_memory(),
+                            RegionType::Mmio => PageEntry::device_memory() | PageEntry::UXN,
+                        };
+                        let new_entry = PageEntry::from_address(base as u64).unwrap()
+                            | type_flags
+                            | PageEntry::PXN
+                            | PageEntry::SHAREABLE
+                            | PageEntry::NOT_DIRTY
+                            | PageEntry::EL0
+                            | PageEntry::LEVEL_3
+                            | PageEntry::ONE;
+                        match self.entries[index].compare_exchange(entry, new_entry, Ordering::AcqRel, Ordering::Acquire) {
+                            Ok(_) => {},
+                            Err(_) => continue, // Someone else already mapped the page.
+                        };
+
+                        // FIXME: Attach the block to the process instead of forgetting it.
+                        mem::forget(exe_reader_or_page);
+
+                        return Some(base + virt_addr % page_size);
+                    } else {
+                        return None;
+                    }
                 }
             }
 

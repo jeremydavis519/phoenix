@@ -61,7 +61,12 @@
         pub fn map_zeroed_from_exe_file(&self, _virt_base: usize, _size: NonZeroUsize) -> Result<(), ()> {
             unimplemented!()
         }
-        pub fn userspace_addr_to_kernel_addr(&self, _userspace_addr: usize) -> Option<usize> {
+        pub fn userspace_addr_to_kernel_addr<E: FnOnce(usize, &mut [u8]) -> Result<(), ()>>(
+            &self,
+            _userspace_addr: usize,
+            _region_type: RegionType,
+            _read_exe_file: E,
+        ) -> Option<usize> {
             unimplemented!()
         }
     }

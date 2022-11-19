@@ -39,6 +39,7 @@ use {
         slice,
         sync::atomic::{AtomicBool, Ordering}
     },
+    io::{Read, Seek},
     libdriver::{BusType, DeviceContents, Resource},
     memory::{
         allocator::AllMemAlloc,
@@ -141,7 +142,11 @@ impl DeviceTree {
     ///   already been claimed, and we successfully gave the process access to the device's
     ///   resources. `addr` is the userspace address of the constructed `DeviceContents` object.
     /// * `Err(())` otherwise.
-    pub fn claim_device(&self, path: UserspaceStr, root_page_table: &RootPageTable) -> Result<usize, ()> {
+    pub fn claim_device<E: Read+Seek+Clone>(
+            &self,
+            path: UserspaceStr<E>,
+            root_page_table: &RootPageTable,
+    ) -> Result<usize, ()> {
         // FIXME: Check the process's permissions during this tree walk. (We need to do it carefully,
         //        since we're not copying the string from userspace into the kernel. It needs to be
         //        done one byte at a time, at the same time as we're comparing a byte of the given

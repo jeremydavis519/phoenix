@@ -1,4 +1,4 @@
-/* Copyright (c) 2018-2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2018-2022 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -197,6 +197,54 @@ impl<T: Read+Seek> ExecImage<T> {
     /// Borrows the root page table for the address space associated with this file's process.
     pub fn page_table(&self) -> &RootPageTable {
         unsafe { &*self.page_table.index(0) }
+    }
+
+    /// Makes a reader object that can seek to virtual addresses rather than to file offsets.
+    pub fn virt_reader(&self) -> VirtReader<'_, T> {
+        VirtReader { image: self, addr: 0 }
+    }
+}
+
+/// An object that allows reading from an executable file by seeking to virtual memory addresses
+/// within the file rather than to file offsets. This allows other crates to remain agnostic about
+/// how executable images are mapped from files to memory.
+#[derive(Debug, Copy)]
+pub struct VirtReader<'a, T: Read+Seek> {
+    image: &'a ExecImage<T>,
+    addr: usize,
+}
+
+impl<'a, T: Read+Seek> Read for VirtReader<'a, T> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self.image.reader.try_lock() {
+            Ok(mut reader) => {
+                reader.seek(SeekFrom::Start(
+                    self.addr.try_into()
+                        .map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?
+                ))?;
+                reader.read(buf)
+            },
+            Err(()) => Err(io::Error::from(io::ErrorKind::Interrupted)),
+        }
+    }
+}
+
+impl<'a, T: Read+Seek> Seek for VirtReader<'a, T> {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        match pos {
+            SeekFrom::Start(pos) => self.addr = pos as usize,
+            // Seeking from the end is interpreted as seeking from the top of the whole address space.
+            // This is equivalent to seeking from the bottom of the address space.
+            SeekFrom::End(offset) => self.addr = offset as usize,
+            SeekFrom::Current(offset) => self.addr = self.addr.wrapping_add(offset as isize as usize),
+        };
+        Ok(self.addr as u64)
+    }
+}
+
+impl<'a, T: Read+Seek> Clone for VirtReader<'a, T> {
+    fn clone(&self) -> Self {
+        Self { image: self.image, addr: self.addr }
     }
 }
 

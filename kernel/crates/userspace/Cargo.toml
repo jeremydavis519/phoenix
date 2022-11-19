@@ -8,6 +8,7 @@ edition = "2018"
 name = "userspace"
 
 [dependencies]
+phoenix-kernel-io = { path = "../io" }
 phoenix-kernel-memory = { path = "../memory" }
 
 [features]
