@@ -1325,12 +1325,12 @@ macro_rules! impl_leaf_table {
                     let type_flags = match region_type {
                         RegionType::Ram => PageEntry::normal_memory() | PageEntry::UXN | PageEntry::PXN,
                         RegionType::Rom => PageEntry::NOT_DIRTY | PageEntry::normal_memory(), // NOT_DIRTY = read-only in this context
-                        RegionType::Mmio => PageEntry::device_memory()
+                        RegionType::Mmio => PageEntry::device_memory() | PageEntry::UXN | PageEntry::PXN,
                     };
                     let shareability_flags = match shareability {
                         ShareabilityDomain::NonShareable => PageEntry::empty(),
                         ShareabilityDomain::Inner => PageEntry::SHAREABLE | PageEntry::INNER,
-                        ShareabilityDomain::Outer => PageEntry::SHAREABLE
+                        ShareabilityDomain::Outer => PageEntry::SHAREABLE,
                     };
                     let new_entry = PageEntry::UXN
                         | PageEntry::from_address(addr as u64)
@@ -1341,7 +1341,7 @@ macro_rules! impl_leaf_table {
                         | PageEntry::ONE;
                     match (*dest).entries[index].compare_exchange(PageEntry::UNMAPPED, new_entry, Ordering::AcqRel, Ordering::Acquire) {
                         Ok(_) => {}, // Success!
-                        Err(_) => {} // Already mapped. Don't overwrite it.
+                        Err(_) => {}, // Already mapped. Don't overwrite it.
                     };
 
                     addr += block_size;
