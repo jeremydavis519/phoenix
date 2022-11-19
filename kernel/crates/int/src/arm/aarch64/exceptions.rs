@@ -20,9 +20,10 @@ use {
     core::{
         arch::asm,
         convert::{TryFrom, TryInto},
-        num::NonZeroUsize
+        num::NonZeroUsize,
     },
     bitflags::bitflags,
+    volatile::Volatile,
     fs::File,
     io::printlndebug,
     macros_unreachable::unreachable_debug,
@@ -30,7 +31,7 @@ use {
     paging::{ExceptionLevel, PageStatus, TranslationLevel},
     scheduler::{Thread, ThreadStatus},
 
-    super::syscall::handle_system_call
+    super::syscall::handle_system_call,
 };
 
 bitflags! {
@@ -150,7 +151,7 @@ impl MmuIss {
 #[must_use]
 pub(crate) struct Response {
     status: ThreadStatus,
-    action: ExitAction
+    action: ExitAction,
 }
 
 #[cfg(target_endian = "big")]
@@ -158,7 +159,7 @@ pub(crate) struct Response {
 #[must_use]
 pub(crate) struct Response {
     action: ExitAction,
-    status: ThreadStatus
+    status: ThreadStatus,
 }
 
 impl Response {
@@ -197,10 +198,18 @@ pub enum ExitAction {
 // TODO: Make all of these references to `Thread`s generic somehow.
 
 #[no_mangle]
-extern fn aarch64_handle_synchronous_exception(thread: Option<&mut Thread<File>>, syndrome: Syndrome,
-        arg1: usize, arg2: usize, arg3: usize, arg4: usize, result: *mut [usize; 2], exc_level: u8) -> Response {
+extern fn aarch64_handle_synchronous_exception(
+    thread: Option<&mut Thread<File>>,
+    syndrome: Syndrome,
+    arg1: usize,
+    arg2: usize,
+    arg3: usize,
+    arg4: usize,
+    result: *mut [usize; 2],
+    exc_level: u8,
+) -> Response {
     assert!(!result.is_null());
-    let result = unsafe { &mut *result };
+    let result = Volatile::new_write_only(unsafe { &mut *result });
     let args = [arg1, arg2, arg3, arg4];
     let exc_level = ExceptionLevel::try_from(exc_level).expect("unrecognized exception level");
 

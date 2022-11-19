@@ -9,6 +9,7 @@ name = "int"
 
 [dependencies]
 bitflags = "1.0"
+volatile = "0.4"
 
 libphoenix = { path = "../../../libphoenix", default-features = false }
 

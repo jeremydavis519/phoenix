@@ -27,6 +27,10 @@ use {
         num::NonZeroUsize,
         time::Duration,
     },
+    volatile::{
+        Volatile,
+        access::WriteOnly,
+    },
     libphoenix::{
         profiler, profiler_probe, profiler_setup,
         syscall::TimeSelector,
@@ -57,30 +61,31 @@ pub(crate) fn handle_system_call(
         thread: Option<&mut Thread<File>>,
         syscall: u16,
         args: &[usize; 4],
-        result: &mut [usize; 2]
+        mut result: Volatile<&mut [usize; 2], WriteOnly>,
 ) -> Response {
+    let result1 = result.map_mut(|x| &mut x[0]);
     match SystemCall::try_from(syscall) {
         Ok(SystemCall::Thread_Exit)  => thread_exit(thread, args[0]),
         Ok(SystemCall::Thread_Sleep) => thread_sleep(thread, args[0]),
-        Ok(SystemCall::Thread_Spawn) => thread_spawn(thread, args[0], args[1] as u8, args[2], &mut result[0]),
+        Ok(SystemCall::Thread_Spawn) => thread_spawn(thread, args[0], args[1] as u8, args[2], result1),
 
         Ok(SystemCall::Process_Exit) => process_exit(thread, args[0]),
 
-        Ok(SystemCall::Device_Claim) => device_claim(thread, args[0], args[1], &mut result[0]),
+        Ok(SystemCall::Device_Claim) => device_claim(thread, args[0], args[1], result1),
 
         Ok(SystemCall::Memory_Free) => memory_free(thread, args[0]),
-        Ok(SystemCall::Memory_Alloc) => memory_alloc(thread, args[0], args[1], &mut result[0]),
+        Ok(SystemCall::Memory_Alloc) => memory_alloc(thread, args[0], args[1], result1),
         Ok(SystemCall::Memory_AllocPhys) => memory_alloc_phys(thread, args[0], args[1], args[2], result),
-        Ok(SystemCall::Memory_PageSize) => memory_page_size(&mut result[0]),
+        Ok(SystemCall::Memory_PageSize) => memory_page_size(result1),
 
-        Ok(SystemCall::Time_NowUnix) => time_now_unix(thread, args[0], args[1], &mut result[0]),
-        Ok(SystemCall::Time_NowUnixNanos) => time_now_unix_nanos(thread, args[0], args[1], &mut result[0]),
-        Ok(SystemCall::Time_ViewKernelProfile) => time_view_kernel_profile(thread, &mut result[0]),
-        Ok(SystemCall::Time_ResetKernelProfile) => time_reset_kernel_profile(thread, &mut result[0]),
+        Ok(SystemCall::Time_NowUnix) => time_now_unix(thread, args[0], args[1], result1),
+        Ok(SystemCall::Time_NowUnixNanos) => time_now_unix_nanos(thread, args[0], args[1], result1),
+        Ok(SystemCall::Time_ViewKernelProfile) => time_view_kernel_profile(thread, result1),
+        Ok(SystemCall::Time_ResetKernelProfile) => time_reset_kernel_profile(thread, result1),
 
         // TODO: Remove all of these temporary system calls.
         Ok(SystemCall::Temp_PutChar) => temp_putchar(args[0]),
-        Ok(SystemCall::Temp_GetChar) => temp_getchar(&mut result[0]),
+        Ok(SystemCall::Temp_GetChar) => temp_getchar(result1),
 
         Err(e) => {
             // TODO: Maybe distinguish between normal termination and a crash.
@@ -151,7 +156,7 @@ fn thread_spawn(
         entry_point: usize,
         mut priority: u8,
         max_stack_size: usize,
-        handle: &mut usize,
+        mut handle: Volatile<&mut usize, WriteOnly>,
 ) -> Response {
     profiler_probe!(=> ENTRANCE);
     let parent_thread = thread.expect("attempted to spawn a new kernel thread");
@@ -161,8 +166,9 @@ fn thread_spawn(
     if priority == 0 {
         priority = 1;
     }
-    *handle = scheduler::spawn_thread(parent_thread.exec_image.clone(), entry_point, max_stack_size, priority)
-        .unwrap_or(0);
+    handle.write(
+        scheduler::spawn_thread(parent_thread.exec_image.clone(), entry_point, max_stack_size, priority).unwrap_or(0)
+    );
     profiler_probe!(ENTRANCE);
     Response::eret()
 }
@@ -192,7 +198,7 @@ fn device_claim(
         thread: Option<&mut Thread<File>>,
         dev_name_userspace_addr: usize,
         dev_name_len: usize,
-        userspace_addr: &mut usize,
+        mut userspace_addr: Volatile<&mut usize, WriteOnly>,
 ) -> Response {
     profiler_probe!(=> ENTRANCE);
     let thread = thread.expect("kernel thread attempted to get a device");
@@ -208,11 +214,7 @@ fn device_claim(
         Some(path) => path,
         None => return Response::leave_userspace(ThreadStatus::Terminated) // Part of the argument is unmapped.
     };
-    *userspace_addr = match DEVICES.claim_device(dev_path, thread.exec_image.page_table()) {
-        Ok(addr) => addr,
-        // FIXME: If the thread doesn't have permission to own the device, ask the user whether it should.
-        Err(()) => 0,
-    };
+    userspace_addr.write(DEVICES.claim_device(dev_path, thread.exec_image.page_table()).unwrap_or(0));
 
     profiler_probe!(ENTRANCE);
     Response::eret()
@@ -242,7 +244,7 @@ fn memory_alloc(
     thread: Option<&mut Thread<File>>,
     size: usize,
     align: usize,
-    userspace_addr: &mut usize,
+    mut userspace_addr: Volatile<&mut usize, WriteOnly>,
 ) -> Response {
     profiler_probe!(=> ENTRANCE);
     let thread = thread.expect("kernel thread attempted to allocate memory with a system call");
@@ -255,12 +257,12 @@ fn memory_alloc(
             NonZeroUsize::new(usize::max(align, page_size)).unwrap()
     ) {
         Ok(block) => Some(block),
-        Err(AllocError) => None
+        Err(AllocError) => None,
     };
 
     let root_page_table = thread.exec_image.page_table();
 
-    *userspace_addr = match maybe_block {
+    userspace_addr.write(match maybe_block {
         Some(ref block) => {
             match root_page_table.map(
                     block.base().as_addr_phys(),
@@ -275,8 +277,8 @@ fn memory_alloc(
                 }
             }
         },
-        None => 0
-    };
+        None => 0,
+    });
 
     // FIXME: Instead of forgetting the block, attach it to the process.
     mem::forget(maybe_block);
@@ -297,7 +299,7 @@ fn memory_alloc_phys(
     size: usize,
     align: usize,
     max_bits: usize,
-    userspace_and_phys_addrs: &mut [usize; 2],
+    mut userspace_and_phys_addrs: Volatile<&mut [usize; 2], WriteOnly>,
 ) -> Response {
     profiler_probe!(=> ENTRANCE);
     let thread = thread.expect("kernel thread attempted to allocate memory with a system call");
@@ -311,12 +313,12 @@ fn memory_alloc_phys(
             max_bits
     ) {
         Ok(block) => Some(block),
-        Err(AllocError) => None
+        Err(AllocError) => None,
     };
 
     let root_page_table = thread.exec_image.page_table();
 
-    *userspace_and_phys_addrs = match maybe_block {
+    userspace_and_phys_addrs.write(match maybe_block {
         Some(ref block) => {
             let phys_addr = block.base().as_addr_phys();
             match root_page_table.map(
@@ -333,7 +335,7 @@ fn memory_alloc_phys(
             }
         },
         None => [0, 0]
-    };
+    });
 
     // FIXME: Instead of forgetting the block, attach it to the process.
     mem::forget(maybe_block);
@@ -344,9 +346,9 @@ fn memory_alloc_phys(
 
 // Returns the size of a page.
 fn memory_page_size(
-    result: &mut usize
+    mut result: Volatile<&mut usize, WriteOnly>,
 ) -> Response {
-    *result = paging::page_size();
+    result.write(paging::page_size());
     Response::eret()
 }
 
@@ -358,7 +360,7 @@ fn time_now_unix(
     thread: Option<&mut Thread<File>>,
     time_selector: usize,
     shift_amount: usize,
-    result: &mut usize,
+    mut result: Volatile<&mut usize, WriteOnly>,
 ) -> Response {
     profiler_probe!(=> ENTRANCE);
     let thread = thread.expect("kernel thread attempted to read the time with a system call");
@@ -371,7 +373,7 @@ fn time_now_unix(
 
     let time_since_epoch = thread.saved_time.duration_since(time::SystemTime::UNIX_EPOCH)
         .unwrap_or(Duration::ZERO);
-    *result = (time_since_epoch.as_secs() >> (shift_amount as u64)) as usize;
+    result.write((time_since_epoch.as_secs() >> (shift_amount as u64)) as usize);
 
     profiler_probe!(ENTRANCE);
     Response::eret()
@@ -386,7 +388,7 @@ fn time_now_unix_nanos(
     thread: Option<&mut Thread<File>>,
     time_selector: usize,
     shift_amount: usize,
-    result: &mut usize,
+    mut result: Volatile<&mut usize, WriteOnly>,
 ) -> Response {
     profiler_probe!(=> ENTRANCE);
     let thread = thread.expect("kernel thread attempted to read the time with a system call");
@@ -399,7 +401,7 @@ fn time_now_unix_nanos(
 
     let time_since_epoch = thread.saved_time.duration_since(time::SystemTime::UNIX_EPOCH)
         .unwrap_or(Duration::ZERO);
-    *result = (time_since_epoch.as_nanos() >> (shift_amount as u64)) as usize;
+    result.write((time_since_epoch.as_nanos() >> (shift_amount as u64)) as usize);
 
     profiler_probe!(ENTRANCE);
     Response::eret()
@@ -409,7 +411,7 @@ fn time_now_unix_nanos(
 // the base address of the first page.
 fn time_view_kernel_profile(
     thread: Option<&mut Thread<File>>,
-    userspace_addr: &mut usize,
+    mut userspace_addr: Volatile<&mut usize, WriteOnly>,
 ) -> Response {
     profiler_probe!(=> ENTRANCE);
     let thread = thread.expect("kernel thread attempted to read the kernel's time profile with a system call");
@@ -423,15 +425,12 @@ fn time_view_kernel_profile(
 
     let root_page_table = thread.exec_image.page_table();
 
-    *userspace_addr = if let Some(size) = NonZeroUsize::new(size) {
+    userspace_addr.write(if let Some(size) = NonZeroUsize::new(size) {
         // FIXME: Remember where this is mapped so the process can request that it be unmapped.
-        match root_page_table.map(phys_base, None, size, memory::phys::RegionType::Rom) {
-            Ok(addr) => addr,
-            Err(()) => 0
-        }
+        root_page_table.map(phys_base, None, size, memory::phys::RegionType::Rom).unwrap_or(0)
     } else {
         0
-    };
+    });
 
     profiler_probe!(ENTRANCE);
     Response::eret()
@@ -440,7 +439,7 @@ fn time_view_kernel_profile(
 // Resets the kernel's performance profile.
 fn time_reset_kernel_profile(
     thread: Option<&mut Thread<File>>,
-    result: &mut usize,
+    mut result: Volatile<&mut usize, WriteOnly>,
 ) -> Response {
     profiler_probe!(=> ENTRANCE);
     let _thread = thread.expect("kernel thread attempted to reset the kernel's time profile with a system call");
@@ -450,7 +449,7 @@ fn time_reset_kernel_profile(
 
     profiler::reset();
 
-    *result = 0; // Placeholder for maybe an actual return value
+    result.write(0); // Placeholder for maybe an actual return value
 
     profiler_probe!(ENTRANCE);
     Response::eret()
@@ -462,12 +461,12 @@ fn temp_putchar(c: usize) -> Response {
     io::print!("{}", char::try_from(c as u32).unwrap_or('?'));
     Response::eret()
 }
-fn temp_getchar(c: &mut usize) -> Response {
+fn temp_getchar(mut c: Volatile<&mut usize, WriteOnly>) -> Response {
     let mut stdin = io::STDIN.try_lock().unwrap();
     let mut buffer = [0u8; 1];
     stdin.read_exact(&mut buffer[ .. ])
         .expect("error reading from standard input");
     io::print!("{}", core::str::from_utf8(&buffer).unwrap_or("?"));
-    *c = buffer[0].into();
+    c.write(buffer[0].into());
     Response::eret()
 }
