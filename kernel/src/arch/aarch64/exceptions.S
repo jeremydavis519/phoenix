@@ -63,8 +63,6 @@ synchronous_el1_sp0:
     stp x6, x7, [sp, -16]!
     stp x0, x1, [sp, -16]!
     mov x0, 0       // Current thread (None)
-    mrs x1, ESR_EL1 // Syndrome register
-    mov x6, sp      // Where to put the return value, if any
     mov x7, 1       // Exception level
     bl aarch64_handle_synchronous_exception_indirect
     ldp x0, x1, [sp], 16
@@ -296,24 +294,33 @@ synchronous_el0_aarch64:
 
     // Before pushing anything else, we should switch to the private kernel stack. It's bigger and
     // protected from Meltdown.
+.Ls06retry:
     ldr x30, [sp, 32] // The kernel's private stack pointer was saved on the stack in scheduler.S.
     mov x19, sp // X19 = trampoline stack pointer
     mov sp, x30
 
-    stp x1, x6, [sp, -16]!
-    stp x0, x7, [sp, -16]!
+    stp x6, x7, [sp, -16]!
+    stp x0, x1, [sp, -16]!
     ldr x0, [sp, 32]  // Current thread (pushed to the stack in scheduler.S)
-    mrs x1, ESR_EL1   // Syndrome register
-    mov x6, sp        // Where to put the return value, if any
     mov x7, 0         // Exception level
     bl aarch64_handle_synchronous_exception_indirect
-    mov x30, x0
-    ldp x0, x7, [sp], 16 // X0 = return value
-    ldp x1, x6, [sp], 16
+    and x30, x0, 0xffff
+    ldp x0, x1, [sp], 16 // X0, X1 = return value
+    ldp x6, x7, [sp], 16
 
     mov sp, x19
-    tst x30, 0xff00 // 0x00nn = ERET, 0x01nn = leave userspace
-    b.eq .Ls06eret
+    cmp x30, 0x0100 // 0x00nn = ERET
+    b.lo .Ls06eret
+    cmp x30, 0x0200 // 0x01nn = leave userspace
+    b.lo .Ls06leave
+    cmp x30, 0x0300 // 0x02nn = retry syscall
+    b.lo .Ls06retry
+                    // 0x03nn = leave and retry
+    // Adjust return address before leaving
+    mrs x19, ELR_EL1
+    sub x19, x19, 4
+    msr ELR_EL1, x19
+.Ls06leave:
     and x19, x30, 0x00ff
     ldr x20, =leave_userspace
     br x20
@@ -618,6 +625,9 @@ use_kernel_root_page_table:
     ret
 
 aarch64_handle_synchronous_exception_indirect:
+    mrs x1, ESR_EL1 // Syndrome register
+    mov x6, sp      // Where to put the return value, if any
+
     stp x1, x2, [sp, -16]!
     stp x3, x4, [sp, -16]!
     stp x5, x6, [sp, -16]!

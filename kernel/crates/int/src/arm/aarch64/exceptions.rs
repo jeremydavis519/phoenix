@@ -169,6 +169,10 @@ impl Response {
     pub(crate) fn leave_userspace(status: ThreadStatus) -> Response {
         Response { action: ExitAction::LeaveUserspace, status }
     }
+
+    /*pub(crate) fn retry_syscall() -> Response {
+        Response { action: ExitAction::RetrySyscall, status: ThreadStatus::Running }
+    }*/
 }
 
 #[repr(u8)]
@@ -179,7 +183,15 @@ pub enum ExitAction {
     Eret = 0,
     // Leave userspace and execute a context switch. This action is meaningless if the exception
     // wasn't taken from userspace, so returning it is undefined behavior in that case.
-    LeaveUserspace = 1
+    LeaveUserspace = 1,
+    // Retry the system call because it couldn't be finished in constant time. This allows the
+    // scheduler to pre-empt the thread if the timer has expired.
+    #[allow(dead_code)] // TODO: Remove this marker when this variant is actually used.
+    RetrySyscall = 2,
+    // Leave userspace as with `LeaveUserspace`, but retry the system call immediately afterward.
+    // This shouldn't be returned directly by system calls; it's an implementation detail for when
+    // `RetrySyscall` results in a thread being pre-empted.
+    LeaveUserspaceAndRetrySyscall = 3,
 }
 
 // TODO: Make all of these references to `Thread`s generic somehow.
@@ -247,7 +259,16 @@ extern fn aarch64_handle_synchronous_exception(thread: Option<&mut Thread<File>>
             }
             response
         },
-        ExitAction::LeaveUserspace => response
+        ExitAction::RetrySyscall => {
+            // If the scheduling timer went off during a syscall that couldn't be finished, we
+            // should leave userspace after preparing to retry the syscall.
+            if timers::scheduling_timer_finished() {
+                printlndebug!("Scheduling timer finished during unfinished syscall");
+                response.action = ExitAction::LeaveUserspaceAndRetrySyscall;
+            }
+            response
+        },
+        ExitAction::LeaveUserspace | ExitAction::LeaveUserspaceAndRetrySyscall => response,
     }
 }
 
