@@ -56,10 +56,9 @@ synchronous_el1_sp0:
 
     // Before pushing anything else, we should switch to the private kernel stack. It's bigger and
     // protected from Meltdown.
-    ldr x19, [sp, 32] // The kernel's private stack pointer was saved on the stack in scheduler.S.
-    mov x30, sp
-    mov sp, x19
-    mov x9, x30 // X19 = trampoline stack pointer
+    ldr x30, [sp, 32] // The kernel's private stack pointer was saved on the stack in scheduler.S.
+    mov x19, sp // X19 = trampoline stack pointer
+    mov sp, x30
 
     stp x6, x7, [sp, -16]!
     stp x0, x1, [sp, -16]!
@@ -97,10 +96,9 @@ irq_el1_sp0:
 
     // Before pushing anything else, we should switch to the private kernel stack. It's bigger and
     // protected from Meltdown.
-    ldr x19, [sp, 32] // The kernel's private stack pointer was saved on the stack in scheduler.S.
-    mov x30, sp
-    mov sp, x19
-    mov x19, x30 // X19 = trampoline stack pointer
+    ldr x30, [sp, 32] // The kernel's private stack pointer was saved on the stack in scheduler.S.
+    mov x19, sp // X19 = trampoline stack pointer
+    mov sp, x30
 
     bl aarch64_handle_irq_indirect
 
@@ -130,10 +128,9 @@ fiq_el1_sp0:
 
     // Before pushing anything else, we should switch to the private kernel stack. It's bigger and
     // protected from Meltdown.
-    ldr x19, [sp, 32] // The kernel's private stack pointer was saved on the stack in scheduler.S.
-    mov x30, sp
-    mov sp, x19
-    mov x19, x30 // X19 = trampoline stack pointer
+    ldr x30, [sp, 32] // The kernel's private stack pointer was saved on the stack in scheduler.S.
+    mov x19, sp // X19 = trampoline stack pointer
+    mov sp, x30
 
     str x9, [sp, -16]!
     ldr x9, =aarch64_handle_irq
@@ -166,10 +163,9 @@ serror_el1_sp0:
 
     // Before pushing anything else, we should switch to the private kernel stack. It's bigger and
     // protected from Meltdown.
-    ldr x19, [sp, 32] // The kernel's private stack pointer was saved on the stack in scheduler.S.
-    mov x30, sp
-    mov sp, x19
-    mov x19, x30 // X19 = trampoline stack pointer
+    ldr x30, [sp, 32] // The kernel's private stack pointer was saved on the stack in scheduler.S.
+    mov x19, sp // X19 = trampoline stack pointer
+    mov sp, x30
 
     // ****** TODO
     str x9, [sp, -16]!
@@ -300,10 +296,9 @@ synchronous_el0_aarch64:
 
     // Before pushing anything else, we should switch to the private kernel stack. It's bigger and
     // protected from Meltdown.
-    ldr x19, [sp, 32] // The kernel's private stack pointer was saved on the stack in scheduler.S.
-    mov x30, sp
-    mov sp, x19
-    mov x19, x30 // X19 = trampoline stack pointer
+    ldr x30, [sp, 32] // The kernel's private stack pointer was saved on the stack in scheduler.S.
+    mov x19, sp // X19 = trampoline stack pointer
+    mov sp, x30
 
     stp x1, x6, [sp, -16]!
     stp x0, x7, [sp, -16]!
@@ -348,10 +343,9 @@ irq_el0_aarch64:
 
     // Before pushing anything else, we should switch to the private kernel stack. It's bigger and
     // protected from Meltdown.
-    ldr x19, [sp, 32] // The kernel's private stack pointer was saved on the stack in scheduler.S.
-    mov x30, sp
-    mov sp, x19
-    mov x19, x30 // X19 = trampoline stack pointer
+    ldr x30, [sp, 32] // The kernel's private stack pointer was saved on the stack in scheduler.S.
+    mov x19, sp // X19 = trampoline stack pointer
+    mov sp, x30
 
     str x0, [sp, -16]!
     bl aarch64_handle_irq_indirect
@@ -389,10 +383,9 @@ fiq_el0_aarch64:
 
     // Before pushing anything else, we should switch to the private kernel stack. It's bigger and
     // protected from Meltdown.
-    ldr x19, [sp, 32] // The kernel's private stack pointer was saved on the stack in scheduler.S.
-    mov x30, sp
-    mov sp, x19
-    mov x19, x30 // X19 = trampoline stack pointer
+    ldr x30, [sp, 32] // The kernel's private stack pointer was saved on the stack in scheduler.S.
+    mov x19, sp // X19 = trampoline stack pointer
+    mov sp, x30
 
     str x0, [sp, -16]!
     bl aarch64_handle_irq_indirect
@@ -430,10 +423,9 @@ serror_el0_aarch64:
 
     // Before pushing anything else, we should switch to the private kernel stack. It's bigger and
     // protected from Meltdown.
-    ldr x19, [sp, 32] // The kernel's private stack pointer was saved on the stack in scheduler.S.
-    mov x30, sp
-    mov sp, x19
-    mov x19, x30 // X19 = trampoline stack pointer
+    ldr x30, [sp, 32] // The kernel's private stack pointer was saved on the stack in scheduler.S.
+    mov x19, sp // X19 = trampoline stack pointer
+    mov sp, x30
 
     // ****** TODO
     str x9, [sp, -16]!
@@ -468,10 +460,9 @@ synchronous_el0_aarch32:
 
     // Before pushing anything else, we should switch to the private kernel stack. It's bigger and
     // protected from Meltdown.
-    ldr x19, [sp, 32] // The kernel's private stack pointer was saved on the stack in scheduler.S.
-    mov x30, sp
-    mov sp, x19
-    mov x19, x30 // X19 = trampoline stack pointer
+    ldr x30, [sp, 32] // The kernel's private stack pointer was saved on the stack in scheduler.S.
+    mov x19, sp // X19 = trampoline stack pointer
+    mov sp, x30
 
     // ****** TODO
     str x9, [sp, -16]!
@@ -506,10 +497,9 @@ irq_el0_aarch32:
 
     // Before pushing anything else, we should switch to the private kernel stack. It's bigger and
     // protected from Meltdown.
-    ldr x19, [sp, 32] // The kernel's private stack pointer was saved on the stack in scheduler.S.
-    mov x30, sp
-    mov sp, x19
-    mov x19, x30 // X19 = trampoline stack pointer
+    ldr x30, [sp, 32] // The kernel's private stack pointer was saved on the stack in scheduler.S.
+    mov x19, sp // X19 = trampoline stack pointer
+    mov sp, x30
 
     str x0, [sp, -16]!
     bl aarch64_handle_irq_indirect
@@ -547,10 +537,9 @@ fiq_el0_aarch32:
 
     // Before pushing anything else, we should switch to the private kernel stack. It's bigger and
     // protected from Meltdown.
-    ldr x19, [sp, 32] // The kernel's private stack pointer was saved on the stack in scheduler.S.
-    mov x30, sp
-    mov sp, x19
-    mov x19, x30 // X19 = trampoline stack pointer
+    ldr x30, [sp, 32] // The kernel's private stack pointer was saved on the stack in scheduler.S.
+    mov x19, sp // X19 = trampoline stack pointer
+    mov sp, x30
 
     str x0, [sp, -16]!
     bl aarch64_handle_irq_indirect
@@ -588,10 +577,9 @@ serror_el0_aarch32:
 
     // Before pushing anything else, we should switch to the private kernel stack. It's bigger and
     // protected from Meltdown.
-    ldr x19, [sp, 32] // The kernel's private stack pointer was saved on the stack in scheduler.S.
-    mov x30, sp
-    mov sp, x19
-    mov x19, x30 // X19 = trampoline stack pointer
+    ldr x30, [sp, 32] // The kernel's private stack pointer was saved on the stack in scheduler.S.
+    mov x19, sp // X19 = trampoline stack pointer
+    mov sp, x30
 
     // ****** TODO
     str x9, [sp, -16]!
