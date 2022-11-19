@@ -729,6 +729,9 @@ macro_rules! impl_branch_table {
                 } else if unsafe { desc.page.contains(PageEntry::ONE) } {
                     let base = unsafe { desc.page.address($granule_size) } as usize;
                     Some(base + virt_addr % block_size)
+                } else if unsafe { desc.page.contains(PageEntry::IN_SWAPFILE) } {
+                    // FIXME: Read the page table from the swapfile.
+                    todo!("Read the page table from the swapfile");
                 } else {
                     None
                 }
