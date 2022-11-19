@@ -384,7 +384,6 @@ impl Probe {
 
 /// A reference to a probe used by the profiler to measure performance. Use the [`profiler_probe`]
 /// macro to construct a probe and the [`probes`] function to access them.
-#[repr(C)]
 #[derive(Debug)]
 pub struct ProbeRef<'a> {
     probes:   &'a [Probe],
