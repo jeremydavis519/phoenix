@@ -30,7 +30,7 @@ extern crate alloc;
 #[macro_use] extern crate shared;
 
 pub mod serial;
-pub mod std;
+mod std;
 pub use std::*;
 
 #[cfg(not(target_arch = "x86_64"))]
