@@ -37,9 +37,6 @@ extern crate alloc;
 pub mod allocator;
 // FIXME: This is only here to allow compiling on an x86-64 host.
 #[cfg(target_arch = "aarch64")]
-pub mod future;
-// FIXME: This is only here to allow compiling on an x86-64 host.
-#[cfg(target_arch = "aarch64")]
 pub mod panic; // FIXME: Not `pub` (blocked on making `panic::panic_handler` private).
 pub mod process;
 pub mod profiler;

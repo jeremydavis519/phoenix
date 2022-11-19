@@ -198,7 +198,7 @@ pub enum ExitAction {
 
 #[no_mangle]
 extern fn aarch64_handle_synchronous_exception(thread: Option<&mut Thread<File>>, syndrome: Syndrome,
-        arg1: usize, arg2: usize, arg3: usize, arg4: usize, result: *mut usize, exc_level: u8) -> Response {
+        arg1: usize, arg2: usize, arg3: usize, arg4: usize, result: *mut [usize; 2], exc_level: u8) -> Response {
     assert!(!result.is_null());
     let result = unsafe { &mut *result };
     let args = [arg1, arg2, arg3, arg4];

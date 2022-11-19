@@ -36,22 +36,21 @@ use {
         arch::asm,
         fmt::Write,
         mem,
-        slice
+        slice,
     },
     bitflags::bitflags,
     libphoenix::{
-        future::SysCallExecutor,
         profiler,
         syscall,
-        profiler_probe, profiler_setup
+        profiler_probe, profiler_setup,
     },
     libdriver::Device,
     virtio::{
         DeviceEndian, DeviceDetails, GenericFeatures,
-        virtqueue::future::Executor
+        virtqueue::future::Executor,
     },
     self::api::*,
-    self::msg::Rectangle
+    self::msg::Rectangle,
 };
 
 mod api;
@@ -63,23 +62,15 @@ const DEVICE_TYPE_GPU: u32 = 16;
 const MAX_SCANOUTS: usize = 16;
 
 fn main() {
-    SysCallExecutor::new()
-        .spawn(async {
-            let kernel_profile = profiler::kernel_probes().await;
-            syscall::time_reset_kernel_profile();
-            let start_time_nanos = syscall::time_now_unix_nanos();
+    let kernel_profile = profiler::kernel_probes();
+    syscall::time_reset_kernel_profile();
+    let start_time_nanos = syscall::time_now_unix_nanos();
 
-            profiler_probe!(=> DEVICE_CLAIM);
-            let device = Device::claim("mmio/virtio-16").await
-                .expect("no VirtIO GPU found");
-            profiler_probe!(DEVICE_CLAIM);
-            run_driver(kernel_profile, start_time_nanos, device);
-        })
-        .block_on_all();
-}
+    profiler_probe!(=> DEVICE_CLAIM);
+    let device = Device::claim("mmio/virtio-16")
+        .expect("no VirtIO GPU found");
+    profiler_probe!(DEVICE_CLAIM);
 
-fn run_driver<'a, I>(kernel_profile: I, start_time_nanos: u64, device: Device<'_>)
-        where I: Iterator<Item = profiler::ProbeRef<'a>> {
     profiler_probe!(=> VIRTIO_INIT);
     let mut device_details = match virtio::init(
             &device,

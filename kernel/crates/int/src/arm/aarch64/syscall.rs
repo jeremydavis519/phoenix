@@ -25,12 +25,11 @@ use {
         ffi::c_void,
         mem,
         num::NonZeroUsize,
-        time::Duration
+        time::Duration,
     },
     libphoenix::{
-        future::SysCallFutureInternal,
         profiler, profiler_probe, profiler_setup,
-        syscall::{VirtPhysAddr, TimeSelector}
+        syscall::TimeSelector,
     },
     devices::DEVICES,
     fs::File,
@@ -38,13 +37,13 @@ use {
     memory::{
         allocator::AllMemAlloc,
         phys::ptr::PhysPtr,
-        virt::paging
+        virt::paging,
     },
     scheduler::{Thread, ThreadStatus},
     shared::ffi_enum,
     time::SystemTime,
     userspace::UserspaceStr,
-    super::exceptions::Response
+    super::exceptions::Response,
 };
 
 extern {
@@ -58,38 +57,37 @@ pub(crate) fn handle_system_call(
         thread: Option<&mut Thread<File>>,
         syscall: u16,
         args: &[usize; 4],
-        result: &mut usize
+        result: &mut [usize; 2]
 ) -> Response {
     match SystemCall::try_from(syscall) {
         Ok(SystemCall::Thread_Exit)  => thread_exit(thread, args[0]),
         Ok(SystemCall::Thread_Sleep) => thread_sleep(thread, args[0]),
-        Ok(SystemCall::Thread_Spawn) => thread_spawn(thread, args[0], args[1] as u8, args[2], result),
-        Ok(SystemCall::Thread_Wait)  => thread_wait(thread, args[0]),
+        Ok(SystemCall::Thread_Spawn) => thread_spawn(thread, args[0], args[1] as u8, args[2], &mut result[0]),
 
         Ok(SystemCall::Process_Exit) => process_exit(thread, args[0]),
 
-        Ok(SystemCall::Device_Claim) => device_claim(thread, args[0], args[1], result),
+        Ok(SystemCall::Device_Claim) => device_claim(thread, args[0], args[1], &mut result[0]),
 
-        Ok(SystemCall::Memory_Free) => memory_free(thread, args[0], result),
-        Ok(SystemCall::Memory_Alloc) => memory_alloc(thread, args[0], args[1], result),
+        Ok(SystemCall::Memory_Free) => memory_free(thread, args[0]),
+        Ok(SystemCall::Memory_Alloc) => memory_alloc(thread, args[0], args[1], &mut result[0]),
         Ok(SystemCall::Memory_AllocPhys) => memory_alloc_phys(thread, args[0], args[1], args[2], result),
-        Ok(SystemCall::Memory_PageSize) => memory_page_size(result),
+        Ok(SystemCall::Memory_PageSize) => memory_page_size(&mut result[0]),
 
-        Ok(SystemCall::Time_NowUnix) => time_now_unix(thread, args[0], args[1], result),
-        Ok(SystemCall::Time_NowUnixNanos) => time_now_unix_nanos(thread, args[0], args[1], result),
-        Ok(SystemCall::Time_ViewKernelProfile) => time_view_kernel_profile(thread, result),
-        Ok(SystemCall::Time_ResetKernelProfile) => time_reset_kernel_profile(thread, result),
+        Ok(SystemCall::Time_NowUnix) => time_now_unix(thread, args[0], args[1], &mut result[0]),
+        Ok(SystemCall::Time_NowUnixNanos) => time_now_unix_nanos(thread, args[0], args[1], &mut result[0]),
+        Ok(SystemCall::Time_ViewKernelProfile) => time_view_kernel_profile(thread, &mut result[0]),
+        Ok(SystemCall::Time_ResetKernelProfile) => time_reset_kernel_profile(thread, &mut result[0]),
 
         // TODO: Remove all of these temporary system calls.
         Ok(SystemCall::Temp_PutChar) => temp_putchar(args[0]),
-        Ok(SystemCall::Temp_GetChar) => temp_getchar(result),
+        Ok(SystemCall::Temp_GetChar) => temp_getchar(&mut result[0]),
 
         Err(e) => {
             // TODO: Maybe distinguish between normal termination and a crash.
             // TODO: Send a signal to the thread's parent or something, instead of printing.
             println!("{}", e);
             process_exit(thread, usize::MAX) // TODO: Use a named constant for the failure code.
-        }
+        },
     }
 }
 
@@ -100,7 +98,6 @@ ffi_enum! {
         Thread_Exit             = 0x0000,
         Thread_Sleep            = 0x0001,
         Thread_Spawn            = 0x0002,
-        Thread_Wait             = 0x0003,
 
         Process_Exit            = 0x0100,
 
@@ -117,7 +114,7 @@ ffi_enum! {
         Time_ResetKernelProfile = 0x0481,
 
         Temp_PutChar            = 0xff00,
-        Temp_GetChar            = 0xff01
+        Temp_GetChar            = 0xff01,
     }
 }
 
@@ -154,7 +151,7 @@ fn thread_spawn(
         entry_point: usize,
         mut priority: u8,
         max_stack_size: usize,
-        handle: &mut usize
+        handle: &mut usize,
 ) -> Response {
     profiler_probe!(=> ENTRANCE);
     let parent_thread = thread.expect("attempted to spawn a new kernel thread");
@@ -168,14 +165,6 @@ fn thread_spawn(
         .unwrap_or(0);
     profiler_probe!(ENTRANCE);
     Response::eret()
-}
-
-// Blocks the thread until a system call it made is complete.
-fn thread_wait(thread: Option<&mut Thread<File>>, _future_addr: usize) -> Response {
-    assert!(!thread.is_none(), "attempted to block a kernel thread");
-    // FIXME: If the given address doesn't point to a future, terminate the process (not just the thread).
-    // TODO: Block the thread. That probably means leaving userspace with a certain `ThreadStatus`.
-    unimplemented!("thread_wait");
 }
 
 
@@ -203,7 +192,7 @@ fn device_claim(
         thread: Option<&mut Thread<File>>,
         dev_name_userspace_addr: usize,
         dev_name_len: usize,
-        future_userspace_addr: &mut usize
+        userspace_addr: &mut usize,
 ) -> Response {
     profiler_probe!(=> ENTRANCE);
     let thread = thread.expect("kernel thread attempted to get a device");
@@ -213,38 +202,15 @@ fn device_claim(
     let dev_path = match UserspaceStr::from_raw_parts(
             root_page_table,
             dev_name_userspace_addr,
-            dev_name_len
+            dev_name_len,
     ) {
         Some(path) => path,
         None => return Response::leave_userspace(ThreadStatus::Terminated) // Part of the argument is unmapped.
     };
-    let dev_userspace_addr = match DEVICES.claim_device(dev_path, thread.exec_image.page_table()) {
+    *userspace_addr = match DEVICES.claim_device(dev_path, thread.exec_image.page_table()) {
         Ok(addr) => addr,
         // FIXME: If the thread doesn't have permission to own the device, ask the user whether it should.
-        Err(()) => 0
-    };
-
-    // FIXME: Use a dedicated slab allocator, owned by the process, to allocate many futures in the
-    //        same page.
-    let page_size = paging::page_size();
-    *future_userspace_addr = match AllMemAlloc.malloc::<SysCallFutureInternal<usize>>(
-            page_size,
-            NonZeroUsize::new(page_size).unwrap()
-    ) {
-        Ok(future_block) => {
-            unsafe {
-                (*future_block.index(0)).init_ready(dev_userspace_addr);
-            }
-            let phys_base = future_block.base().as_addr_phys();
-            let size = NonZeroUsize::new(page_size).unwrap();
-            mem::forget(future_block); // FIXME: This should be retained so it can be freed later.
-            match root_page_table.map(phys_base, None, size, memory::phys::RegionType::Rom) {
-                Ok(addr) => addr,
-                // FIXME: If we fail here, deallocate the `DeviceContents` that we've already made.
-                Err(()) => 0
-            }
-        },
-        Err(_) => 0
+        Err(()) => 0,
     };
 
     profiler_probe!(ENTRANCE);
@@ -252,59 +218,30 @@ fn device_claim(
 }
 
 
-// Asynchronously frees a block of memory starting at the given address that was allocated by a
-// system call. Kills the thread if the address doesn't refer to such a block.
+// Frees a block of memory starting at the given address that was allocated by a system call. Kills
+// the thread if the address doesn't refer to such a block.
 fn memory_free(
     thread: Option<&mut Thread<File>>,
-    userspace_addr: usize,
-    future_userspace_addr: &mut usize
+    _userspace_addr: usize,
 ) -> Response {
     profiler_probe!(=> ENTRANCE);
-    let thread = thread.expect("kernel thread attempted to free memory with a system call");
-    let root_page_table = thread.exec_image.page_table();
+    let _thread = thread.expect("kernel thread attempted to free memory with a system call");
 
-    let _kernel_addr = match root_page_table.userspace_addr_to_kernel_addr(userspace_addr) {
-        Some(addr) => addr,
-        None => return Response::leave_userspace(ThreadStatus::Terminated)
-    };
-    // TODO: Locate the block with this address that is owned by this thread's process. If this can't
+    // TODO: Locate the block with the given address that is owned by this thread's process. If this can't
     //       be done in constant time, do it asynchronously.
     // TODO: Drop that block.
-
-    // FIXME: Use a dedicated slab allocator, owned by the process, to allocate many futures in the
-    //        same page.
-    let page_size = paging::page_size();
-    *future_userspace_addr = match memory::allocator::AllMemAlloc.malloc::<SysCallFutureInternal<()>>(
-            page_size,
-            NonZeroUsize::new(page_size).unwrap()
-    ) {
-        Ok(future_block) => {
-            unsafe {
-                (*future_block.index(0)).init_ready(());
-            }
-            let phys_base = future_block.base().as_addr_phys();
-            let size = NonZeroUsize::new(page_size).unwrap();
-            mem::forget(future_block); // FIXME: This should be retained so it can be freed later.
-            match root_page_table.map(phys_base, None, size, memory::phys::RegionType::Rom) {
-                Ok(addr) => addr,
-                Err(()) => 0
-            }
-        },
-        Err(_) => 0
-    };
 
     profiler_probe!(ENTRANCE);
     Response::eret()
 }
 
 // Asynchronously allocates a block of memory containing at least `size` bytes with at least the
-// given alignment. Returns a future containing the userspace address of the block. On failure, the
-// future contains null.
+// given alignment. Returns the userspace address of the block, or null to indicate failure.
 fn memory_alloc(
     thread: Option<&mut Thread<File>>,
     size: usize,
     align: usize,
-    future_userspace_addr: &mut usize
+    userspace_addr: &mut usize,
 ) -> Response {
     profiler_probe!(=> ENTRANCE);
     let thread = thread.expect("kernel thread attempted to allocate memory with a system call");
@@ -322,7 +259,7 @@ fn memory_alloc(
 
     let root_page_table = thread.exec_image.page_table();
 
-    let block_userspace_addr = match maybe_block {
+    *userspace_addr = match maybe_block {
         Some(ref block) => {
             match root_page_table.map(
                     block.base().as_addr_phys(),
@@ -340,27 +277,6 @@ fn memory_alloc(
         None => 0
     };
 
-    // FIXME: Use a dedicated slab allocator, owned by the process, to allocate many futures in the
-    //        same page.
-    *future_userspace_addr = match memory::allocator::AllMemAlloc.malloc::<SysCallFutureInternal<usize>>(
-            page_size,
-            NonZeroUsize::new(page_size).unwrap()
-    ) {
-        Ok(future_block) => {
-            unsafe {
-                (*future_block.index(0)).init_ready(block_userspace_addr);
-            }
-            let phys_base = future_block.base().as_addr_phys();
-            let size = NonZeroUsize::new(page_size).unwrap();
-            mem::forget(future_block); // FIXME: This should be retained so it can be freed later.
-            match root_page_table.map(phys_base, None, size, memory::phys::RegionType::Rom) {
-                Ok(addr) => addr,
-                Err(()) => 0
-            }
-        },
-        Err(_) => 0
-    };
-
     // FIXME: Instead of forgetting the block, attach it to the process.
     mem::forget(maybe_block);
 
@@ -369,9 +285,9 @@ fn memory_alloc(
 }
 
 // Asynchronously allocates a physically contiguous block of memory containing at least `size` bytes
-// with at least the given alignment. Returns a future containing both the physical and the virtual
-// addresses of the block. This memory is guaranteed to stay resident until it is freed. On failure,
-// both addresses in the future are null.
+// with at least the given alignment. Returns both the physical and the virtual address of the
+// block. This memory is guaranteed to stay resident until it is freed. On failure, both addresses
+// are null.
 //
 // The physical address of every byte in the allocated block is guaranteed not to overflow an
 // unsigned binary number of length `max_bits`.
@@ -380,7 +296,7 @@ fn memory_alloc_phys(
     size: usize,
     align: usize,
     max_bits: usize,
-    future_userspace_addr: &mut usize
+    userspace_and_phys_addrs: &mut [usize; 2],
 ) -> Response {
     profiler_probe!(=> ENTRANCE);
     let thread = thread.expect("kernel thread attempted to allocate memory with a system call");
@@ -399,7 +315,7 @@ fn memory_alloc_phys(
 
     let root_page_table = thread.exec_image.page_table();
 
-    let (block_userspace_addr, block_phys_addr) = match maybe_block {
+    *userspace_and_phys_addrs = match maybe_block {
         Some(ref block) => {
             let phys_addr = block.base().as_addr_phys();
             match root_page_table.map(
@@ -408,38 +324,14 @@ fn memory_alloc_phys(
                     NonZeroUsize::new(block.size()).unwrap(),
                     memory::phys::RegionType::Ram
             ) {
-                Ok(addr) => (addr, phys_addr),
+                Ok(virt_addr) => [virt_addr, phys_addr],
                 Err(()) => {
                     maybe_block = None;
-                    (0, 0)
+                    [0, 0]
                 }
             }
         },
-        None => (0, 0)
-    };
-
-    // FIXME: Use a dedicated slab allocator, owned by the process, to allocate many futures in the
-    //        same page.
-    *future_userspace_addr = match memory::allocator::AllMemAlloc.malloc::<SysCallFutureInternal<VirtPhysAddr>>(
-            page_size,
-            NonZeroUsize::new(page_size).unwrap()
-    ) {
-        Ok(future_block) => {
-            unsafe {
-                (*future_block.index(0)).init_ready(VirtPhysAddr {
-                    virt: block_userspace_addr,
-                    phys: block_phys_addr
-                });
-            }
-            let phys_base = future_block.base().as_addr_phys();
-            let size = NonZeroUsize::new(page_size).unwrap();
-            mem::forget(future_block); // FIXME: This should be retained so it can be freed later.
-            match root_page_table.map(phys_base, None, size, memory::phys::RegionType::Rom) {
-                Ok(addr) => addr,
-                Err(()) => 0
-            }
-        },
-        Err(_) => 0
+        None => [0, 0]
     };
 
     // FIXME: Instead of forgetting the block, attach it to the process.
@@ -465,7 +357,7 @@ fn time_now_unix(
     thread: Option<&mut Thread<File>>,
     time_selector: usize,
     shift_amount: usize,
-    result: &mut usize
+    result: &mut usize,
 ) -> Response {
     profiler_probe!(=> ENTRANCE);
     let thread = thread.expect("kernel thread attempted to read the time with a system call");
@@ -493,7 +385,7 @@ fn time_now_unix_nanos(
     thread: Option<&mut Thread<File>>,
     time_selector: usize,
     shift_amount: usize,
-    result: &mut usize
+    result: &mut usize,
 ) -> Response {
     profiler_probe!(=> ENTRANCE);
     let thread = thread.expect("kernel thread attempted to read the time with a system call");
@@ -516,7 +408,7 @@ fn time_now_unix_nanos(
 // the base address of the first page.
 fn time_view_kernel_profile(
     thread: Option<&mut Thread<File>>,
-    future_userspace_addr: &mut usize
+    userspace_addr: &mut usize,
 ) -> Response {
     profiler_probe!(=> ENTRANCE);
     let thread = thread.expect("kernel thread attempted to read the kernel's time profile with a system call");
@@ -530,7 +422,7 @@ fn time_view_kernel_profile(
 
     let root_page_table = thread.exec_image.page_table();
 
-    let virt_base = if let Some(size) = NonZeroUsize::new(size) {
+    *userspace_addr = if let Some(size) = NonZeroUsize::new(size) {
         // FIXME: Remember where this is mapped so the process can request that it be unmapped.
         match root_page_table.map(phys_base, None, size, memory::phys::RegionType::Rom) {
             Ok(addr) => addr,
@@ -540,27 +432,6 @@ fn time_view_kernel_profile(
         0
     };
 
-    // FIXME: Use a dedicated slab allocator, owned by the process, to allocate many futures in the
-    //        same page.
-    *future_userspace_addr = match memory::allocator::AllMemAlloc.malloc::<SysCallFutureInternal<usize>>(
-            page_size,
-            NonZeroUsize::new(page_size).unwrap()
-    ) {
-        Ok(future_block) => {
-            unsafe {
-                (*future_block.index(0)).init_ready(virt_base);
-            }
-            let phys_base = future_block.base().as_addr_phys();
-            let size = NonZeroUsize::new(page_size).unwrap();
-            mem::forget(future_block); // FIXME: This should be retained so it can be freed later.
-            match root_page_table.map(phys_base, None, size, memory::phys::RegionType::Rom) {
-                Ok(addr) => addr,
-                Err(()) => 0
-            }
-        },
-        Err(_) => 0
-    };
-
     profiler_probe!(ENTRANCE);
     Response::eret()
 }
@@ -568,7 +439,7 @@ fn time_view_kernel_profile(
 // Resets the kernel's performance profile.
 fn time_reset_kernel_profile(
     thread: Option<&mut Thread<File>>,
-    result: &mut usize
+    result: &mut usize,
 ) -> Response {
     profiler_probe!(=> ENTRANCE);
     let _thread = thread.expect("kernel thread attempted to reset the kernel's time profile with a system call");

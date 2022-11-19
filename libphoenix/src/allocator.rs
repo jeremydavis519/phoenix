@@ -31,15 +31,12 @@
 use {
     alloc::alloc::{Layout, GlobalAlloc, AllocError},
     core::{
-        future::Future,
         marker::Unsize,
         mem,
         ops::{CoerceUnsized, Deref, DerefMut},
-        pin::Pin,
         ptr,
-        task::{Context, Poll, RawWaker, RawWakerVTable, Waker}
     },
-    crate::syscall
+    crate::syscall,
 };
 
 #[cfg(feature = "global-allocator")]
@@ -55,12 +52,10 @@ impl Allocator {
     ///
     /// See [`memory_alloc_phys`](crate::syscall::memory_alloc_phys) for more details.
     pub fn malloc_phys<T>(&self, max_bits: usize) -> Result<PhysBox<T>, AllocError> {
-        let addr = eval_syscall_future(
-            syscall::memory_alloc_phys(
-                mem::size_of::<T>(),
-                mem::align_of::<T>(),
-                max_bits
-            )
+        let addr = syscall::memory_alloc_phys(
+            mem::size_of::<T>(),
+            mem::align_of::<T>(),
+            max_bits,
         );
 
         if addr.is_null() {
@@ -68,7 +63,7 @@ impl Allocator {
         } else {
             Ok(PhysBox {
                 ptr: addr.virt as *mut T,
-                phys: addr.phys
+                phys: addr.phys,
             })
         }
     }
@@ -77,12 +72,10 @@ impl Allocator {
     ///
     /// See [`memory_alloc_phys`](crate::syscall::memory_alloc_phys) for more details.
     pub fn malloc_phys_array<T>(&self, len: usize, max_bits: usize) -> Result<PhysBox<[T]>, AllocError> {
-        let addr = eval_syscall_future(
-            syscall::memory_alloc_phys(
-                mem::size_of::<T>() * len,
-                mem::align_of::<T>(),
-                max_bits
-            )
+        let addr = syscall::memory_alloc_phys(
+            mem::size_of::<T>() * len,
+            mem::align_of::<T>(),
+            max_bits,
         );
 
         if addr.is_null() {
@@ -90,7 +83,7 @@ impl Allocator {
         } else {
             Ok(PhysBox {
                 ptr: ptr::slice_from_raw_parts_mut(addr.virt as *mut T, len),
-                phys: addr.phys
+                phys: addr.phys,
             })
         }
     }
@@ -99,12 +92,10 @@ impl Allocator {
     ///
     /// See [`memory_alloc_phys`](crate::syscall::memory_alloc_phys) for more details.
     pub fn malloc_phys_bytes(&self, size: usize, align: usize, max_bits: usize) -> Result<PhysBox<[u8]>, AllocError> {
-        let addr = eval_syscall_future(
-            syscall::memory_alloc_phys(
-                size,
-                align,
-                max_bits
-            )
+        let addr = syscall::memory_alloc_phys(
+            size,
+            align,
+            max_bits,
         );
 
         if addr.is_null() {
@@ -112,7 +103,7 @@ impl Allocator {
         } else {
             Ok(PhysBox {
                 ptr: ptr::slice_from_raw_parts_mut(addr.virt as *mut u8, size),
-                phys: addr.phys
+                phys: addr.phys,
             })
         }
     }
@@ -123,17 +114,15 @@ unsafe impl GlobalAlloc for Allocator {
         // FIXME: This is extremely wasteful, as the kernel can't give us anything smaller than
         // a page, and it can also take a while. Instead, allocate a buffer from the kernel and use
         // that for multiple allocations until it's full.
-        let addr = eval_syscall_future(
-            syscall::memory_alloc(
-                layout.size(),
-                layout.align()
-            )
+        let addr = syscall::memory_alloc(
+            layout.size(),
+            layout.align(),
         );
         addr as *mut u8
     }
     
     unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
-        eval_syscall_future(syscall::memory_free(ptr as usize));
+        syscall::memory_free(ptr as usize);
     }
 }
 
@@ -144,7 +133,7 @@ unsafe impl GlobalAlloc for Allocator {
 #[derive(Debug)]
 pub struct PhysBox<T: ?Sized> {
     ptr: *mut T,
-    phys: usize
+    phys: usize,
 }
 
 impl<T> PhysBox<T> {
@@ -202,27 +191,4 @@ impl<T: ?Sized> Drop for PhysBox<T> {
             Allocator.dealloc(self.ptr as *mut u8, Layout::for_value_raw(self.ptr));
         }
     }
-}
-
-fn eval_syscall_future<F: Future>(mut future: F) -> F::Output {
-    let waker = unsafe { Waker::from_raw(raw_waker()) };
-    let mut cx = Context::from_waker(&waker);
-    loop {
-        match unsafe { Pin::new_unchecked(&mut future).poll(&mut cx) } {
-            Poll::Ready(val) => return val,
-            Poll::Pending => syscall::thread_wait()
-        };
-    }
-}
-
-fn raw_waker() -> RawWaker {
-    RawWaker::new(
-        ptr::null(),
-        &RawWakerVTable::new(
-            |_| raw_waker(), // unsafe fn clone(_: *const ()) -> RawWaker
-            |_| {},          // unsafe fn wake(_: *const ())
-            |_| {},          // unsafe fn wake_by_ref(_: *const ())
-            |_| {}           // unsafe fn drop(_: *const ())
-        )
-    )
 }

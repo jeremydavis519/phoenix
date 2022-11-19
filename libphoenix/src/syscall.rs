@@ -22,174 +22,10 @@ use {
     core::{
         arch::asm,
         convert::TryFrom,
-        mem
+        mem,
     },
-    crate::{
-        future::SysCallFuture,
-        thread::Thread
-    }
+    crate::thread::Thread,
 };
-
-macro_rules! define_async_syscall {
-    ($(#[$attr:meta])* pub async fn $name:ident() -> $ret_type:ty => $syscall_num:tt;) => {
-        $(#[$attr])*
-        pub async fn $name() -> $ret_type {
-            let addr: usize;
-            unsafe {
-                asm!(
-                    concat!("svc ", $syscall_num),
-                    lateout("x0") addr,
-                    options(nomem, preserves_flags)
-                );
-            }
-            // FIXME: Offer some recourse if the kernel returns null (which indicates running out of
-            //        memory).
-            unsafe {
-                const N: usize = mem::size_of::<$ret_type>();
-                let retval_raw = SysCallFuture::from_addr::<N>(addr).await;
-                assert_eq!(retval_raw.len(), N, "syscall {}: return value has the wrong size", stringify!($name));
-                mem::transmute(*(&*retval_raw as *const [u8] as *const [u8; N]))
-            }
-        }
-    };
-
-    ($(#[$attr:meta])* pub async fn $name:ident(
-            $arg1:ident: $type1:ty $(=> {$($conv1:tt)*})?
-    ) -> $ret_type:ty => $syscall_num:tt;) => {
-        $(#[$attr])*
-        pub async fn $name(
-                $arg1: $type1
-        ) -> $ret_type {
-            let addr: usize;
-            unsafe {
-                asm!(
-                    concat!("svc ", $syscall_num),
-                    in("x2") $arg1 $($($conv1)*)?,
-                    lateout("x0") addr,
-                    options(nomem, preserves_flags)
-                );
-            }
-            // FIXME: Offer some recourse if the kernel returns null (which indicates running out of
-            //        memory).
-            unsafe {
-                const N: usize = mem::size_of::<$ret_type>();
-                let retval_raw = SysCallFuture::from_addr::<N>(addr).await;
-                assert_eq!(retval_raw.len(), N, "syscall {}: return value has the wrong size", stringify!($name));
-                mem::transmute(*(&*retval_raw as *const [u8] as *const [u8; N]))
-            }
-        }
-    };
-
-    ($(#[$attr:meta])* pub async fn $name:ident(
-        $arg1:ident: $type1:ty $(=> {$($conv1:tt)*})?,
-        $($arg2:ident: $type2:ty)? $(=> {$($conv2:tt)*})?
-    ) -> $ret_type:ty => $syscall_num:tt;) => {
-        $(#[$attr])*
-        pub async fn $name(
-                $arg1: $type1,
-                $($arg2: $type2)?
-        ) -> $ret_type {
-            let addr: usize;
-            unsafe {
-                asm!(
-                    concat!("svc ", $syscall_num),
-                    in("x2") $arg1 $($($conv1)*)?,
-                    in("x3") $($arg2)? $($($conv2)*)?,
-                    lateout("x0") addr,
-                    options(nomem, preserves_flags)
-                );
-            }
-            // FIXME: Offer some recourse if the kernel returns null (which indicates running out of
-            //        memory).
-            unsafe {
-                const N: usize = mem::size_of::<$ret_type>();
-                let retval_raw = SysCallFuture::from_addr::<N>(addr).await;
-                assert_eq!(retval_raw.len(), N, "syscall {}: return value has the wrong size", stringify!($name));
-                mem::transmute(*(&*retval_raw as *const [u8] as *const [u8; N]))
-            }
-        }
-    };
-
-    ($(#[$attr:meta])* pub async fn $name:ident(
-        $arg1:ident: $type1:ty $(=> {$($conv1:tt)*})?,
-        $($arg2:ident: $type2:ty)? $(=> {$($conv2:tt)*})?,
-        $($arg3:ident: $type3:ty)? $(=> {$($conv3:tt)*})?
-    ) -> $ret_type:ty => $syscall_num:tt;) => {
-        $(#[$attr])*
-        pub async fn $name(
-                $arg1: $type1,
-                $($arg2: $type2,)?
-                $($arg3: $type3)?
-        ) -> $ret_type {
-            let addr: usize;
-            unsafe {
-                asm!(
-                    concat!("svc ", $syscall_num),
-                    in("x2") $arg1 $($($conv1)*)?,
-                    in("x3") $($arg2)? $($($conv2)*)?,
-                    in("x4") $($arg3)? $($($conv3)*)?,
-                    lateout("x0") addr,
-                    options(nomem, preserves_flags)
-                );
-            }
-            // FIXME: Offer some recourse if the kernel returns null (which indicates running out of
-            //        memory).
-            unsafe {
-                const N: usize = mem::size_of::<$ret_type>();
-                let retval_raw = SysCallFuture::from_addr::<N>(addr).await;
-                assert_eq!(retval_raw.len(), N, "syscall {}: return value has the wrong size", stringify!($name));
-                mem::transmute(*(&*retval_raw as *const [u8] as *const [u8; N]))
-            }
-        }
-    };
-
-    ($(#[$attr:meta])* pub async fn $name:ident(
-        $arg1:ident: $type1:ty $(=> {$($conv1:tt)*})?,
-        $($arg2:ident: $type2:ty)? $(=> {$($conv2:tt)*})?,
-        $($arg3:ident: $type3:ty)? $(=> {$($conv3:tt)*})?,
-        $($arg4:ident: $type4:ty)? $(=> {$($conv4:tt)*})?
-    ) -> $ret_type:ty => $syscall_num:tt;) => {
-        $(#[$attr])*
-        pub async fn $name(
-                $arg1: $type1,
-                $($arg2: $type2,)?
-                $($arg3: $type3,)?
-                $($arg4: $type4)?
-        ) -> $ret_type {
-            let addr: usize;
-            unsafe {
-                asm!(
-                    concat!("svc ", $syscall_num),
-                    in("x2") $arg1 $($($conv1)*)?,
-                    in("x3") $($arg2)? $($($conv2)*)?,
-                    in("x4") $($arg3)? $($($conv3)*)?,
-                    in("x5") $($arg4)? $($($conv4)*)?,
-                    lateout("x0") addr,
-                    options(nomem, preserves_flags)
-                );
-            }
-            // FIXME: Offer some recourse if the kernel returns null (which indicates running out of
-            //        memory).
-            unsafe {
-                const N: usize = mem::size_of::<$ret_type>();
-                let retval_raw = SysCallFuture::from_addr::<N>(addr).await;
-                assert_eq!(retval_raw.len(), N, "syscall {}: return value has the wrong size", stringify!($name));
-                mem::transmute(*(&*retval_raw as *const [u8] as *const [u8; N]))
-            }
-        }
-    };
-}
-
-macro_rules! define_async_syscalls {
-    ($($(#[$attr:meta])* pub async fn $name:ident($($args:tt)*) -> $ret_type:ty => $syscall_num:tt;)+) => {
-        $(
-            define_async_syscall! {
-                $(#[$attr])*
-                pub async fn $name($($args)*) -> $ret_type => $syscall_num;
-            }
-        )+
-    };
-}
 
 /// Ends the currently running thread with the given status.
 ///
@@ -218,7 +54,7 @@ pub fn thread_exit(status: i32) -> ! {
         asm!(
             "svc 0x0000",
             in("x2") status as usize,
-            options(nomem, nostack, preserves_flags, noreturn)
+            options(nomem, nostack, preserves_flags, noreturn),
         );
     }
 }
@@ -242,15 +78,12 @@ pub fn thread_sleep(milliseconds: usize) {
         asm!(
             "svc 0x0001",
             in("x2") milliseconds,
-            options(nomem, nostack, preserves_flags)
+            options(nomem, nostack, preserves_flags),
         );
     }
 }
 
 /// Spawns a new thread with the given entry point, priority, and stack size.
-///
-/// Note that this is considered an asynchronous system call for the purposes of [`thread_wait`].
-/// The delayed return value is the spawned thread's status code.
 ///
 /// This function is not marked as public because the [`Thread`] type provides a more idiomatic
 /// way to call it.
@@ -266,27 +99,10 @@ pub(crate) fn thread_spawn(entry_point: fn(), priority: u8, stack_size: usize) -
             in("x3") priority,
             in("x4") stack_size,
             lateout("x0") handle,
-            options(nomem, nostack, preserves_flags)
+            options(nomem, nostack, preserves_flags),
         );
     }
     Thread { _handle: handle }
-}
-
-/// Waits until an asynchronous system call is finished.
-///
-/// This function blocks the thread until a system call is complete, allowing other threads to run
-/// in the meantime. This may return spurriously; it is up to the caller to determine which system
-/// calls, if any, have completed.
-///
-/// # Returns
-/// Nothing. The value is at the given address.
-pub fn thread_wait() {
-    unsafe {
-        asm!(
-            "svc 0x0003",
-            options(nomem, nostack, preserves_flags)
-        );
-    }
 }
 
 /// Ends the currently running process with the given status.
@@ -308,9 +124,111 @@ pub fn process_exit(status: i32) -> ! {
         asm!(
             "svc 0x0100",
             in("x2") status as usize,
-            options(nomem, nostack, preserves_flags, noreturn)
+            options(nomem, nostack, preserves_flags, noreturn),
         );
     }
+}
+
+/// Looks up a physical device by name and claims ownership of it if it exists.
+///
+/// This function is intended for use only by `libdriver`, which builds further abstractions on
+/// top of it.
+///
+/// # Returns
+/// The address of the object describing the device, or `0` if (a) the device doesn't exist
+/// or (b) this process doesn't have permission to claim it.
+///
+/// # Required permissions
+/// * `own device <name>`
+pub fn device_claim(name: &str) -> usize {
+    let device_addr: usize;
+    unsafe {
+        asm!(
+            "svc 0x0200",
+            in("x2") name as *const str as *const u8 as usize,
+            in("x3") name.len(),
+            lateout("x0") device_addr,
+            options(nomem, nostack, preserves_flags),
+        );
+    }
+    device_addr
+}
+
+/// Frees a block of memory that was allocated by a system call.
+///
+/// # Panics
+/// If the given address is not the address of the first byte of an allocated block. (The most
+/// likely reason for this to happen is that the memory has already been freed.)
+pub fn memory_free(addr: usize) {
+    unsafe {
+        asm!(
+            "svc 0x0300",
+            in("x2") addr,
+            options(nomem, nostack, preserves_flags),
+        );
+    }
+}
+
+/// Allocates a new block of virtual memory with the given size and alignment.
+///
+/// This is only meant for use by the global allocator. Other userspace code should allocate
+/// through that allocator.
+///
+/// # Returns
+/// The address of the allocated block, or `0` if the allocation failed.
+pub fn memory_alloc(size: usize, align: usize) -> usize {
+    let addr: usize;
+    unsafe {
+        asm!(
+            "svc 0x0301",
+            in("x2") size,
+            in("x3") align,
+            lateout("x0") addr,
+            options(nomem, nostack, preserves_flags),
+        );
+    }
+    addr
+}
+
+/// Allocates a new block of memory with the given size and alignment. The memory is guaranteed
+/// to remain resident at the same address in physical memory until it is freed, and it is
+/// guaranteed that the highest physical address in the block fits within a `max_bits`-bit
+/// unsigned integer.
+///
+/// The purpose of this system call is to allow a driver to allocate a buffer and hand that
+/// buffer to its device.
+///
+/// # Returns
+/// A struct containing the virtual and physical addresses of the allocated block. If allocation
+/// fails, both addresses are `0`. Otherwise, neither is `0`.
+///
+/// # Example
+/// ```
+/// # async {
+/// let addr = memory_alloc_phys(0x1000, 0x1000, 20).await;
+/// assert!(addr.phys < 1 << 20);
+/// if addr.is_null() {
+///     println!("Allocation failed");
+/// } else {
+///     println!("Allocated 0x1000 bytes at virtual address {:#x}, physical address {:#x}", addr.virt, addr.phys);
+/// }
+/// # }
+/// ```
+pub fn memory_alloc_phys(size: usize, align: usize, max_bits: usize) -> VirtPhysAddr {
+    let virt: usize;
+    let phys: usize;
+    unsafe {
+        asm!(
+            "svc 0x0302",
+            in("x2") size,
+            in("x3") align,
+            in("x4") max_bits,
+            lateout("x0") virt,
+            lateout("x1") phys,
+            options(nomem, nostack, preserves_flags),
+        );
+    }
+    VirtPhysAddr { virt, phys }
 }
 
 /// Returns the number of bytes in a page.
@@ -329,7 +247,7 @@ pub fn memory_page_size() -> usize {
         asm!(
             "svc 0x0380",
             lateout("x0") page_size,
-            options(nomem, nostack, preserves_flags)
+            options(nomem, nostack, preserves_flags),
         );
     }
     page_size
@@ -356,7 +274,7 @@ pub fn time_now_unix() -> u64 {
             in("x2") TimeSelector::Now as usize,
             in("x3") 0,
             lateout("x0") unix_time,
-            options(nomem, nostack, preserves_flags)
+            options(nomem, nostack, preserves_flags),
         );
     }
     unix_time
@@ -384,7 +302,7 @@ pub fn time_now_unix_nanos() -> u64 {
             in("x2") TimeSelector::Now as usize,
             in("x3") 0,
             lateout("x0") unix_time,
-            options(nomem, nostack, preserves_flags)
+            options(nomem, nostack, preserves_flags),
         );
     }
     unix_time
@@ -396,94 +314,35 @@ pub fn time_reset_kernel_profile() {
     unsafe {
         asm!(
             "svc 0x0481",
-            options(nomem, nostack, preserves_flags)
+            options(nomem, nostack, preserves_flags),
         );
     }
 }
 
-define_async_syscalls! {
-    /// Looks up a physical device by name and claims ownership of it if it exists.
-    ///
-    /// This function is intended for use only by `libdriver`, which builds further abstractions on
-    /// top of it.
-    ///
-    /// # Returns
-    /// The address of the object describing the device, or `0` if (a) the device doesn't exist
-    /// or (b) this process doesn't have permission to claim it.
-    ///
-    /// # Required permissions
-    /// * `own device <name>`
-    pub async fn device_claim(
-        name: &str => {as *const str as *const u8 as usize}, => {name.len()}
-    ) -> usize => 0x0200;
 
-    /// Frees a block of memory that was allocated by a system call.
-    ///
-    /// # Panics
-    /// If the given address is not the address of the first byte of an allocated block. (The most
-    /// likely reason for this to happen is that the memory has already been freed.)
-    pub async fn memory_free(
-        addr: usize
-    ) -> () => 0x0300;
-
-    /// Allocates a new block of virtual memory with the given size and alignment.
-    ///
-    /// This is only meant for use by the global allocator. Other userspace code should allocate
-    /// through that allocator.
-    ///
-    /// # Returns
-    /// The address of the allocated block, or `0` if the allocation failed.
-    pub async fn memory_alloc(
-        size: usize,
-        align: usize
-    ) -> usize => 0x0301;
-
-    /// Allocates a new block of memory with the given size and alignment. The memory is guaranteed
-    /// to remain resident at the same address in physical memory until it is freed, and it is
-    /// guaranteed that the highest physical address in the block fits within a `max_bits`-bit
-    /// unsigned integer.
-    ///
-    /// The purpose of this system call is to allow a driver to allocate a buffer and hand that
-    /// buffer to its device.
-    ///
-    /// # Returns
-    /// A struct containing the virtual and physical addresses of the allocated block. If allocation
-    /// fails, both addresses are `0`. Otherwise, neither is `0`.
-    ///
-    /// # Example
-    /// ```
-    /// # async {
-    /// let addr = memory_alloc_phys(0x1000, 0x1000, 20).await;
-    /// assert!(addr.phys < 1 << 20);
-    /// if addr.is_null() {
-    ///     println!("Allocation failed");
-    /// } else {
-    ///     println!("Allocated 0x1000 bytes at virtual address {:#x}, physical address {:#x}", addr.virt, addr.phys);
-    /// }
-    /// # }
-    /// ```
-    pub async fn memory_alloc_phys(
-        size: usize,
-        align: usize,
-        max_bits: usize
-    ) -> VirtPhysAddr => 0x0302;
-
-    /// *Note:* This function is not designed to be used directly. Applications should use
-    /// [`crate::profiler::kernel_probes`] instead.
-    ///
-    /// Maps the kernel's internal performance profile directly to a set of contiguous pages in this
-    /// process's address space. This is not a snapshot; it is updated in real time as different
-    /// parts of the kernel are executed.
-    ///
-    /// Note that the kernel may have been compiled without profiling support. In that case, any call
-    /// to this function will just return 0, representing a null pointer.
-    pub async fn time_view_kernel_profile() -> usize => 0x0480;
+/// *Note:* This function is not designed to be used directly. Applications should use
+/// [`crate::profiler::kernel_probes`] instead.
+///
+/// Maps the kernel's internal performance profile directly to a set of contiguous pages in this
+/// process's address space. This is not a snapshot; it is updated in real time as different
+/// parts of the kernel are executed.
+///
+/// Note that the kernel may have been compiled without profiling support. In that case, any call
+/// to this function will just return 0, representing a null pointer.
+pub fn time_view_kernel_profile() -> usize {
+    let profile_addr: usize;
+    unsafe {
+        asm!(
+            "svc 0x0480",
+            lateout("x0") profile_addr,
+            options(nomem, nostack, preserves_flags),
+        );
+    }
+    profile_addr
 }
-
 
 /// Used for packaging a virtual address and a physical address into a single return value.
 #[derive(Debug)]
-#[repr(C)]
 pub struct VirtPhysAddr {
     /// The virtual address.
     pub virt: usize,
@@ -492,14 +351,6 @@ pub struct VirtPhysAddr {
 }
 
 impl VirtPhysAddr {
-    /// Returns a null virtual and physical address.
-    pub const fn null() -> Self {
-        Self {
-            virt: 0,
-            phys: 0
-        }
-    }
-
     /// Returns `true` if the address is null.
     pub fn is_null(&self) -> bool {
         assert_eq!(self.virt == 0, self.phys == 0);

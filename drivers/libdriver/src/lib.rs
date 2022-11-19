@@ -57,11 +57,8 @@ impl<'a> Device<'a> {
     ///
     /// Note that the "name" of a device varies depending on the bus it's found on. See the Phoenix
     /// wiki for details on how devices are named on each bus.
-    // TODO: Change this API to return a `SystemCall` object. Such an object will represent a chain
-    //       of system calls to be made all at once, using an internal DSL for control flow, to
-    //       avoid having to return to userspace between them.
-    pub async fn claim(name: &str) -> Option<Device<'a>> {
-        match NonZeroUsize::new(libphoenix::syscall::device_claim(name).await) {
+    pub fn claim(name: &str) -> Option<Device<'a>> {
+        match NonZeroUsize::new(libphoenix::syscall::device_claim(name)) {
             Some(device_addr) => Some(Device {
                     contents: unsafe { &*(device_addr.get() as *const _) }
                 }),

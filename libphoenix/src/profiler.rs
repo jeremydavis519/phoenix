@@ -1,4 +1,4 @@
-/* Copyright (c) 2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2021-2022 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -131,10 +131,10 @@ macro_rules! profiler_probe {
         &PROBE
     }};
 
-    ($($prev_probe:expr)?) => {
+    ($($prev_probe:expr)?) => {{
         static PROBE: &$crate::profiler::Probe = $crate::profiler_probe!(@static $($prev_probe)?);
         PROBE.visit();
-    };
+    }};
 
     ($($prev_probe:expr)? => $name:ident) => {
         static $name: $crate::profiler::ProbeHandle = $crate::profiler::ProbeHandle {
@@ -185,14 +185,14 @@ pub fn probes<'a>() -> impl Iterator<Item = ProbeRef<'a>> + Clone {
 
 /// Returns an iterator over all the probes in the kernel's profile that have been visited so far.
 #[cfg(not(feature = "kernelspace"))]
-pub async fn kernel_probes<'a>() -> impl Iterator<Item = ProbeRef<'a>> + Clone {
+pub fn kernel_probes<'a>() -> impl Iterator<Item = ProbeRef<'a>> + Clone {
     #[cfg(feature = "profiler")] {
         let profile_start;
         #[cfg(not(target_arch = "aarch64"))] { // TODO: Remove this.
             profile_start = unimplemented!();
         }
         #[cfg(target_arch = "aarch64")] { // TODO: Make this unconditional.
-            profile_start = syscall::time_view_kernel_profile().await;
+            profile_start = syscall::time_view_kernel_profile();
         }
         let header = unsafe { &*(profile_start as *const ProbesHeader) };
         let probes_start = (profile_start + mem::size_of::<ProbesHeader>() + 15) / 16 * 16;
