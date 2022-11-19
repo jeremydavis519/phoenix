@@ -635,8 +635,10 @@ macro_rules! define_root_page_table {
 
             /// Returns the current status of the page containing the given address.
             pub fn page_status(&self, virt_base: usize) -> PageStatus {
-                assert!(virt_base < 1 << usize::from(MAX_VIRT_BITS.load(Ordering::Acquire)),
-                    "virtual address out of range: {:#018x}", virt_base);
+                if virt_base >= 1 << usize::from(MAX_VIRT_BITS.load(Ordering::Acquire)) {
+                    // Out of range
+                    return PageStatus::Unmapped;
+                }
 
                 match self.internals {
                     $(
