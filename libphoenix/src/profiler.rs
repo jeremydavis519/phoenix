@@ -86,6 +86,7 @@ macro_rules! profiler_setup {
 }
 
 #[cfg(not(feature = "profiler"))]
+#[allow(missing_docs)]
 #[macro_export]
 macro_rules! profiler_setup {
     () => {};
@@ -99,6 +100,11 @@ macro_rules! profiler_setup {
 #[cfg(feature = "profiler")]
 #[macro_export]
 macro_rules! profiler_probe {
+    // FIXME: Use RAII instead of a second probe to handle latency calculations. As it stands,
+    //        we're leaking visitors (leading to permanent and rapidly worsening overestimations of
+    //        the number of visitors present at any given time) whenever a function uses an early
+    //        return--including whenever a function uses the `?` operator.
+
     (@static) => {{
         extern {
             #[link_name = concat!("profile: ", ::core::file!())]
@@ -148,9 +154,9 @@ macro_rules! profiler_probe {
 #[macro_export]
 #[doc(hidden)]
 macro_rules! profiler_probe {
-    ($($prev_probe:expr)? $(=> $name:ident)?) {
+    ($($prev_probe:expr)? $(=> $name:ident)?) => {
         $($prev_probe;)?
-        &$crate::profiler::Probe
+        $(let $name = $crate::profiler::ProbeHandle { probe: &$crate::profiler::Probe };)?
     };
 }
 
