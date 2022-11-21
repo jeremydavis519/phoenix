@@ -177,7 +177,7 @@ impl<'a> ConfigurationSpace<'a> {
         let bitmap = unsafe { &mut value.bitmap };
         let size = u8::from_device_endian(self.regs.map(|regs| &regs.size).read(), self.legacy);
         for i in 0 .. size.into() {
-            bitmap[i] = u8::from_device_endian(self.regs.map(|regs| unsafe { &regs.value.bitmap[i] }).read(), self.legacy);
+            bitmap[i] = self.regs.map(|regs| unsafe { &regs.value.bitmap[i] }).read();
         }
         size
     }
@@ -224,6 +224,7 @@ impl ConfigurationValue {
 #[derive(Clone, Copy)]
 #[repr(C)]
 struct AbsInfo {
+    // These are device-endian. Use the accessor methods instead.
     min:  u32,
     max:  u32,
     fuzz: u32,
@@ -231,13 +232,54 @@ struct AbsInfo {
     res:  u32,
 }
 
+impl AbsInfo {
+    fn min(&self, legacy: bool) -> u32 {
+        u32::from_device_endian(self.min, legacy)
+    }
+
+    fn max(&self, legacy: bool) -> u32 {
+        u32::from_device_endian(self.max, legacy)
+    }
+
+    fn fuzz(&self, legacy: bool) -> u32 {
+        u32::from_device_endian(self.fuzz, legacy)
+    }
+
+    fn flat(&self, legacy: bool) -> u32 {
+        u32::from_device_endian(self.flat, legacy)
+    }
+
+    fn res(&self, legacy: bool) -> u32 {
+        u32::from_device_endian(self.res, legacy)
+    }
+}
+
 #[derive(Clone, Copy)]
 #[repr(C)]
 struct DevIds {
+    // These are device-endian. Use the accessor methods instead.
     bustype: u16,
     vendor:  u16,
     product: u16,
     version: u16,
+}
+
+impl DevIds {
+    fn bustype(&self, legacy: bool) -> u16 {
+        u16::from_device_endian(self.bustype, legacy)
+    }
+
+    fn vendor(&self, legacy: bool) -> u16 {
+        u16::from_device_endian(self.vendor, legacy)
+    }
+
+    fn product(&self, legacy: bool) -> u16 {
+        u16::from_device_endian(self.product, legacy)
+    }
+
+    fn version(&self, legacy: bool) -> u16 {
+        u16::from_device_endian(self.version, legacy)
+    }
 }
 
 impl Default for DevIds {
@@ -253,9 +295,10 @@ impl Default for DevIds {
 
 impl fmt::Display for DevIds {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // FIXME: The shown values will be wrong if this is a legacy device on a big-endian system.
         write!(f,
             "bustype = {:#x}, vendor = {:#x}, product = {:#x}, version = {:#x}",
-            self.bustype, self.vendor, self.product, self.version,
+            u16::from_le(self.bustype), u16::from_le(self.vendor), u16::from_le(self.product), u16::from_le(self.version),
         )
     }
 }
