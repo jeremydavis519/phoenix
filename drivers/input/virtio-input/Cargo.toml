@@ -1,0 +1,18 @@
+[package]
+name = "virtio-input"
+version = "0.1.0"
+authors = ["Jeremy Davis <jeremydavis519@gmail.com>"]
+edition = "2021"
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+
+[dependencies]
+volatile = "0.4"
+
+libdriver = { path = "../../libdriver" }
+libphoenix = { path = "../../../libphoenix" }
+virtio = { path = "../../virtio" }
