@@ -68,7 +68,7 @@ ASSEMBLER ?= $(TARGET_TRIPLE)-as
 AS_PARAMS ?=
 CARGO_FEATURES ?= profiler,all_languages
 LINKER ?= $(TARGET_TRIPLE)-ld
-LD_PARAMS ?= -n --gc-sections
+LD_PARAMS ?= -n --gc-sections --gc-keep-exported
 OBJCOPY ?= $(TARGET_TRIPLE)-objcopy
 OBJCOPY_PARAMS ?= -O binary
 
