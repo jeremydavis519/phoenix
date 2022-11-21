@@ -517,6 +517,8 @@ macro_rules! impl_device_endian {
     };
 }
 
+impl_device_endian!(u8);
+impl_device_endian!(i8);
 impl_device_endian!(u16);
 impl_device_endian!(i16);
 impl_device_endian!(u32);
