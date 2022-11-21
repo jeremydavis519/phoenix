@@ -49,10 +49,10 @@ pub fn init<'a>(
         queues_count:      u32,
         required_features: u64,
         optional_features: u64
-) -> Result<DeviceDetails<'a>, VirtIOInitError> {
+) -> Result<DeviceDetails<'a>, VirtIoInitError> {
     let resources = device.resources();
     if resources.len() == 0 {
-        return Err(VirtIOInitError::TooFewResources);
+        return Err(VirtIoInitError::TooFewResources);
     }
     let resource = &resources[0];
 
@@ -75,13 +75,13 @@ fn init_mmio<'a>(
         queues_count:      u32,
         required_features: u64,
         optional_features: u64
-) -> Result<DeviceDetails<'a>, VirtIOInitError> {
+) -> Result<DeviceDetails<'a>, VirtIoInitError> {
     assert_eq!(resource.bus, BusType::Mmio);
     if resource.size < 0x100 {
-        return Err(VirtIOInitError::TooFewRegisters(0x100, resource.size));
+        return Err(VirtIoInitError::TooFewRegisters(0x100, resource.size));
     }
     if resource.size < 0x100 + config_space_size {
-        return Err(VirtIOInitError::TooLittleConfigSpace(config_space_size, resource.size - 0x100))
+        return Err(VirtIoInitError::TooLittleConfigSpace(config_space_size, resource.size - 0x100))
     }
     let mut regs = MmioRegisters {
         slice: unsafe {
@@ -107,7 +107,7 @@ fn init_mmio<'a>(
     // Negotiate features.
     let device_features = regs.device_features();
     if required_features & !device_features != 0 {
-        return Err(VirtIOInitError::MissingRequiredFeatures(required_features, device_features));
+        return Err(VirtIoInitError::MissingRequiredFeatures(required_features, device_features));
     }
     let mut features = device_features & (required_features | optional_features);
     regs.set_driver_features(features);
@@ -123,7 +123,7 @@ fn init_mmio<'a>(
             if !regs.status().contains(DeviceStatus::FEATURES_OK) {
                 // The device isn't accepting any set of features that we can use.
                 regs.or_status(DeviceStatus::FAILED);
-                return Err(VirtIOInitError::FeatureNegotiationFailed);
+                return Err(VirtIoInitError::FeatureNegotiationFailed);
             }
         }
     }
@@ -185,21 +185,21 @@ fn init_mmio<'a>(
 fn validate_mmio<'a>(
         regs:              &mut MmioRegisters<'a>,
         device_type:       u32
-) -> Result<(), VirtIOInitError> {
+) -> Result<(), VirtIoInitError> {
     const MAGIC_NUMBER:    u32 = 0x74726976; // Little-endian "virt"
     const CURRENT_VERSION: u32 = 1;
 
     let found_magic_number = regs.magic_number();
     if found_magic_number != MAGIC_NUMBER {
-        return Err(VirtIOInitError::WrongMagicNumber(MAGIC_NUMBER, found_magic_number));
+        return Err(VirtIoInitError::WrongMagicNumber(MAGIC_NUMBER, found_magic_number));
     }
     let version = regs.version();
     if version < 1 || version > CURRENT_VERSION {
-        return Err(VirtIOInitError::UnsupportedVersion(CURRENT_VERSION, version));
+        return Err(VirtIoInitError::UnsupportedVersion(CURRENT_VERSION, version));
     }
     let found_device_type = regs.device_id();
     if found_device_type != device_type {
-        return Err(VirtIOInitError::WrongDeviceType(device_type, found_device_type));
+        return Err(VirtIoInitError::WrongDeviceType(device_type, found_device_type));
     }
 
     Ok(())
@@ -528,7 +528,7 @@ impl_device_endian!(i64);
 
 /// An error that might occur when trying to initialize a VirtIO device.
 #[derive(Debug)]
-pub enum VirtIOInitError {
+pub enum VirtIoInitError {
     /// The given device owned too few resources.
     TooFewResources,
     /// Too few registers for this to be a valid VirtIO device.
@@ -547,7 +547,7 @@ pub enum VirtIOInitError {
     FeatureNegotiationFailed
 }
 
-impl fmt::Display for VirtIOInitError {
+impl fmt::Display for VirtIoInitError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Self::TooFewResources
