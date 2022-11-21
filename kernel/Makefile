@@ -105,7 +105,7 @@ ifeq ($(DEBUG_OR_RELEASE),debug)
 else
 	CARGO_RELEASE := --release
 	AS_DEBUG :=
-	LD_RELEASE := -O -s
+	LD_RELEASE := -O 1 -s
 endif
 
 .PHONY: all clean release test kernel cargo
