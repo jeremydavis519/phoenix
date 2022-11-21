@@ -471,6 +471,7 @@ impl BufferDescriptor {
     }
 }
 
+// The spec calls this the "available ring".
 #[derive(Debug)]
 enum DriverRing {
     Legacy {
@@ -639,6 +640,7 @@ impl DriverRingState {
     }
 }
 
+// The spec calls this the "used ring".
 #[derive(Debug)]
 enum DeviceRing {
     Legacy(*const DeviceRingInternal),
