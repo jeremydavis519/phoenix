@@ -7,6 +7,6 @@
     $QEMU_PARAMS \
     -s \
     -m 192m \
-    -device virtio-balloon-device -device pci-testdev -device virtio-gpu-device \
+    -device virtio-balloon-device -device pci-testdev -device virtio-gpu-device -device virtio-keyboard-device -device virtio-mouse-device \
     -semihosting \
     -serial stdio
