@@ -24,6 +24,7 @@
 
 #![feature(allocator_api)]
 #![feature(coerce_unsized, unsize)]
+#![feature(const_type_name)]
 #![feature(inline_const)]
 #![feature(lang_items)]
 #![feature(layout_for_ptr)]
@@ -85,3 +86,27 @@ impl_proc_ret_val!(u8);
 impl_proc_ret_val!(i16);
 impl_proc_ret_val!(u16);
 impl_proc_ret_val!(i32);
+
+/// A macro that returns the name of the containing scope, like C99's `__func__` macro.
+///
+/// (Based on an answer to [this StackOverflow question].)
+/// [this StackOverflow question]: https://stackoverflow.com/questions/38088067/equivalent-of-func-or-function-in-rust
+///
+/// Note that this relies on unstable Rust functionality, so it may break without warning.
+/// Use it only for diagnostic purposes.
+#[macro_export]
+macro_rules! scope {
+    () => {{
+        fn f() {}
+        const fn type_name_of<T: Copy>(_: T) -> &'static str {
+            let name = ::core::any::type_name::<T>();
+            unsafe {
+                ::core::str::from_utf8_unchecked(::core::slice::from_raw_parts(
+                    name.as_ptr(),
+                    name.len() - "::f".len(),
+                ))
+            }
+        }
+        type_name_of(f)
+    }};
+}

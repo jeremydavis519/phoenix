@@ -25,6 +25,7 @@
 #![deny(/*warnings, */missing_docs)]
 
 #![feature(allocator_api)]
+#![feature(const_type_name)]
 #![feature(default_alloc_error_handler)]
 #![feature(inline_const)]
 #![feature(start)]
@@ -146,7 +147,7 @@ fn print_profile<'a, I>(profile: I, start_time_nanos: u64) where I: Iterator<Ite
     let _ = writeln!(KernelWriter, "***Userspace Profile***");
     for probe in profiler::probes() {
         let visits = probe.visits();
-        let _ = writeln!(KernelWriter, "{}:{}:{}", probe.file(), probe.line(), probe.column());
+        let _ = writeln!(KernelWriter, "{}:{}:{} ({})", probe.file(), probe.line(), probe.column(), probe.scope());
         let _ = writeln!(KernelWriter, "Visits: {}", visits);
         let _ = writeln!(KernelWriter, "Throughput: {} visits/sec", probe.avg_throughput_hz());
         if let Some(latency) = probe.avg_latency_secs() {
@@ -163,7 +164,7 @@ fn print_profile<'a, I>(profile: I, start_time_nanos: u64) where I: Iterator<Ite
     let _ = writeln!(KernelWriter, "***Kernel Profile***");
     for probe in profile {
         let visits = probe.visits();
-        let _ = writeln!(KernelWriter, "{}:{}:{}", probe.file(), probe.line(), probe.column());
+        let _ = writeln!(KernelWriter, "{}:{}:{} ({})", probe.file(), probe.line(), probe.column(), probe.scope());
         let _ = writeln!(KernelWriter, "Visits: {}", visits);
         let _ = writeln!(KernelWriter, "Throughput: {} visits/sec", probe.avg_throughput_hz());
         if let Some(latency) = probe.avg_latency_secs() {

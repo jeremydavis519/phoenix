@@ -27,6 +27,7 @@
 #![cfg_attr(not(test), no_std)]
 
 #![feature(allocator_api, alloc_error_handler)]
+#![feature(const_type_name)]
 #![feature(inline_const)]
 #![feature(negative_impls)]
 #![feature(never_type)]

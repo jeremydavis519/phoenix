@@ -79,9 +79,9 @@ macro_rules! profiler_setup {
         const FILENAME_LEN: usize = ::core::file!().len();
 
         #[link_section = ".profile.strings"]
-        #[export_name = concat!("profile: ", ::core::file!())]
-        static FILENAME: $crate::profiler::ProbeFilename<FILENAME_LEN> =
-            $crate::profiler::ProbeFilename::<FILENAME_LEN>::new(::core::file!());
+        #[export_name = concat!("profile file: ", ::core::file!())]
+        static FILENAME: $crate::profiler::ProbeStr<FILENAME_LEN> =
+            $crate::profiler::ProbeStr::<FILENAME_LEN>::new(::core::file!());
     };
 }
 
@@ -107,9 +107,40 @@ macro_rules! profiler_probe {
 
     (@static) => {{
         extern {
-            #[link_name = concat!("profile: ", ::core::file!())]
-            static FILENAME: $crate::profiler::ProbeFilename<0>;
+            #[link_name = concat!("profile file: ", ::core::file!())]
+            static FILENAME: $crate::profiler::ProbeStr<0>;
         }
+
+        const fn scope() -> &'static str {
+            let mut scope = $crate::scope!();
+            // Remove the last two scope levels (e.g. `::PROBE::scope`).
+            let mut i = 0;
+            while i < 2 {
+                let mut end = scope.len().saturating_sub(1);
+                while end > 0 {
+                    unsafe {
+                        if *scope.as_ptr().add(end) == b':' && *scope.as_ptr().add(end + 1) == b':' {
+                            break;
+                        }
+                    }
+                    end -= 1;
+                }
+                scope = unsafe {
+                    ::core::str::from_utf8_unchecked(::core::slice::from_raw_parts(
+                        scope.as_ptr(),
+                        end,
+                    ))
+                };
+                i += 1;
+            }
+            scope
+        };
+        const FUNCTION_LEN: usize = scope().len();
+
+        #[used]
+        #[link_section = ".profile.strings"]
+        static FUNCTION: $crate::profiler::ProbeStr<FUNCTION_LEN> =
+            $crate::profiler::ProbeStr::<FUNCTION_LEN>::new(scope());
 
         #[used]
         #[link_section = ".profile"]
@@ -117,16 +148,48 @@ macro_rules! profiler_probe {
             unsafe { &FILENAME as *const _ },
             ::core::line!(),
             ::core::column!(),
-            None
+            unsafe { &FUNCTION as *const _ as *const _ },
+            None,
         );
         &PROBE
     }};
 
     (@static $prev_probe:expr) => {{
         extern {
-            #[link_name = concat!("profile: ", ::core::file!())]
-            static FILENAME: $crate::profiler::ProbeFilename<0>;
+            #[link_name = concat!("profile file: ", ::core::file!())]
+            static FILENAME: $crate::profiler::ProbeStr<0>;
         }
+
+        const fn scope() -> &'static str {
+            let mut scope = $crate::scope!();
+            // Remove the last two scope levels (e.g. `::PROBE::scope`).
+            let mut i = 0;
+            while i < 2 {
+                let mut end = scope.len().saturating_sub(1);
+                while end > 0 {
+                    unsafe {
+                        if *scope.as_ptr().add(end) == b':' && *scope.as_ptr().add(end + 1) == b':' {
+                            break;
+                        }
+                    }
+                    end -= 1;
+                }
+                scope = unsafe {
+                    ::core::str::from_utf8_unchecked(::core::slice::from_raw_parts(
+                        scope.as_ptr(),
+                        end,
+                    ))
+                };
+                i += 1;
+            }
+            scope
+        };
+        const FUNCTION_LEN: usize = scope().len();
+
+        #[used]
+        #[link_section = ".profile.strings"]
+        static FUNCTION: $crate::profiler::ProbeStr<FUNCTION_LEN> =
+            $crate::profiler::ProbeStr::<FUNCTION_LEN>::new(scope());
 
         #[used]
         #[link_section = ".profile"]
@@ -134,7 +197,8 @@ macro_rules! profiler_probe {
             unsafe { &FILENAME as *const _ },
             ::core::line!(),
             ::core::column!(),
-            Some($prev_probe.probe)
+            unsafe { &FUNCTION as *const _ as *const _ },
+            Some($prev_probe.probe),
         );
         &PROBE
     }};
@@ -166,7 +230,7 @@ macro_rules! profiler_probe {
 /// to represent the previous probe.
 pub struct ProbeHandle {
     #[doc(hidden)]
-    pub probe: &'static Probe
+    pub probe: &'static Probe,
 }
 
 /// Resets the profiler by setting all visit counts to 0.
@@ -272,33 +336,33 @@ unsafe impl Sync for ProbesHeader {}
 #[repr(C)]
 #[derive(Debug)]
 #[doc(hidden)]
-pub struct ProbeFilename<const N: usize> {
+pub struct ProbeStr<const N: usize> {
     len:   u16,
     bytes: [u8; N]
 }
 
-impl<const N: usize> ProbeFilename<N> {
+impl<const N: usize> ProbeStr<N> {
     #[doc(hidden)]
-    pub const fn new(filename: &str) -> Self {
-        assert!(filename.len() == N);
-        assert!(filename.len() <= u16::max_value() as usize);
+    pub const fn new(s: &str) -> Self {
+        assert!(s.len() == N);
+        assert!(s.len() <= u16::max_value() as usize);
 
-        let mut pf = ProbeFilename {
-            len:   filename.len() as u16,
+        let mut ps = Self {
+            len:   s.len() as u16,
             bytes: [0; N]
         };
-        let bytes = filename.as_bytes();
+        let bytes = s.as_bytes();
         let mut i = 0;
         while i < bytes.len() {
-            pf.bytes[i] = bytes[i];
+            ps.bytes[i] = bytes[i];
             i += 1;
         }
-        pf
+        ps
     }
 
     #[cfg(feature = "profiler")]
     const fn as_str(&self) -> &str {
-        // SAFETY: The only way to generate a `ProbeFilename` is from a valid `&str`, so we will always
+        // SAFETY: The only way to generate a `ProbeStr` is from a valid `&str`, so we will always
         // have the right length and valid UTF-8.
         unsafe {
             let bytes = slice::from_raw_parts(
@@ -316,9 +380,10 @@ impl<const N: usize> ProbeFilename<N> {
 #[doc(hidden)]
 pub struct Probe {
     // All pointers in here may be invalid except in terms of their offsets from each other.
-    file:                            *const ProbeFilename<0>,
+    file:                            *const ProbeStr<0>,
     line:                            u32,
     column:                          u32,
+    scope:                           *const ProbeStr<0>,
     visits:                          AtomicU64,
     current_visitors:                AtomicU64,
     last_reset_time_nanos:           AtomicU64,
@@ -335,20 +400,22 @@ impl Probe {
     #[cfg(feature = "profiler")]
     #[doc(hidden)]
     pub const fn new(
-        file:       *const ProbeFilename<0>,
+        file:       *const ProbeStr<0>,
         line:       u32,
         column:     u32,
-        prev_probe: Option<&'static Probe>
+        scope:      *const ProbeStr<0>,
+        prev_probe: Option<&'static Probe>,
     ) -> Self {
         let prev_probe = match prev_probe {
             Some(p) => p as *const Probe,
-            None => ptr::null()
+            None => ptr::null(),
         };
 
         Self {
             file,
             line,
             column,
+            scope,
             visits:                          AtomicU64::new(0),
             current_visitors:                AtomicU64::new(0),
             last_reset_time_nanos:           AtomicU64::new(0),
@@ -409,7 +476,7 @@ impl<'a> ProbeRef<'a> {
         #[cfg(feature = "profiler")] {
             let base = self.probes as *const _ as *const u8;
             let offset = self.probe().file as usize - self.base_ptr as usize;
-            unsafe { (*(base.add(offset) as *const ProbeFilename<0>)).as_str() }
+            unsafe { (*(base.add(offset) as *const ProbeStr<0>)).as_str() }
         }
         #[cfg(not(feature = "profiler"))] { "" }
     }
@@ -424,6 +491,16 @@ impl<'a> ProbeRef<'a> {
     pub const fn column(&self) -> u32 {
         #[cfg(feature = "profiler")] { self.probe().column }
         #[cfg(not(feature = "profiler"))] { 0 }
+    }
+
+    /// The scope in which the probe is defined.
+    pub fn scope(&self) -> &str {
+        #[cfg(feature = "profiler")] {
+            let base = self.probes as *const _ as *const u8;
+            let offset = self.probe().scope as usize - self.base_ptr as usize;
+            unsafe { (*(base.add(offset) as *const ProbeStr<0>)).as_str() }
+        }
+        #[cfg(not(feature = "profiler"))] { "" }
     }
 
     /// The probe immediately before this one, if any.

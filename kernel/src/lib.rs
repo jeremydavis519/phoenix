@@ -111,7 +111,7 @@ fn print_profile(profiler_start_time: time::SystemTime) {
 
     for probe in profiler::probes() {
         let visits = probe.visits();
-        println!("{}:{}:{}", probe.file(), probe.line(), probe.column());
+        println!("{}:{}:{} ({})", probe.file(), probe.line(), probe.column(), probe.scope());
         println!("Visits: {}", visits);
         println!("Throughput: {} visits/sec", probe.avg_throughput_hz());
         if let Some(latency) = probe.avg_latency_secs() {
