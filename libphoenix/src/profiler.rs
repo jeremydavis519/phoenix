@@ -111,6 +111,7 @@ macro_rules! profiler_probe {
             static FILENAME: $crate::profiler::ProbeFilename<0>;
         }
 
+        #[used]
         #[link_section = ".profile"]
         static PROBE: $crate::profiler::Probe = $crate::profiler::Probe::new(
             unsafe { &FILENAME as *const _ },
@@ -127,6 +128,7 @@ macro_rules! profiler_probe {
             static FILENAME: $crate::profiler::ProbeFilename<0>;
         }
 
+        #[used]
         #[link_section = ".profile"]
         static PROBE: $crate::profiler::Probe = $crate::profiler::Probe::new(
             unsafe { &FILENAME as *const _ },
@@ -238,6 +240,7 @@ extern "Rust" {
 }
 
 #[cfg(feature = "profiler")]
+#[used]
 #[link_section = ".profile.header"]
 static PROBES_HEADER: ProbesHeader = ProbesHeader {
     _version:     0x0000,
