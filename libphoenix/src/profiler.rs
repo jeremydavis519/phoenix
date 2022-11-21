@@ -389,11 +389,13 @@ impl Probe {
 /// macro to construct a probe and the [`probes`] function to access them.
 #[derive(Debug)]
 pub struct ProbeRef<'a> {
-    probes:   &'a [Probe],
-    idx:      usize,
+    #[cfg(feature = "profiler")] probes:   &'a [Probe],
+    #[cfg(feature = "profiler")] idx:      usize,
 
     // A pointer, possibly into another address space, by which other pointers can be measured.
-    base_ptr: *const c_void
+    #[cfg(feature = "profiler")] base_ptr: *const c_void,
+
+    #[cfg(not(feature = "profiler"))] _phantom: core::marker::PhantomData<&'a ()>,
 }
 
 impl<'a> ProbeRef<'a> {
