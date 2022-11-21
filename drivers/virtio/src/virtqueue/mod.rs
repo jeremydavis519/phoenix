@@ -753,6 +753,11 @@ impl<T: ?Sized> Response<T> {
         &mut self.buffer
     }
 
+    /// Consumes the response and returns the buffer. Note that some bytes at the end may be undefined.
+    pub fn into_buffer(self) -> PhysBox<T> {
+        self.buffer
+    }
+
     /// Returns the number of bytes that were actually written by the device. Any bytes after these
     /// are undefined.
     pub const fn valid_bytes(&self) -> usize {
