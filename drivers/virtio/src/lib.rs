@@ -446,6 +446,11 @@ impl<'a> DeviceDetails<'a> {
         self.legacy
     }
 
+    /// Returns the bitmap of features that have been negotiated.
+    pub fn features(&self) -> u64 {
+        self.features
+    }
+
     /// Returns a slice containing the device's configuration space.
     ///
     /// The configuration space's layout depends on the device type, so all we can do is return a

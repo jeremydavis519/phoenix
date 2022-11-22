@@ -102,6 +102,8 @@ fn main() {
         let properties = unsafe { slice::from_raw_parts(&properties.bitmap[0], size.into()) };
         let _ = writeln!(KernelWriter, "virtio-input: input properties: {:?}", properties);
 
+        let _ = writeln!(KernelWriter, "virtio-input: VirtIO features: {:#x}", device_details.features());
+
         /*executor.spawn(async {
             
         });*/
