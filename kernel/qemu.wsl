@@ -1,6 +1,7 @@
 #/bin/sh -x
 
 "/mnt/c/Program Files/qemu/qemu-system-aarch64.exe" \
+    -d guest_errors \
     -M virt \
     -cpu cortex-a53 \
     -kernel "build/release/kernel-aarch64.bin" \
