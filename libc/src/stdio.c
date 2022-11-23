@@ -392,7 +392,7 @@ int sscanf(const char* s, const char* format, ...) {
             }
             while (width_counter-- && c) {
                 const char* scanner = spec.scanner;
-                while (*scanner != ']') {
+                do {
                     if (c == *scanner++) {
                         if (spec.flags & FSF_SCANSET_NEGATED) {
                             goto scanset_break;
@@ -400,7 +400,7 @@ int sscanf(const char* s, const char* format, ...) {
                             goto scanset_store;
                         }
                     }
-                }
+                } while (*scanner != ']');
 scanset_store:
                 if (store_arg) {
                     switch (spec.flags & FSF_ARG_TYPE) {
@@ -784,6 +784,10 @@ static int parse_scanset(const char** format, FormatSpec* spec) {
         ++*format;
     }
     spec->scanner = *format;
+    if (**format == ']') {
+        // ']' is be included in the set if it is the first character, possibly after '^'.
+        ++*format;
+    }
     while (**format) {
         if (*(*format++) == ']') {
             return 0;
