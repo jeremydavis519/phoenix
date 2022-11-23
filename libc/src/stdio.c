@@ -121,24 +121,22 @@ int sprintf(char* s, const char* format, ...); */
 int sscanf(const char* s, const char* format, ...) {
     va_list args;
     va_start(args, format);
-    char c = *s++;
     int sign;
     int radix, dec_digits, hex_digits;
     uintmax_t i_acc;
     void* out;
 
     int args_filled = 0;
-    int chars_read = 0;
     const char* const s_start = s;
+    char c = *s++;
     while (c && *format) {
         char fc = *format++;
 
-        /* A single whitespace characters in the format string matches 0 or more whitespace characters
+        /* A single whitespace character in the format string matches 0 or more whitespace characters
            in the input string. */
         if (isspace(fc)) {
             while (isspace(c)) {
                 c = *s++;
-                ++chars_read;
             }
             continue;
         }
@@ -149,7 +147,6 @@ int sscanf(const char* s, const char* format, ...) {
                 goto matching_break;
             }
             c = *s++;
-            ++chars_read;
             continue;
         }
 
@@ -178,7 +175,6 @@ int sscanf(const char* s, const char* format, ...) {
         case FSF_TEXT_POINTER:
             while (isspace(c)) {
                 c = *s++;
-                ++chars_read;
             }
 
             i_acc = 0;
@@ -190,7 +186,6 @@ int sscanf(const char* s, const char* format, ...) {
                     /* Intentional fall-through */
                 case '+':
                     c = *s++;
-                    ++chars_read;
                     --width_counter;
                     break;
                 }
@@ -201,11 +196,9 @@ int sscanf(const char* s, const char* format, ...) {
                 if (width_counter-- && c == '0') {
                     radix = 8;
                     c = *s++;
-                    ++chars_read;
                     if (width_counter-- && (c == 'x' || c == 'X')) {
                         radix = 16;
                         c = *s++;
-                        ++chars_read;
                     }
                 }
                 break;
@@ -220,9 +213,8 @@ int sscanf(const char* s, const char* format, ...) {
                 radix = 16;
                 if (width_counter >= 2 && c == '0' && (*s == 'x' || *s == 'X')) {
                     /* A hexadecimal number can optionally start with "0x". */
-                    *s++;
+                    s++;
                     c = *s++;
-                    chars_read += 2;
                     width_counter -= 2;
                 }
                 break;
@@ -240,15 +232,12 @@ int sscanf(const char* s, const char* format, ...) {
                 if (c >= '0' && c < '0' + dec_digits) {
                     i_acc = i_acc * radix + (c - '0');
                     c = *s++;
-                    ++chars_read;
                 } else if (c >= 'a' && c < 'a' + hex_digits) {
                     i_acc = i_acc * radix + (c - 'a' + 10);
                     c = *s++;
-                    ++chars_read;
                 } else if (c >= 'A' && c < 'A' + hex_digits) {
                     i_acc = i_acc * radix + (c - 'A' + 10);
                     c = *s++;
-                    ++chars_read;
                 }
             }
             if (store_arg) {
@@ -317,7 +306,6 @@ int sscanf(const char* s, const char* format, ...) {
         case FSF_TEXT_FLOAT_SHORT_UPPER:
             while (isspace(c)) {
                 c = *s++;
-                ++chars_read;
             }
 
             /* FIXME
@@ -370,7 +358,6 @@ int sscanf(const char* s, const char* format, ...) {
         case FSF_TEXT_STRING:
             while (isspace(c)) {
                 c = *s++;
-                ++chars_read;
             }
 
             if (store_arg) {
@@ -393,7 +380,6 @@ int sscanf(const char* s, const char* format, ...) {
                     }
                 }
                 c = *s++;
-                ++chars_read;
             }
             if (store_arg) {
                 *(char*)out = '\0';
@@ -432,7 +418,6 @@ scanset_store:
                     }
                 }
                 c = *s++;
-                ++chars_read;
             }
 scanset_break:
             if (store_arg) {
@@ -444,27 +429,27 @@ scanset_break:
             if (store_arg) {
                 switch (spec.flags & FSF_ARG_TYPE) {
                 case FSF_ARG_DEFAULT:
-                    *va_arg(args, int*) = chars_read;
+                    *va_arg(args, int*) = s - s_start;
                 case FSF_ARG_CHAR:
-                    *va_arg(args, signed char*) = chars_read;
+                    *va_arg(args, signed char*) = s - s_start;
                     break;
                 case FSF_ARG_SHORT:
-                    *va_arg(args, short int*) = chars_read;
+                    *va_arg(args, short int*) = s - s_start;
                     break;
                 case FSF_ARG_LONG:
-                    *va_arg(args, long int*) = chars_read;
+                    *va_arg(args, long int*) = s - s_start;
                     break;
                 case FSF_ARG_LONG_LONG:
-                    *va_arg(args, long long int*) = chars_read;
+                    *va_arg(args, long long int*) = s - s_start;
                     break;
                 case FSF_ARG_INTMAX_T:
-                    *va_arg(args, intmax_t*) = chars_read;
+                    *va_arg(args, intmax_t*) = s - s_start;
                     break;
                 case FSF_ARG_SIZE_T:
-                    *va_arg(args, size_t*) = chars_read;
+                    *va_arg(args, size_t*) = s - s_start;
                     break;
                 case FSF_ARG_PTRDIFF_T:
-                    *va_arg(args, ptrdiff_t*) = chars_read;
+                    *va_arg(args, ptrdiff_t*) = s - s_start;
                     break;
                 default:
                     goto matching_break;
@@ -475,12 +460,10 @@ scanset_break:
         case FSF_TEXT_PERCENT:
             while (isspace(c)) {
                 c = *s++;
-                ++chars_read;
             }
 
             if (!(width_counter-- && c == '%')) {
                 c = *s++;
-                ++chars_read;
                 goto matching_break;
             }
             break;
