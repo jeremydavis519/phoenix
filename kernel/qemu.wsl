@@ -1,6 +1,6 @@
 #/bin/sh -x
 
-"/mnt/c/Program Files/qemu/qemu-system-aarch64.exe" \
+qemu-system-aarch64 \
     -d guest_errors \
     -M virt \
     -cpu cortex-a53 \
