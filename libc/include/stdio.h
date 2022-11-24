@@ -30,8 +30,8 @@
 #define EOF -1
 #define FILENAME_MAX 4096
 #define FOPEN_MAX 16
-#define L_tmpnam 10 /* format: /tmp~[0-9a-z]{6}/ */
-#define TMP_MAX 0xffffffff
+#define L_tmpnam 9 /* format: /t~[0-9a-z]{6}/ */
+#define TMP_MAX 0x7fffffff
 
 #define _IOFBF 2 /* Full-buffering mode */
 #define _IOLBF 1 /* Line-buffering mode */
