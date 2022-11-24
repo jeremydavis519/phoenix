@@ -43,6 +43,6 @@ clean:
 
 build/%.o: src/%.c
 	mkdir -p build
-	$(CC) -c -Iinclude -o $@ $<
+	$(CC) -Wall -Wextra -Wpedantic -c -Iinclude -o $@ $<
 
 src/%.c: $(HEADERS)

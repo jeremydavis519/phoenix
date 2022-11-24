@@ -337,13 +337,15 @@ int sscanf(const char* s, const char* format, ...) {
                 if (store_arg) {
                     switch (spec.flags & FSF_ARG_TYPE) {
                     case FSF_ARG_DEFAULT:
-                        *(char*)out++ = c;
+                        *(char*)out = c;
+                        out = (char*)out + 1;
                         break;
                     case FSF_ARG_LONG:
                         /* FIXME: "The conversion specifiers lc, ls, and l[ perform multibyte-to-wide
                         character conversion as if by calling mbrtowc() with an mbstate_t object
                         initialized to zero before the first character is converted." */
-                        *(wchar_t*)out++ = c;
+                        *(wchar_t*)out = c;
+                        out = (wchar_t*)out + 1;
                         break;
                     default:
                         goto matching_break;
@@ -367,13 +369,15 @@ int sscanf(const char* s, const char* format, ...) {
                 if (store_arg) {
                     switch (spec.flags & FSF_ARG_TYPE) {
                     case FSF_ARG_DEFAULT:
-                        *(char*)out++ = c;
+                        *(char*)out = c;
+                        out = (char*)out + 1;
                         break;
                     case FSF_ARG_LONG:
                         /* FIXME: "The conversion specifiers lc, ls, and l[ perform multibyte-to-wide
                         character conversion as if by calling mbrtowc() with an mbstate_t object
                         initialized to zero before the first character is converted." */
-                        *(wchar_t*)out++ = c;
+                        *(wchar_t*)out = c;
+                        out = (wchar_t*)out + 1;
                         break;
                     default:
                         goto matching_break;
@@ -405,13 +409,15 @@ scanset_store:
                 if (store_arg) {
                     switch (spec.flags & FSF_ARG_TYPE) {
                     case FSF_ARG_DEFAULT:
-                        *(char*)out++ = c;
+                        *(char*)out = c;
+                        out = (char*)out + 1;
                         break;
                     case FSF_ARG_LONG:
                         /* FIXME: "The conversion specifiers lc, ls, and l[ perform multibyte-to-wide
                         character conversion as if by calling mbrtowc() with an mbstate_t object
                         initialized to zero before the first character is converted." */
-                        *(wchar_t*)out++ = c;
+                        *(wchar_t*)out = c;
+                        out = (wchar_t*)out + 1;
                         break;
                     default:
                         goto matching_break;
@@ -430,6 +436,7 @@ scanset_break:
                 switch (spec.flags & FSF_ARG_TYPE) {
                 case FSF_ARG_DEFAULT:
                     *va_arg(args, int*) = s - s_start;
+                    break;
                 case FSF_ARG_CHAR:
                     *va_arg(args, signed char*) = s - s_start;
                     break;
@@ -549,8 +556,6 @@ void perror(FILE* stream); */
  */
 static int parse_format_spec(const char** format, FormatSpec* spec) {
     spec->flags = 0;
-
-    bool has_precision = false;
 
     /* Flags */
     for (; **format; ++*format) {
@@ -785,7 +790,7 @@ static int parse_scanset(const char** format, FormatSpec* spec) {
     }
     spec->scanner = *format;
     if (**format == ']') {
-        // ']' is be included in the set if it is the first character, possibly after '^'.
+        /* ']' is be included in the set if it is the first character, possibly after '^'. */
         ++*format;
     }
     while (**format) {
