@@ -43,7 +43,7 @@ use {
         allocator::{Allocator, PhysBox},
         syscall
     },
-    crate::{DeviceEndian, VirtIoError},
+    crate::{DeviceEndian, GenericFeatures, VirtIoError},
     self::future::ResponseFuture
 };
 
@@ -200,10 +200,12 @@ impl<'a> VirtQueue<'a> {
         }
 
         // The device only needs the index of the first descriptor in the chain.
-        self.driver_ring.set_next_entry(descriptor_indices[0]);
+        let idx = self.driver_ring.set_next_entry(descriptor_indices[0]);
 
         // Notify the device of the new buffers, but only if it expects notifications.
-        if !self.device_ring.flags().contains(DeviceFlags::NO_INTERRUPT) {
+        let event_index_feature = self.device_features & GenericFeatures::RING_EVENT_INDEX.bits() != 0;
+        if (!event_index_feature && !self.device_ring.flags().contains(DeviceFlags::NO_INTERRUPT)) ||
+                (event_index_feature && self.device_ring.avail_event() == idx) {
             super::notify_device(self.resource, self.id);
         }
 
@@ -580,10 +582,10 @@ impl DriverRing {
         self.internal()[self.used_event_offset()].store(flags.bits(), Ordering::Release);
     }
 
-    fn set_next_entry(&self, val: u16) {
+    fn set_next_entry(&self, val: u16) -> u16 {
         let (internal, state) = self.internal_and_state();
 
-        let mut this_idx = state.next_idx.fetch_add(1, Ordering::AcqRel);
+        let this_idx = state.next_idx.fetch_add(1, Ordering::AcqRel);
         let entries_updated = &state.entries_updated;
         internal[Self::RING_OFFSET + this_idx as usize % self.len()].store(val, Ordering::Release);
 
@@ -593,22 +595,25 @@ impl DriverRing {
         // up the notes as we go.
         assert!(!entries_updated[this_idx as usize % self.len()].swap(true, Ordering::AcqRel));
         if this_idx == self.idx() {
+            let mut next_idx = this_idx;
             loop {
                 let steps = entries_updated.iter()
                     .cycle() // This is a circular array. No need for `take` because we'll find a `false` within one revolution.
-                    .skip(this_idx as usize % self.len())
+                    .skip(next_idx as usize % self.len())
                     .take_while(|x| x.swap(false, Ordering::AcqRel))
                     .count() as u16;
                 self.add_idx(steps);
 
                 // If, between the last `swap` and `add_idx`, a new note was left at the next
                 // index, we have to keep going.
-                this_idx = this_idx.wrapping_add(steps);
-                if !entries_updated[this_idx as usize % self.len()].load(Ordering::Acquire) {
+                next_idx = next_idx.wrapping_add(steps);
+                if !entries_updated[next_idx as usize % self.len()].load(Ordering::Acquire) {
                     break;
                 }
             }
         }
+
+        this_idx
     }
 
     fn used_event_offset(&self) -> usize {
@@ -644,7 +649,7 @@ impl DriverRingState {
 #[derive(Debug)]
 enum DeviceRing {
     Legacy(*const DeviceRingInternal),
-    Modern(PhysBox<DeviceRingInternal>)
+    Modern(PhysBox<DeviceRingInternal>),
 }
 
 type DeviceRingInternal = [u16];
@@ -667,45 +672,58 @@ impl DeviceRing {
     fn legacy(&self) -> bool {
         match *self {
             Self::Legacy(_) => true,
-            Self::Modern(_) => false
+            Self::Modern(_) => false,
         }
     }
 
     fn internal(&self) -> &DeviceRingInternal {
         match *self {
             Self::Legacy(ref internal) => unsafe { &**internal },
-            Self::Modern(ref internal) => &**internal
+            Self::Modern(ref internal) => &**internal,
         }
     }
 
     fn base_addr_phys(&self) -> usize {
         match *self {
             Self::Legacy(_) => panic!("tried to get the base address of a legacy device ring"),
-            Self::Modern(ref internal) => internal.addr_phys()
+            Self::Modern(ref internal) => internal.addr_phys(),
         }
     }
 
     fn flags(&self) -> DeviceFlags {
         DeviceFlags::from_bits_truncate(u16::from_device_endian(
-            unsafe { (&self.internal()[Self::FLAGS_OFFSET] as *const u16).read_volatile() },
-            self.legacy()
+            unsafe {
+                (*(&self.internal()[Self::FLAGS_OFFSET] as *const _ as *const AtomicU16))
+                    .load(Ordering::Acquire)
+            },
+            self.legacy(),
         ))
     }
 
     fn idx(&self) -> u16 {
         u16::from_device_endian(
             unsafe { (&self.internal()[Self::IDX_OFFSET] as *const u16).read_volatile() },
-            self.legacy()
+            self.legacy(),
         )
     }
 
     fn ring(&self) -> &[UsedElem] {
         unsafe {
             slice::from_raw_parts(
-                &self.internal()[Self::RING_OFFSET] as *const u16 as *const UsedElem,
-                self.len()
+                &self.internal()[Self::RING_OFFSET] as *const _ as *const UsedElem,
+                self.len(),
             )
         }
+    }
+
+    fn avail_event(&self) -> u16 {
+        u16::from_device_endian(
+            unsafe {
+                (*(&self.internal()[self.avail_event_offset()] as *const _ as *const AtomicU16))
+                    .load(Ordering::Acquire)
+            },
+            self.legacy(),
+        )
     }
 
     fn avail_event_offset(&self) -> usize {
