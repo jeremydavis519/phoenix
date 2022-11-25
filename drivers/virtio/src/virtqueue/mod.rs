@@ -290,7 +290,7 @@ impl DescriptorTable {
         for i in 0 .. len {
             mem::forget(mem::replace(
                 &mut self[i],
-                BufferDescriptor::new(0, 0, BufferFlags::empty(), (i + 1) as u16, legacy)
+                BufferDescriptor::new(0, 0, BufferFlags::empty(), ((i + 1) % len) as u16, legacy),
             ));
         }
         self
