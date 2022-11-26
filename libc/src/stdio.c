@@ -103,24 +103,71 @@ int setvbuf(FILE* restrict stream, char* restrict buffer, int mode, size_t size)
 
 
 /* Formatted input/output */
-/* TODO
-int fprintf(FILE* restrict stream, const char* restrict format, ...);
-int fscanf(FILE* restrict stream, const char* restrict format, ...); */
-
-int printf(const char* format, ...) {
-    /* FIXME: This printf implementation is far from complete. */
-    puts(format);
-    return strlen(format);
+int fprintf(FILE* restrict stream, const char* restrict format, ...) {
+    va_list args;
+    va_start(args, format);
+    int result = vfprintf(stream, format, args);
+    va_end(args);
+    return result;
 }
 
-/* TODO
-int scanf(const char* format, ...);
-int snprintf(char* restrict s, size_t n, const char* restrict format, ...);
-int sprintf(char* restrict s, const char* restrict format, ...); */
+int fscanf(FILE* restrict stream, const char* restrict format, ...) {
+    va_list args;
+    va_start(args, format);
+    int result = vfscanf(stream, format, args);
+    va_end(args);
+    return result;
+}
+
+int printf(const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    int result = vprintf(format, args);
+    va_end(args);
+    return result;
+}
+
+int scanf(const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    int result = vscanf(format, args);
+    va_end(args);
+    return result;
+}
+
+int snprintf(char* restrict s, size_t n, const char* restrict format, ...) {
+    va_list args;
+    va_start(args, format);
+    int result = vsnprintf(s, n, format, args);
+    va_end(args);
+    return result;
+}
+
+int sprintf(char* restrict s, const char* restrict format, ...) {
+    va_list args;
+    va_start(args, format);
+    int result = vsprintf(s, format, args);
+    va_end(args);
+    return result;
+}
 
 int sscanf(const char* restrict s, const char* restrict format, ...) {
     va_list args;
     va_start(args, format);
+    int result = vsscanf(s, format, args);
+    va_end(args);
+    return result;
+}
+
+/* TODO
+int vfprintf(FILE* restrict stream, const char* restrict format, va_list args);
+int vfscanf(FILE* restrict stream, const char* restrict format, va_list args);
+int vprintf(const char* format, va_list args);
+int vscanf(const char* format, va_list args);
+int vsnprintf(char* restrict s, size_t n, const char* restrict format, va_list args);
+int vsprintf(char* restrict s, const char* restrict format, va_list args); */
+
+int vsscanf(const char* restrict s, const char* restrict format, va_list args) {
     int sign;
     int radix, dec_digits, hex_digits;
     uintmax_t i_acc;
