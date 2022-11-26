@@ -272,47 +272,6 @@ impl<'a, T: ?Sized> Future for ResponseFuture<'a, T> {
                     //       future to avoid needless polling.
                     cx.waker().wake_by_ref();
                     Poll::Pending
-                } else if found_desc_idx == desc_head_idx {
-                    // The device has used this future's buffer.
-
-                    dealloc_descriptor_chain();
-
-                    // Make sure we look in the right place for the next buffer returned by the
-                    // device.
-                    let batch_size = virtq.accumulated_batch_size.swap(0, Ordering::AcqRel)
-                        .wrapping_add(1);
-                    let last_dev_ring_idx = virtq.last_dev_ring_idx.fetch_add(batch_size, Ordering::AcqRel)
-                        .wrapping_add(batch_size);
-
-                    // If we haven't gotten through all the available descriptors yet, wake the next
-                    // descriptor's future.
-                    if last_dev_ring_idx != virtq.driver_ring.idx() {
-                        let last_dev_ring_idx = virtq.last_dev_ring_idx.load(Ordering::Acquire);
-                        let next_desc_idx = virtq.driver_ring[last_dev_ring_idx as usize % virtq.len()]
-                            .load(Ordering::Acquire);
-                        if let Some(waker) = virtq.wakers[next_desc_idx as usize].replace(None) {
-                            waker.wake();
-                        }
-                    }
-
-                    // Return the response.
-                    let buffer = mem::replace(buffer, None)
-                        .expect("polled a ResponseFuture that was already finished");
-                    let valid_bytes = if virtq.legacy {
-                        match legacy_response_len {
-                            Some(legacy_response_len) => legacy_response_len,
-                            None => u32::from_device_endian(
-                                unsafe { (&dev_ring_entry.len as *const u32).read_volatile() },
-                                virtq.legacy
-                            ) as usize
-                        }
-                    } else {
-                        u32::from_device_endian(
-                            unsafe { (&dev_ring_entry.len as *const u32).read_volatile() },
-                            virtq.legacy
-                        ) as usize
-                    };
-                    Poll::Ready(Response { buffer, valid_bytes })
                 } else if virtq.device_features & GenericFeatures::IN_ORDER.bits() != 0 {
                     // This device guarantees that it will consume the buffers given to it in order,
                     // and it has just consumed at least one. According to the VirtIO spec
@@ -358,6 +317,47 @@ impl<'a, T: ?Sized> Future for ResponseFuture<'a, T> {
                         *virtq.wakers[desc_head_idx as usize].borrow_mut() = Some(cx.waker().clone());
                         Poll::Pending
                     }
+                } else if found_desc_idx == desc_head_idx {
+                    // The device has used this future's buffer.
+
+                    dealloc_descriptor_chain();
+
+                    // Make sure we look in the right place for the next buffer returned by the
+                    // device.
+                    let batch_size = virtq.accumulated_batch_size.swap(0, Ordering::AcqRel)
+                        .wrapping_add(1);
+                    let last_dev_ring_idx = virtq.last_dev_ring_idx.fetch_add(batch_size, Ordering::AcqRel)
+                        .wrapping_add(batch_size);
+
+                    // If we haven't gotten through all the available descriptors yet, wake the next
+                    // descriptor's future.
+                    if last_dev_ring_idx != virtq.driver_ring.idx() {
+                        let last_dev_ring_idx = virtq.last_dev_ring_idx.load(Ordering::Acquire);
+                        let next_desc_idx = virtq.driver_ring[last_dev_ring_idx as usize % virtq.len()]
+                            .load(Ordering::Acquire);
+                        if let Some(waker) = virtq.wakers[next_desc_idx as usize].replace(None) {
+                            waker.wake();
+                        }
+                    }
+
+                    // Return the response.
+                    let buffer = mem::replace(buffer, None)
+                        .expect("polled a ResponseFuture that was already finished");
+                    let valid_bytes = if virtq.legacy {
+                        match legacy_response_len {
+                            Some(legacy_response_len) => legacy_response_len,
+                            None => u32::from_device_endian(
+                                unsafe { (&dev_ring_entry.len as *const u32).read_volatile() },
+                                virtq.legacy
+                            ) as usize
+                        }
+                    } else {
+                        u32::from_device_endian(
+                            unsafe { (&dev_ring_entry.len as *const u32).read_volatile() },
+                            virtq.legacy
+                        ) as usize
+                    };
+                    Poll::Ready(Response { buffer, valid_bytes })
                 } else {
                     // The device has read at least one buffer, but it's not one that concerns
                     // this future. Wake the future that's responsible for this descriptor chain
