@@ -34,7 +34,7 @@ use {
         ops::{Index, IndexMut},
         ptr,
         slice,
-        sync::atomic::{AtomicBool, AtomicU16, AtomicU32, AtomicU64, Ordering},
+        sync::atomic::{AtomicU8, AtomicU16, AtomicU32, AtomicU64, Ordering},
         task::Waker
     },
     bitflags::bitflags,
@@ -190,18 +190,22 @@ impl<'a> VirtQueue<'a> {
             let first_desc = &self.descriptors[0];
             first_desc.set_addr(buf.addr_phys() as u64, self.legacy);
             first_desc.set_len(usize::min(buf_size, first_recv_idx) as u32, self.legacy);
+            let _ = writeln!(KernelWriter, "out len = {}", usize::min(buf_size, first_recv_idx));
         }
         if first_recv_idx < buf_size {
             let last_desc = &self.descriptors[descriptor_indices.len() - 1];
             last_desc.set_addr((buf.addr_phys() + first_recv_idx) as u64, self.legacy);
             last_desc.set_len((buf_size - first_recv_idx) as u32, self.legacy);
+            let _ = writeln!(KernelWriter, "in len = {}", buf_size - first_recv_idx);
 
             // Mark this as an input buffer (i.e. writable from the device's perspective).
             last_desc.set_flags(last_desc.flags(self.legacy) | BufferFlags::WRITE, self.legacy);
         }
 
         // The device only needs the index of the first descriptor in the chain.
-        let idx = self.driver_ring.set_next_entry(descriptor_indices[0]);
+        let Ok(idx) = self.driver_ring.set_next_entry(descriptor_indices[0]) else {
+            return SendRecvResult::Retry(buf);
+        };
 
         // Notify the device of the new buffers, but only if it expects notifications.
         let event_index_feature = self.device_features & GenericFeatures::RING_EVENT_INDEX.bits() != 0;
@@ -549,7 +553,16 @@ type DriverRingInternal = [AtomicU16];
 #[derive(Debug)]
 struct DriverRingState {
     next_idx: AtomicU16,
-    entries_updated: Vec<AtomicBool>
+    entries_flags: Vec<AtomicU8>,
+}
+
+bitflags! {
+    struct DriverRingEntryFlags: u8 {
+        // Allows lock-free insertions
+        const UPDATED   = 0x01;
+        // An implementation detail to avoid a data race
+        const PROTECTED = 0x02;
+    }
 }
 
 impl DriverRing {
@@ -560,7 +573,7 @@ impl DriverRing {
     unsafe fn new_legacy(block: &PhysBox<[u8]>, offset: usize, len: usize, driver_flags: DriverFlags) -> Self {
         let internal = ptr::slice_from_raw_parts(
             &block[offset] as *const u8 as *const AtomicU16,
-            len + 3
+            len + 3,
         );
         (*internal)[Self::FLAGS_OFFSET].store(driver_flags.bits().to_device_endian(true), Ordering::Release);
         (*internal)[Self::IDX_OFFSET].store(0.to_device_endian(true), Ordering::Release);
@@ -571,35 +584,35 @@ impl DriverRing {
     fn legacy(&self) -> bool {
         match *self {
             Self::Legacy { .. } => true,
-            Self::Modern { .. } => false
+            Self::Modern { .. } => false,
         }
     }
 
     fn internal(&self) -> &DriverRingInternal {
         match *self {
             Self::Legacy { ref internal, .. } => unsafe { &**internal },
-            Self::Modern { ref internal, .. } => &**internal
+            Self::Modern { ref internal, .. } => &**internal,
         }
     }
 
     fn state(&self) -> &DriverRingState {
         match *self {
             Self::Legacy { ref state, .. } => state,
-            Self::Modern { ref state, .. } => state
+            Self::Modern { ref state, .. } => state,
         }
     }
 
     fn internal_and_state(&self) -> (&DriverRingInternal, &DriverRingState) {
         match *self {
             Self::Legacy { ref internal, ref state } => (unsafe { &**internal }, state),
-            Self::Modern { ref internal, ref state } => (&**internal, state)
+            Self::Modern { ref internal, ref state } => (&**internal, state),
         }
     }
 
     fn base_addr_phys(&self) -> usize {
         match *self {
             Self::Legacy { .. } => panic!("tried to get the base address of a legacy driver ring"),
-            Self::Modern { ref internal, .. } => internal.addr_phys()
+            Self::Modern { ref internal, .. } => internal.addr_phys(),
         }
     }
 
@@ -624,10 +637,10 @@ impl DriverRing {
                         old_idx_le,
                         u16::to_le(old_idx_be.wrapping_add(steps)),
                         Ordering::AcqRel,
-                        Ordering::Relaxed
+                        Ordering::Relaxed,
                 ) {
                     Ok(_) => break,
-                    Err(x) => old_idx_le = x
+                    Err(x) => old_idx_le = x,
                 };
             }
         } else {
@@ -640,38 +653,86 @@ impl DriverRing {
         self.internal()[self.used_event_offset()].store(flags.bits(), Ordering::Release);
     }
 
-    fn set_next_entry(&self, val: u16) -> u16 {
+    fn set_next_entry(&self, val: u16) -> Result<u16, DriverRingNextEntryError> {
         let (internal, state) = self.internal_and_state();
+        let entries_flags = &state.entries_flags;
 
-        let this_idx = state.next_idx.fetch_add(1, Ordering::AcqRel);
-        let entries_updated = &state.entries_updated;
+        let this_idx = match state.next_idx.fetch_update(
+            Ordering::AcqRel,
+            Ordering::Acquire,
+            |x| {
+                let flags = DriverRingEntryFlags::from_bits(
+                    entries_flags[x as usize % self.len()].load(Ordering::Acquire),
+                ).unwrap();
+                if flags.contains(DriverRingEntryFlags::PROTECTED) {
+                    // The entry is currently being used.
+                    None
+                } else {
+                    Some(x + 1)
+                }
+            },
+        ) {
+            Ok(x) => x,
+            Err(_) => return Err(DriverRingNextEntryError),
+        };
+
         internal[Self::RING_OFFSET + this_idx as usize % self.len()].store(val, Ordering::Release);
 
         // `self.idx()` must never skip over an entry that hasn't actually been updated yet. If we
         // are ahead of that device-visible index, just leave a note for the task that's not ahead
         // of it to handle our update for us. If we're not, then handle all those updates, cleaning
         // up the notes as we go.
-        assert!(!entries_updated[this_idx as usize % self.len()].swap(true, Ordering::AcqRel));
-        if this_idx == self.idx() {
+        assert_eq!(
+            entries_flags[this_idx as usize % self.len()].swap(DriverRingEntryFlags::UPDATED.bits(), Ordering::AcqRel),
+            DriverRingEntryFlags::empty().bits(),
+        );
+        let finalize = this_idx == self.idx();
+        if finalize {
+            // Note: Only one task can ever do any work in this loop at a time, although that
+            // guarantee isn't obvious. If two tasks are ever in the loop at the same time, they
+            // will both be at the same index. One will clean up the first note, and the other will
+            // immediately exit. This all depends on avoiding the potential race condition noted
+            // below.
             let mut next_idx = this_idx;
             loop {
-                let steps = entries_updated.iter()
+                let steps = entries_flags.iter()
                     .cycle() // This is a circular array. No need for `take` because we'll find a `false` within one revolution.
                     .skip(next_idx as usize % self.len())
-                    .take_while(|x| x.swap(false, Ordering::AcqRel))
+                    .take_while(|x| {
+                        let bits = x.fetch_and(!DriverRingEntryFlags::UPDATED.bits(), Ordering::AcqRel);
+                        DriverRingEntryFlags::from_bits(bits).unwrap().contains(DriverRingEntryFlags::UPDATED)
+                    })
                     .count() as u16;
-                self.add_idx(steps);
+                if steps == 0 { break; }
 
-                // If, between the last `swap` and `add_idx`, a new note was left at the next
-                // index, we have to keep going.
+                // `DriverRingEntryFlags::PROTECTED` prevents a race condition here. It ensures that
+                // `state.next_idx` can't wrap around the value this task expects to be in `self.idx()`,
+                // which keeps this task at the back of the pack. If a new note is found after
+                // `self.add_idx`, the only way it could have gotten there is that another task allocated
+                // the very next descriptor and saw that `self.idx()` hadn't been incremented yet.
                 next_idx = next_idx.wrapping_add(steps);
-                if !entries_updated[next_idx as usize % self.len()].load(Ordering::Acquire) {
+                let flags = &entries_flags[next_idx as usize % self.len()];
+                assert_eq!(
+                    flags.fetch_or(DriverRingEntryFlags::PROTECTED.bits(), Ordering::AcqRel),
+                    DriverRingEntryFlags::empty().bits(),
+                );
+                self.add_idx(steps);
+                let new_note = DriverRingEntryFlags::from_bits(flags.load(Ordering::Acquire)).unwrap()
+                    .contains(DriverRingEntryFlags::UPDATED);
+                assert_eq!(
+                    flags.fetch_and(!DriverRingEntryFlags::PROTECTED.bits(), Ordering::AcqRel),
+                    DriverRingEntryFlags::PROTECTED.bits(),
+                );
+
+                // If, between the last `fetch_and` and `add_idx`, a new note was left at the next
+                // index, we have to keep going.
+                if !new_note {
                     break;
                 }
             }
         }
 
-        this_idx
+        Ok(this_idx)
     }
 
     fn used_event_offset(&self) -> usize {
@@ -695,13 +756,15 @@ impl DriverRingState {
     fn new(len: usize) -> Self {
         Self {
             next_idx: AtomicU16::new(0),
-            entries_updated: iter::repeat(())
+            entries_flags: iter::repeat(())
                 .take(len)
-                .map(|()| AtomicBool::new(false))
-                .collect()
+                .map(|()| AtomicU8::new(DriverRingEntryFlags::empty().bits()))
+                .collect(),
         }
     }
 }
+
+struct DriverRingNextEntryError;
 
 // The spec calls this the "used ring".
 #[derive(Debug)]
