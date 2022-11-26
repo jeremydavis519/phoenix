@@ -203,14 +203,22 @@ impl<'a> VirtQueue<'a> {
         }
 
         // The device only needs the index of the first descriptor in the chain.
-        let Ok(idx) = self.driver_ring.set_next_entry(descriptor_indices[0]) else {
+        let Ok((idx, entries_revealed)) = self.driver_ring.set_next_entry(descriptor_indices[0]) else {
             return SendRecvResult::Retry(buf);
+        };
+
+        let idx_matches_avail_event = || {
+            let mut avail_event = self.device_ring.avail_event();
+            if avail_event < idx {
+                avail_event += self.len() as u16;
+            }
+            idx <= avail_event && avail_event < idx + entries_revealed
         };
 
         // Notify the device of the new buffers, but only if it expects notifications.
         let event_index_feature = self.device_features & GenericFeatures::RING_EVENT_INDEX.bits() != 0;
         if (!event_index_feature && !self.device_ring.flags().contains(DeviceFlags::NO_INTERRUPT)) ||
-                (event_index_feature && self.device_ring.avail_event() == idx) {
+                (event_index_feature && idx_matches_avail_event()) {
             super::notify_device(self.resource, self.id);
         }
 
@@ -653,7 +661,9 @@ impl DriverRing {
         self.internal()[self.used_event_offset()].store(flags.bits(), Ordering::Release);
     }
 
-    fn set_next_entry(&self, val: u16) -> Result<u16, DriverRingNextEntryError> {
+    // Adds an entry to the ring and returns the index and the number of entries that have been
+    // made available to the device by this call.
+    fn set_next_entry(&self, val: u16) -> Result<(u16, u16), DriverRingNextEntryError> {
         let (internal, state) = self.internal_and_state();
         let entries_flags = &state.entries_flags;
 
@@ -686,6 +696,7 @@ impl DriverRing {
             entries_flags[this_idx as usize % self.len()].swap(DriverRingEntryFlags::UPDATED.bits(), Ordering::AcqRel),
             DriverRingEntryFlags::empty().bits(),
         );
+        let mut entries_revealed = 0;
         let finalize = this_idx == self.idx();
         if finalize {
             // Note: Only one task can ever do any work in this loop at a time, although that
@@ -724,6 +735,8 @@ impl DriverRing {
                     DriverRingEntryFlags::PROTECTED.bits(),
                 );
 
+                entries_revealed += steps;
+
                 // If, between the last `fetch_and` and `add_idx`, a new note was left at the next
                 // index, we have to keep going.
                 if !new_note {
@@ -732,7 +745,7 @@ impl DriverRing {
             }
         }
 
-        Ok(this_idx)
+        Ok((this_idx, entries_revealed))
     }
 
     fn used_event_offset(&self) -> usize {
