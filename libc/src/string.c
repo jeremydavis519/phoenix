@@ -19,37 +19,35 @@
 #include <stddef.h>
 #include <string.h>
 
-/* TODO: restrict */
-
 /* Copying */
-void* memcpy(void* dest, const void* src, size_t num) {
+void* memcpy(void* restrict dest, const void* restrict src, size_t count) {
     unsigned char* sdest = dest;
     const unsigned char* ssrc = src;
-    while (num--) {
+    while (count--) {
         *sdest++ = *ssrc++;
     }
     return dest;
 }
 
-void* memmove(void* dest, const void* src, size_t num) {
+void* memmove(void* dest, const void* src, size_t count) {
     unsigned char* sdest = dest;
     const unsigned char* ssrc = src;
     if (dest < src) {
-        while (num--) {
+        while (count--) {
             *sdest++ = *ssrc++;
         }
     } else {
         // Avoid overwriting not-yet-used src bytes by copying backwards.
-        sdest += num;
-        ssrc += num;
-        while (num--) {
+        sdest += count;
+        ssrc += count;
+        while (count--) {
             *--sdest = *--ssrc;
         }
     }
     return dest;
 }
 
-char* strcpy(char* dest, const char* src) {
+char* strcpy(char* restrict dest, const char* restrict src) {
     char c;
     while ((c = *src++)) {
         *dest++ = c;
@@ -58,16 +56,16 @@ char* strcpy(char* dest, const char* src) {
     return dest;
 }
 
-char* strncpy(char* dest, const char* src, size_t num) {
+char* strncpy(char* restrict dest, const char* restrict src, size_t count) {
     char* sdest = dest;
-    while (num--) {
+    while (count--) {
         if (!(*sdest++ = *src++)) {
             break;
         }
     }
 
     // The rest of the array needs to be padded with null characters.
-    memset(sdest, '\0', num);
+    memset(sdest, '\0', count);
 
     return dest;
 }
@@ -76,12 +74,12 @@ char* strncpy(char* dest, const char* src, size_t num) {
 /* Concatenation */
 /* TODO
 char* strcat(char* dest, const char* src);
-char* strncat(char* dest, const char* src, size_t num); */
+char* strncat(char* dest, const char* src, size_t count); */
 
 
 /* Comparison */
 /* TODO
-int memcmp(const void* ptr1, const void* ptr2, size_t num); */
+int memcmp(const void* ptr1, const void* ptr2, size_t count); */
 
 int strcmp(const char* s1, const char* s2) {
     while (*s1 && *s2) {
@@ -95,20 +93,20 @@ int strcmp(const char* s1, const char* s2) {
 
 /* TODO
 int strcoll(const char* s1, const char* s2);
-int strncmp(const char* s1, const char* s2, size_t num);
-int strxfrm(char* dest, const char* src, size_t num); */
+int strncmp(const char* s1, const char* s2, size_t count);
+int strxfrm(char* restrict dest, const char* restrict src, size_t count); */
 
 
 /* Searching */
 /* TODO
-void* memchr(const void* ptr, int value, size_t num);
+void* memchr(const void* ptr, int value, size_t count);
 char* strchr(const char* s, int c);
 size_t strcspn(const char* s1, const char* s2);
 char* strpbrk(const char* s1, const char* s2);
 char* strrchr(const char* s, int c);
 size_t strspn(const char* s1, const char* s2);
 char* strstr(const char* s1, const char* s2);
-char* strtok(char* s, const char* delimiters); */
+char* strtok(char* restrict s, const char* restrict delimiters); */
 
 
 /* Other */

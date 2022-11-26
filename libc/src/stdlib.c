@@ -1,4 +1,4 @@
-/* Copyright (c) 2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2021-2022 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -23,9 +23,11 @@
 double atof(const char* str);
 int atoi(const char* str);
 long int atol(const char* str);
-double strtod(const char* str, char** endptr);
-long int strtol(const char* str, char** endptr, int base);
-unsigned long int strtoul(const char* str, char** endptr, int base); */
+float strtof(const char* restrict str, char** restrict endptr);
+double strtod(const char* restrict str, char** restrict endptr);
+long strtol(const char* restrict str, char** restrict endptr, int base);
+unsigned long strtoul(const char* restrict str, char** restrict endptr, int base);
+unsigned long long strtoull(const char* restrict str, char** restrict endptr, int base); */
 
 
 /* Pseudorandom number generation */
@@ -87,11 +89,11 @@ ldiv_t ldiv(long int numer, long int denom); */
 /* Multibyte characters */
 /* TODO
 int mblen(const char* mbc, size_t max_bytes);
-int mbtowc(wchar_t* wc, const char* mbc, size_t max_bytes);
+int mbtowc(wchar_t* restrict wc, const char* restrict mbc, size_t max_bytes);
 int wctomb(char* mbc, wchar_t wc); */
 
 
 /* Multibyte strings */
 /* TODO
-size_t mbstowcs(wchar_t* dest, const char* src, size_t max_chars);
-size_t wcstombs(char* dest, const wchar_t *src, size_t max_bytes); */
+size_t mbstowcs(wchar_t* restrict dest, const char* restrict src, size_t max_chars);
+size_t wcstombs(char* dest, const wchar_t* src, size_t max_bytes); */

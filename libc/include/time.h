@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2019-2022 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -28,6 +28,7 @@
 
 #ifdef __cplusplus
 extern "C" {
+#define restrict
 #endif
 
 typedef size_t clock_t;
@@ -56,9 +57,10 @@ char* asctime(const struct tm* timeptr);
 char* ctime(const time_t* timer);
 struct tm* gmtime(const time_t* timer);
 struct tm* localtime(const time_t* timer);
-size_t strftime(char* ptr, size_t maxsize, const char* format, const struct tm* timeptr);
+size_t strftime(char* restrict ptr, size_t maxsize, const char* restrict format, const struct tm* restrict timeptr);
 
 #ifdef __cplusplus
+#undef restrict
 }
 #endif
 

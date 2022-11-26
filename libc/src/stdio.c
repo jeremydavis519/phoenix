@@ -1,4 +1,4 @@
-/* Copyright (c) 2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2021-2022 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -81,8 +81,8 @@ typedef struct FormatSpec {
     const char* scanner;
 } FormatSpec;
 
-static int parse_format_spec(const char** format, FormatSpec* spec);
-static int parse_scanset(const char** format, FormatSpec* spec);
+static int parse_format_spec(const char* restrict* restrict format, FormatSpec* restrict spec);
+static int parse_scanset(const char* restrict* restrict format, FormatSpec* restrict spec);
 
 /* Operations on files */
 /* TODO 
@@ -96,16 +96,16 @@ char* tmpnam(char* str); */
 /* TODO 
 int fclose(FILE* stream);
 int fflush(FILE* stream);
-FILE* fopen(const char* filename, const char* mode);
-FILE* freopen(const char* filename, const char* mode, FILE* stream);
-void setbuf(FILE* stream, char* buffer);
-int setvbuf(FILE* stream, char* buffer, int mode, size_t size); */
+FILE* fopen(const char* restrict filename, const char* restrict mode);
+FILE* freopen(const char* restrict filename, const char* restrict mode, FILE* restrict stream);
+void setbuf(FILE* restrict stream, char* restrict buffer);
+int setvbuf(FILE* restrict stream, char* restrict buffer, int mode, size_t size); */
 
 
 /* Formatted input/output */
-/* TODO 
-int fprintf(FILE* stream, const char* format, ...);
-int fscanf(FILE* stream, const char* format, ...); */
+/* TODO
+int fprintf(FILE* restrict stream, const char* restrict format, ...);
+int fscanf(FILE* restrict stream, const char* restrict format, ...); */
 
 int printf(const char* format, ...) {
     /* FIXME: This printf implementation is far from complete. */
@@ -115,10 +115,10 @@ int printf(const char* format, ...) {
 
 /* TODO
 int scanf(const char* format, ...);
-int snprintf(char* s, size_t n, const char* format, ...);
-int sprintf(char* s, const char* format, ...); */
+int snprintf(char* restrict s, size_t n, const char* restrict format, ...);
+int sprintf(char* restrict s, const char* restrict format, ...); */
 
-int sscanf(const char* s, const char* format, ...) {
+int sscanf(const char* restrict s, const char* restrict format, ...) {
     va_list args;
     va_start(args, format);
     int sign;
@@ -521,8 +521,8 @@ int ungetc(int character, FILE* stream); */
 
 /* Direct input/output */
 /* TODO 
-size_t fread(void* ptr, size_t size, size_t count, FILE* stream);
-size_t fwrite(const void* ptr, size_t size, size_t count, FILE* stream); */
+size_t fread(void* restrict ptr, size_t size, size_t count, FILE* restrict stream);
+size_t fwrite(const void* restrict ptr, size_t size, size_t count, FILE* restrict stream); */
 
 
 /* File positioning */
@@ -554,7 +554,7 @@ void perror(FILE* stream); */
  * Returns:
  * 0 on success, nonzero if the format string is malformed.
  */
-static int parse_format_spec(const char** format, FormatSpec* spec) {
+static int parse_format_spec(const char* restrict* restrict format, FormatSpec* restrict spec) {
     spec->flags = 0;
 
     /* Flags */
@@ -783,7 +783,7 @@ flags_break:
  * Returns:
  * 0 on success, nonzero if the scanset is malformed.
  */
-static int parse_scanset(const char** format, FormatSpec* spec) {
+static int parse_scanset(const char* restrict* restrict format, FormatSpec* restrict spec) {
     if (**format == '^') {
         spec->flags |= FSF_SCANSET_NEGATED;
         ++*format;

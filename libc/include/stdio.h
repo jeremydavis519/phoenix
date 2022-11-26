@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2019-2022 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -23,8 +23,8 @@
 #ifndef _STDIO_H
 #define _STDIO_H
 
-#include <stddef.h>
 #include <stdarg.h>
+#include <stddef.h>
 
 #define BUFSIZ 8192
 #define EOF -1
@@ -43,10 +43,11 @@
 
 #ifdef __cplusplus
 extern "C" {
+#define restrict
 #endif
 
-typedef size_t FILE;
-typedef size_t fpos_t;
+typedef struct FILE   FILE;
+typedef struct fpos_t fpos_t;
 
 FILE* stdin;
 FILE* stdout;
@@ -61,46 +62,48 @@ char* tmpnam(char* str);
 /* File access */
 int fclose(FILE* stream);
 int fflush(FILE* stream);
-FILE* fopen(const char* filename, const char* mode);
-FILE* freopen(const char* filename, const char* mode, FILE* stream);
-void setbuf(FILE* stream, char* buffer);
-int setvbuf(FILE* stream, char* buffer, int mode, size_t size);
+FILE* fopen(const char* restrict filename, const char* restrict mode);
+FILE* freopen(const char* restrict filename, const char* restrict mode, FILE* restrict stream);
+void setbuf(FILE* restrict stream, char* restrict buffer);
+int setvbuf(FILE* restrict stream, char* restrict buffer, int mode, size_t size);
 
 /* Formatted input/output */
-int fprintf(FILE* stream, const char* format, ...);
-int fscanf(FILE* stream, const char* format, ...);
+int fprintf(FILE* restrict stream, const char* restrict format, ...);
+int fscanf(FILE* restrict stream, const char* restrict format, ...);
 int printf(const char* format, ...);
 int scanf(const char* format, ...);
-int snprintf(char* s, size_t n, const char* format, ...);
-int sprintf(char* s, const char* format, ...);
-int sscanf(const char* s, const char* format, ...);
-int vfprintf(FILE* stream, const char* format, va_list arg);
-int vfscanf(FILE* stream, const char* format, va_list arg);
-int vprintf(const char* format, va_list arg);
-int vscanf(const char* format, va_list arg);
-int vsnprintf(char* s, size_t n, const char* format, va_list arg);
-int vsprintf(char* s, const char* format, va_list arg);
-int vsscanf(const char* s, const char* format, va_list arg);
+int snprintf(char* restrict s, size_t n, const char* restrict format, ...);
+int sprintf(char* restrict s, const char* restrict format, ...);
+int sscanf(const char* restrict s, const char* restrict format, ...);
+int vfprintf(FILE* restrict stream, const char* restrict format, va_list args);
+int vfscanf(FILE* restrict stream, const char* restrict format, va_list args);
+int vprintf(const char* format, va_list args);
+int vscanf(const char* format, va_list args);
+int vsnprintf(char* restrict s, size_t n, const char* restrict format, va_list args);
+int vsprintf(char* restrict s, const char* restrict format, va_list args);
+int vsscanf(const char* restrict s, const char* restrict format, va_list args);
 
 /* Character input/output */
 int fgetc(FILE* stream);
-char* fgets(char* str, int num, FILE* stream);
+#define getc fgetc
+char* fgets(char* restrict str, int num, FILE* restrict stream);
 int fputc(int character, FILE* stream);
-int fputs(const char* str, FILE* stream);
+#define putc fputc
+int fputs(const char* restrict str, FILE* restrict stream);
 int getc(FILE* stream);
-int getchar(void);
+#define getchar() fgetc(stdin)
 /* char* gets(char* s) -- Removed from the C standard as of 2011 (prone to buffer overflows) */
-int putc(int character, FILE* stream);
-int putchar(int character);
+#define putchar(character) fputc(character, stdout)
 int puts(const char* str);
 int ungetc(int character, FILE* stream);
 
 /* Direct input/output */
-size_t fread(void* ptr, size_t size, size_t count, FILE* stream);
-size_t fwrite(const void* ptr, size_t size, size_t count, FILE* stream);
+size_t fread(void* restrict ptr, size_t size, size_t count, FILE* restrict stream);
+size_t fwrite(const void* restrict ptr, size_t size, size_t count, FILE* restrict stream);
 
 /* File positioning */
-int fgetpos(FILE* stream, fpos_t* pos);
+int fgetpos(FILE* restrict stream, fpos_t* restrict pos);
+int fsetpos(FILE* stream, const fpos_t* pos);
 int fseek(FILE* stream, long int offset, int origin);
 long int ftell(FILE* stream);
 void rewind(FILE* stream);
@@ -112,6 +115,7 @@ int ferror(FILE* stream);
 void perror(FILE* stream);
 
 #ifdef __cplusplus
+#undef restrict
 }
 #endif
 
