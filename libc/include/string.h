@@ -51,7 +51,7 @@ char* strstr(const char* s1, const char* s2);
 char* strtok(char* s, const char* delimiters);
 
 /* Other */
-void* memset(void* ptr, int value, size_t num);
+void* memset(void* dest, int ch, size_t count);
 char* strerror(int errnum);
 size_t strlen(const char* s);
 

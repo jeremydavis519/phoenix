@@ -19,12 +19,58 @@
 #include <stddef.h>
 #include <string.h>
 
+/* TODO: restrict */
+
 /* Copying */
-/* TODO
-void* memcpy(void* dest, const void* src, size_t num);
-void* memmove(void* dest, const void* src, size_t num);
-char* strcpy(char* dest, const char* src);
-char* strncpy(char* dest, const char* src, size_t num); */
+void* memcpy(void* dest, const void* src, size_t num) {
+    unsigned char* sdest = dest;
+    const unsigned char* ssrc = src;
+    while (num--) {
+        *sdest++ = *ssrc++;
+    }
+    return dest;
+}
+
+void* memmove(void* dest, const void* src, size_t num) {
+    unsigned char* sdest = dest;
+    const unsigned char* ssrc = src;
+    if (dest < src) {
+        while (num--) {
+            *sdest++ = *ssrc++;
+        }
+    } else {
+        // Avoid overwriting not-yet-used src bytes by copying backwards.
+        sdest += num;
+        ssrc += num;
+        while (num--) {
+            *--sdest = *--ssrc;
+        }
+    }
+    return dest;
+}
+
+char* strcpy(char* dest, const char* src) {
+    char c;
+    while ((c = *src++)) {
+        *dest++ = c;
+    }
+    *dest = '\0';
+    return dest;
+}
+
+char* strncpy(char* dest, const char* src, size_t num) {
+    char* sdest = dest;
+    while (num--) {
+        if (!(*sdest++ = *src++)) {
+            break;
+        }
+    }
+
+    // The rest of the array needs to be padded with null characters.
+    memset(sdest, '\0', num);
+
+    return dest;
+}
 
 
 /* Concatenation */
@@ -66,8 +112,15 @@ char* strtok(char* s, const char* delimiters); */
 
 
 /* Other */
+void* memset(void* dest, int ch, size_t count) {
+    unsigned char* sdest = dest;
+    while (count--) {
+        *sdest++ = ch;
+    }
+    return dest;
+}
+
 /* TODO
-void* memset(void* ptr, int value, size_t num);
 char* strerror(int errnum); */
 
 size_t strlen(const char* s) {
