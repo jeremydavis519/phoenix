@@ -1,4 +1,4 @@
-/* Copyright (c) 2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2021-2022 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -178,7 +178,8 @@ impl<'a> VirtQueue<'a> {
             if first_recv_idx >= buf_size || first_recv_idx == 0 { 0 .. 1 } else { 0 .. 2 }
         ];
 
-        match self.descriptors.make_chain(descriptor_indices, self.legacy) {
+        let in_order = self.device_features & GenericFeatures::IN_ORDER.bits() != 0;
+        match self.descriptors.make_chain(descriptor_indices, in_order, self.legacy) {
             SendRecvResult::Ok(()) => {},
             SendRecvResult::Retry(()) => return SendRecvResult::Retry(buf),
             SendRecvResult::Err(e) => return SendRecvResult::Err(e)
@@ -312,11 +313,18 @@ impl DescriptorTable {
     // # Arguments
     // - `descriptor_indices`: A slice containing the indices of all the descriptors in the chain.
     //   This will be populated by the function; only the length of the slice functions as input.
+    // - `in_order`: True if the driver and device negotiated `GenericFeatures::IN_ORDER`.
+    // - `legacy`: True if this is a legacy device.
     //
     // # Returns
     // A `SendRecvResult` indicating whether we can continue the send-receive operation, may be able
     // to do it in the future, or will never be able to do it.
-    fn make_chain(&self, descriptor_indices: &mut [u16], legacy: bool) -> SendRecvResult<(), (), VirtIoError> {
+    fn make_chain(
+        &self,
+        descriptor_indices: &mut [u16],
+        in_order: bool,
+        legacy: bool,
+    ) -> SendRecvResult<(), (), VirtIoError> {
         if descriptor_indices.len() == 0 {
             return SendRecvResult::Ok(());
         }
@@ -339,39 +347,66 @@ impl DescriptorTable {
                     free_descs,
                     free_descs - requested_descs,
                     Ordering::AcqRel,
-                    Ordering::Acquire
+                    Ordering::Acquire,
             ) {
                 Ok(_) => break,
-                Err(x) => free_descs = x
+                Err(x) => free_descs = x,
             };
         }
 
         // Claim the descriptors.
-        for i in 0 .. descriptor_indices.len() {
-            let next = &self.first_free_idx;
-            let mut idx = next.load(Ordering::Acquire);
-
-            loop {
-                let idx_next = self[u16::from_device_endian(idx, legacy) as usize].next(Ordering::Acquire, legacy);
-                assert_ne!(idx_next as usize, self.len);
-                match next.compare_exchange(
-                    idx,
-                    idx_next,
-                    Ordering::AcqRel,
-                    Ordering::Acquire
-                ) {
-                    Ok(_) => break,
-                    Err(x) => idx = x
-                };
+        if in_order {
+            // The spec doesn't allow the descriptors to be reordered at all when the `IN_ORDER` feature is used.
+            let first_idx = if cfg!(target_endian = "little") || legacy {
+                self.first_free_idx.fetch_add(descriptor_indices.len() as u16, Ordering::AcqRel)
+            } else {
+                // Equivalent to `fetch_add`, but for a little-endian value on a big-endian CPU.
+                let mut idx = self.first_free_idx.load(Ordering::Acquire);
+                loop {
+                    match self.first_free_idx.compare_exchange_weak(
+                        idx,
+                        idx + descriptor_indices.len() as u16,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
+                    ) {
+                        Ok(_) => break,
+                        Err(x) => idx = x,
+                    }
+                }
+                idx
+            };
+            for i in 0 .. descriptor_indices.len() {
+                descriptor_indices[i] = (first_idx.wrapping_add(i as u16)) % self.len as u16;
             }
+        } else {
+            for i in 0 .. descriptor_indices.len() {
+                let next = &self.first_free_idx;
+                let mut idx = next.load(Ordering::Acquire);
 
-            descriptor_indices[i] = u16::from_device_endian(idx, legacy);
+                loop {
+                    let idx_next = self[u16::from_device_endian(idx, legacy) as usize].next(Ordering::Acquire, legacy);
+                    assert_ne!(idx_next as usize, self.len);
+                    match next.compare_exchange(
+                        idx,
+                        idx_next,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
+                    ) {
+                        Ok(_) => break,
+                        Err(x) => idx = x,
+                    };
+                }
+
+                descriptor_indices[i] = u16::from_device_endian(idx, legacy);
+            }
         }
 
-        // Set up the `next` pointers.
+        // Set up the `next` pointers and flags.
         for i in 0 .. descriptor_indices.len() - 1 {
             self[i].set_flags(BufferFlags::NEXT, legacy);
-            self[i].next.store(descriptor_indices[i + 1].to_device_endian(legacy), Ordering::Release);
+            if !in_order { // If in_order, the `next` pointers are always correct.
+                self[i].next.store(descriptor_indices[i + 1].to_device_endian(legacy), Ordering::Release);
+            }
         }
         self[descriptor_indices.len() - 1].set_flags(BufferFlags::empty(), legacy);
 
