@@ -29,7 +29,7 @@ unsigned long int strtoul(const char* str, char** endptr, int base); */
 
 
 /* Pseudorandom number generation */
-unsigned int _rand_seed = 0;
+static unsigned int _rand_seed = 0;
 
 int rand(void) {
     _rand_seed = 65854829 * _rand_seed + 1;
