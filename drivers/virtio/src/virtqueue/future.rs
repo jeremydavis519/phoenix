@@ -238,27 +238,6 @@ impl<'a, T: ?Sized> Future for ResponseFuture<'a, T> {
                 ref mut buffer,
                 legacy_response_len
             } => {
-                // Returns the descriptor chain to the list of free descriptors so they can be used
-                // by other futures later.
-                let dealloc_descriptor_chain = || {
-                    assert!(descriptors_count > 0);
-                    let mut next = virtq.descriptors.first_free_idx.load(Ordering::Acquire); // Device-endian
-                    loop {
-                        let desc_tail = &virtq.descriptors[desc_tail_idx as usize];
-                        desc_tail.next.store(next, Ordering::Release);
-                        match virtq.descriptors.first_free_idx.compare_exchange_weak(
-                                next,
-                                desc_head_idx,
-                                Ordering::AcqRel,
-                                Ordering::Acquire
-                        ) {
-                            Ok(_) => break,
-                            Err(x) => next = x // The list has a new head. Retry with that one.
-                        }
-                    }
-                    virtq.descriptors.free_descs.fetch_add(descriptors_count, Ordering::AcqRel);
-                };
-
                 let dev_ring = virtq.device_ring.ring();
                 let last_dev_ring_idx = virtq.last_dev_ring_idx.load(Ordering::Acquire);
                 let dev_ring_entry = &dev_ring[last_dev_ring_idx as usize % dev_ring.len()];
@@ -287,7 +266,7 @@ impl<'a, T: ?Sized> Future for ResponseFuture<'a, T> {
                         // don't have a `UsedElem` object from the device. That just means we can
                         // assume the device has read or written to every byte in the buffer.
 
-                        dealloc_descriptor_chain();
+                        virtq.descriptors.dealloc_chain(desc_head_idx, desc_tail_idx, descriptors_count);
 
                         // We need to keep track of how many descriptor chains are in this batch so
                         // we can skip forward the correct amount.
@@ -320,7 +299,7 @@ impl<'a, T: ?Sized> Future for ResponseFuture<'a, T> {
                 } else if found_desc_idx == desc_head_idx {
                     // The device has used this future's buffer.
 
-                    dealloc_descriptor_chain();
+                    virtq.descriptors.dealloc_chain(desc_head_idx, desc_tail_idx, descriptors_count);
 
                     // Make sure we look in the right place for the next buffer returned by the
                     // device.

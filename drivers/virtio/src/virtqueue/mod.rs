@@ -310,7 +310,7 @@ impl DescriptorTable {
     // sending the chain to the device.
     //
     // # Arguments
-    // `descriptor_indices`: A slice containing the indices of all the descriptors in the chain.
+    // - `descriptor_indices`: A slice containing the indices of all the descriptors in the chain.
     //   This will be populated by the function; only the length of the slice functions as input.
     //
     // # Returns
@@ -378,7 +378,30 @@ impl DescriptorTable {
         SendRecvResult::Ok(())
     }
 
-    // TODO: A function for returning a descriptor chain to the free list.
+    // Returns a descriptor chain to the list of free descriptors.
+    //
+    // # Arguments
+    // - `head_idx`: The index of the first descriptor in the chain.
+    // - `tail_idx`: The index of the last descriptor in the chain.
+    // - `count`: The number of descriptors in the chain.
+    fn dealloc_chain(&self, head_idx: u16, tail_idx: u16, count: u16) {
+        assert!(count > 0);
+        let mut next = self.first_free_idx.load(Ordering::Acquire); // Device-endian
+        loop {
+            let tail = &self[tail_idx as usize];
+            tail.next.store(next, Ordering::Release);
+            match self.first_free_idx.compare_exchange_weak(
+                next,
+                head_idx,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => break,
+                Err(x) => next = x // The list has a new head. Retry with that one.
+            }
+        }
+        self.free_descs.fetch_add(count, Ordering::AcqRel);
+    }
 }
 
 impl Index<usize> for DescriptorTable {
