@@ -112,7 +112,7 @@ void rewind(FILE* stream);
 void clearerr(FILE* stream);
 int feof(FILE* stream);
 int ferror(FILE* stream);
-void perror(FILE* stream);
+void perror(const char* s);
 
 #ifdef __cplusplus
 #undef restrict

@@ -38,8 +38,8 @@ typedef struct {
 } div_t;
 
 typedef struct {
-    long int quot;
-    long int rem;
+    long quot;
+    long rem;
 } ldiv_t;
 
 /* String conversion */
