@@ -20,12 +20,17 @@
 #define _WCHAR_H
 
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <time.h>
 
-#define WCHAR_MIN __WCHAR_MIN__
-#define WCHAR_MAX __WCHAR_MAX__
+#if WINT_MIN < WCHAR_MIN
+#define WEOF WINT_MIN
+#elif WINT_MAX > WCHAR_MAX
+#define WEOF WINT_MAX
+#else
 #define WEOF -1
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -33,7 +38,7 @@ extern "C" {
 #endif
 
 typedef struct mbstate_t mbstate_t;
-typedef wchar_t wint_t;
+typedef __WINT_TYPE__ wint_t;
 
 /* Input/output (mirroring stdio.h) */
 wint_t fgetwc(FILE* stream);
