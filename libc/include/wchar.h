@@ -24,13 +24,7 @@
 #include <stdio.h>
 #include <time.h>
 
-#if WINT_MIN < WCHAR_MIN
-#define WEOF WINT_MIN
-#elif WINT_MAX > WCHAR_MAX
-#define WEOF WINT_MAX
-#else
 #define WEOF -1
-#endif
 
 #ifdef __cplusplus
 extern "C" {
