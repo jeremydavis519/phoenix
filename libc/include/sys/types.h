@@ -45,20 +45,21 @@ typedef int32_t off_t;
 #define OFF_MAX INT32_max
 #endif /* defined(INT64_MAX) */
 
-/* TODO
-typedef  ssize_t;
+typedef size_t ssize_t;
 
+/* TODO
 typedef  clockid_t;
 typedef  clock_t;
 typedef  suseconds_t;
 typedef  time_t;
-typedef  timer_t;
+typedef  timer_t; */
 
-typedef  id_t;
-typedef  gid_t;
-typedef  uid_t;
-typedef  pid_t;
+typedef uint64_t id_t;
+typedef uint32_t gid_t;
+typedef uint32_t uid_t;
+typedef uint32_t pid_t;
 
+/* TODO
 typedef  pthread_attr_t;
 typedef  pthread_barrier_t;
 typedef  pthread_barrierattr_t;
