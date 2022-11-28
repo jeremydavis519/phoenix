@@ -20,11 +20,13 @@
 #include <errno.h>
 #include <limits.h>
 #include <stdarg.h>
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <wchar.h>
 
 typedef uint32_t FormatSpecFlags;
@@ -84,8 +86,72 @@ typedef struct FormatSpec {
     const char* scanner;
 } FormatSpec;
 
+typedef unsigned int CharWidth;
+#define CW_UNSET    0
+#define CW_NARROW   1
+#define CW_WIDE     2
+
+typedef unsigned int BufferMode;
+/* The variants are _IOFBF, _IOLBF, and _IONBF. */
+
+typedef unsigned int IOMode;
+#define IO_READ    1
+#define IO_WRITE   2
+#define IO_RW      IO_READ | IO_WRITE
+
+struct mbstate_t {
+    /* TODO */
+};
+
+/* FIXME: This has to be defined in stdio.h, or else it'll be an incomplete type in client code. */
+struct fpos_t {
+    off_t     offset;         /* Number of bytes into the file */
+    mbstate_t mb_parse_state; /* State of the multibyte character parser */
+};
+
+struct FILE {
+    int          is_open         : 1;
+    CharWidth    char_width      : 2;
+    BufferMode   buffer_mode     : 2;
+    IOMode       io_mode         : 2;
+    int          eof             : 1;
+    int          error           : 1;
+    int          malloced_buffer : 1;
+    int          fildes;       /* File descriptor */
+    fpos_t       position;
+    off_t        length;
+    char*        buffer;       /* Pointer to buffer being used, or NULL */
+    size_t       buffer_size;
+    size_t       buffer_index; /* Index of next byte to set in the buffer */
+    atomic_flag  lock;
+    union {
+        wint_t wc;
+        char   c[sizeof(wint_t)];
+    }            pushback_buffer;
+    uint8_t      pushback_index;
+};
+
+static int fflush_locked(FILE* stream);
+static int fseek_locked(FILE* stream, long offset, int whence);
+static int fseeko_locked(FILE* stream, off_t offset, int whence);
+
 static int parse_format_spec(const char* restrict* restrict format, FormatSpec* restrict spec);
 static int parse_scanset(const char* restrict* restrict format, FormatSpec* restrict spec);
+static bool try_lock_file(FILE* stream);
+static void lock_file(FILE* stream);
+static void unlock_file(FILE* stream);
+
+static FILE files[FOPEN_MAX] = {0};
+
+
+/* Standard input and output */
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/stdin.html */
+FILE* stdin  = &files[0];
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/stdout.html */
+FILE* stdout = &files[1];
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/stderr.html */
+FILE* stderr = &files[2];
+
 
 /* Operations on files */
 /* TODO 
@@ -97,15 +163,108 @@ char* tmpnam(char* str); */
 
 /* File access */
 /* TODO 
-int fclose(FILE* stream);
-int fflush(FILE* stream);
-FILE* fopen(const char* restrict filename, const char* restrict mode);
-FILE* freopen(const char* restrict filename, const char* restrict mode, FILE* restrict stream);
-void setbuf(FILE* restrict stream, char* restrict buffer);
-int setvbuf(FILE* restrict stream, char* restrict buffer, int mode, size_t size); */
+int fclose(FILE* stream); */
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fflush.html */
+int fflush(FILE* stream) {
+    if (!stream) {
+        /* FIXME: Flush all open streams. */
+        return EOF;
+    }
+
+    lock_file(stream);
+    int result = fflush_locked(stream);
+    unlock_file(stream);
+    return result;
+}
+
+int fflush_locked(FILE* stream) {
+    /* TODO */
+    stream->error = -1;
+    return EOF;
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fopen.html */
+FILE* fopen(const char* restrict filename, const char* restrict mode) {
+    /* Find an unused `FILE` object. */
+    size_t i;
+    while (true) {
+        for (i = 0; i < FOPEN_MAX; ++i) {
+            if (!files[i].is_open) break;
+        }
+
+        if (i == FOPEN_MAX) { /* NB: STREAM_MAX is defined to be equal to FOPEN_MAX. */
+            errno = EMFILE;
+            return NULL;
+        }
+
+        /* Try to claim it before another thread does. */
+        if (try_lock_file(files + i)) break;
+    }
+
+    /* Open the file. */
+    FILE* result = freopen(filename, mode, files + i);
+
+    unlock_file(files + i);
+    return result;
+}
+
+/* TODO
+FILE* freopen(const char* restrict filename, const char* restrict mode, FILE* restrict stream); */
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/setbuf.html */
+void setbuf(FILE* restrict stream, char* restrict buffer) {
+    if (buffer) {
+        (void)setvbuf(stream, buffer, _IOFBF, BUFSIZ);
+    } else {
+        (void)setvbuf(stream, NULL, _IONBF, 0);
+    }
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/setvbuf.html */
+int setvbuf(FILE* restrict stream, char* restrict buffer, int mode, size_t size) {
+    bool malloced_buffer = false;
+
+    if (mode == _IONBF) {
+        /* If we're not buffering, let's be consistent about it. */
+        buffer = NULL;
+        size = 0;
+    } else if (!buffer && size) {
+        /* No buffer given; allocate one instead. */
+        malloced_buffer = true;
+        buffer = malloc(size);
+        if (!buffer) {
+            errno = ENOMEM;
+            return -1;
+        }
+    }
+
+    lock_file(stream);
+
+    /* "The setvbuf() function may be used after the stream pointed to by stream is associated with an open file
+       but before any other operation (other than an unsuccessful call to setvbuf()) is performed on the stream."
+       Therefore, we can assume that the buffer is currently empty, and we don't need to flush it. */
+
+    if (stream->malloced_buffer) {
+        free(stream->buffer);
+    }
+
+    stream->malloced_buffer = malloced_buffer;
+    stream->buffer = buffer;
+    stream->buffer_mode = mode;
+    stream->buffer_size = size;
+
+    unlock_file(stream);
+
+    return 0;
+}
 
 
 /* Formatted input/output */
+/* TODO
+int dprintf(int fildes, const char* restrict format, ...); */
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fprintf.html */
 int fprintf(FILE* restrict stream, const char* restrict format, ...) {
     va_list args;
     va_start(args, format);
@@ -114,6 +273,7 @@ int fprintf(FILE* restrict stream, const char* restrict format, ...) {
     return result;
 }
 
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fscanf.html */
 int fscanf(FILE* restrict stream, const char* restrict format, ...) {
     va_list args;
     va_start(args, format);
@@ -122,6 +282,7 @@ int fscanf(FILE* restrict stream, const char* restrict format, ...) {
     return result;
 }
 
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/printf.html */
 int printf(const char* format, ...) {
     va_list args;
     va_start(args, format);
@@ -130,6 +291,7 @@ int printf(const char* format, ...) {
     return result;
 }
 
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/scanf.html */
 int scanf(const char* format, ...) {
     va_list args;
     va_start(args, format);
@@ -138,6 +300,7 @@ int scanf(const char* format, ...) {
     return result;
 }
 
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/snprintf.html */
 int snprintf(char* restrict s, size_t n, const char* restrict format, ...) {
     va_list args;
     va_start(args, format);
@@ -146,6 +309,7 @@ int snprintf(char* restrict s, size_t n, const char* restrict format, ...) {
     return result;
 }
 
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/sprintf.html */
 int sprintf(char* restrict s, const char* restrict format, ...) {
     va_list args;
     va_start(args, format);
@@ -154,6 +318,7 @@ int sprintf(char* restrict s, const char* restrict format, ...) {
     return result;
 }
 
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/sscanf.html */
 int sscanf(const char* restrict s, const char* restrict format, ...) {
     va_list args;
     va_start(args, format);
@@ -165,11 +330,23 @@ int sscanf(const char* restrict s, const char* restrict format, ...) {
 /* TODO
 int vfprintf(FILE* restrict stream, const char* restrict format, va_list args);
 int vfscanf(FILE* restrict stream, const char* restrict format, va_list args);
-int vprintf(const char* format, va_list args);
-int vscanf(const char* format, va_list args);
+*/
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/vprintf.html */
+int vprintf(const char* format, va_list args) {
+    return vfprintf(stdout, format, args);
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/vscanf.html */
+int vscanf(const char* format, va_list args) {
+    return vfscanf(stdin, format, args);
+}
+
+/* TODO
 int vsnprintf(char* restrict s, size_t n, const char* restrict format, va_list args);
 int vsprintf(char* restrict s, const char* restrict format, va_list args); */
 
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/vsscanf.html */
 int vsscanf(const char* restrict s, const char* restrict format, va_list args) {
     int sign;
     int radix, dec_digits, hex_digits;
@@ -527,68 +704,343 @@ scanset_break:
         }
     }
 matching_break:
-    va_end(args);
     return args_filled; /* TODO: If EOF is reached before any data can be read, return EOF. */
 }
-
-/* TODO
-int vfprintf(FILE* stream, const char* format, va_list arg);
-int vfscanf(FILE* stream, const char* format, va_list arg);
-int vprintf(const char* format, va_list arg);
-int vscanf(const char* format, va_list arg);
-int vsnprintf(char* s, size_t n, const char* format, va_list arg);
-int vsprintf(char* s, const char* format, va_list arg);
-int vsscanf(const char* s, const char* format, va_list arg); */
 
 
 /* Character input/output */
 /* TODO 
-int fgetc(FILE* stream);
-char* fgets(char* str, int num, FILE* stream);
-int fputc(int character, FILE* stream);
-int fputs(const char* str, FILE* stream);
-int getc(FILE* stream);
-int getchar(void);
-int putc(int character, FILE* stream); */
+int fgetc(FILE* stream); */
 
-int putchar(int c) {
-    /* FIXME: This system call is temporary. */
-    register int c2 asm ("x2") = c;
-    asm volatile("svc 0xff00" :: "r"(c2));
-    return c;
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/getc.html */
+int getc(FILE* stream) {
+    return fgetc(stream);
 }
 
-int puts(const char* str) {
-    while (*str) {
-        putchar(*str++);
-    }
-    putchar('\n'); /* This is in the standard for puts, even though it's not for fputs. */
-    return 0; /* TODO: Return EOF on failure. */
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/getchar.html */
+int getchar(void) {
+    return fgetc(stdin);
 }
 
 /* TODO
-int ungetc(int character, FILE* stream); */
+char* fgets(char* restrict str, int num, FILE* restrict stream); */
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fputc.html */
+int fputc(int ch, FILE* stream) {
+    if (fwrite(&ch, 1, 1, stream) < 1) return EOF;
+    return ch;
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/putc.html */
+int putc(int ch, FILE* stream) {
+    return fputc(ch, stream);
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fputs.html */
+int fputs(const char* str, FILE* stream) {
+    lock_file(stream);
+
+    if (!stream->buffer_size || stream->buffer_mode == _IONBF) {
+        /* The stream is unbuffered, so just send the string. */
+        /* TODO: Implement this, ideally by sending the whole string at once. */
+        unlock_file(stream);
+        stream->error = -1;
+        return EOF;
+    }
+
+    while (*str) {
+        /* Buffer as many characters as possible. */
+        while (stream->buffer_index < stream->buffer_size) {
+            stream->buffer[stream->buffer_index++] = *str++;
+            if (!*str) goto done;
+        }
+
+        /* Flush the buffer before continuing. */
+        if (fflush_locked(stream)) {
+            unlock_file(stream);
+            return EOF;
+        }
+    }
+
+done:
+    unlock_file(stream);
+    return 0;
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/putchar.html */
+int putchar(int ch) {
+    return fputc(ch, stdout);
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/puts.html */
+int puts(const char* str) {
+    if (fputs(str, stdout) < 0) return EOF;
+    return putchar('\n');
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/ungetc.html */
+int ungetc(int ch, FILE* stream) {
+    if (ch == EOF) return EOF; /* Ungetting nothing */
+    if (stream->pushback_index == sizeof(stream->pushback_buffer.c)) return EOF; /* Buffer already full */
+    stream->pushback_buffer.c[stream->pushback_index++] = ch;
+    stream->eof = false;
+    return ch;
+}
 
 /* Direct input/output */
-/* TODO 
-size_t fread(void* restrict ptr, size_t size, size_t count, FILE* restrict stream);
-size_t fwrite(const void* restrict ptr, size_t size, size_t count, FILE* restrict stream); */
+/* TODO
+size_t fread(void* restrict buffer, size_t size, size_t count, FILE* restrict stream); */
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fwrite.html */
+size_t fwrite(const void* restrict buffer, size_t size, size_t count, FILE* restrict stream) {
+    if (size == 0 || count == 0) return 0;
+
+    lock_file(stream);
+
+    size_t bytes_remaining = size * count;
+    size_t obj_buffer_index = 0;
+    while (bytes_remaining) {
+        if (!stream->buffer_size || stream->buffer_mode == _IONBF) {
+            /* The stream is unbuffered, so just send one character at a time. */
+            /* TODO */
+            stream->error = -1;
+            break;
+        }
+
+        /* Flush the buffer if it's full. */
+        if (stream->buffer_index >= stream->buffer_size && fflush_locked(stream)) {
+            /* The stream's error flag is already set. */
+            break;
+        }
+
+        /* Buffer as many bytes as possible. */
+        size_t obj_buffer_size_remaining = size - obj_buffer_index;
+        size_t file_buffer_size_remaining = stream->buffer_size - stream->buffer_index;
+        size_t bytes_to_write = obj_buffer_size_remaining < file_buffer_size_remaining
+            ? obj_buffer_size_remaining
+            : file_buffer_size_remaining;
+        memcpy(
+            stream->buffer + stream->buffer_index,
+            (const unsigned char*)buffer + obj_buffer_index,
+            bytes_to_write
+        );
+        stream->buffer_index += bytes_to_write;
+        obj_buffer_index += bytes_to_write;
+        if (obj_buffer_index >= size) obj_buffer_index -= size;
+        bytes_remaining -= bytes_to_write;
+    }
+
+    unlock_file(stream);
+    return (size * count - bytes_remaining) / size;
+}
 
 
 /* File positioning */
-/* TODO 
-int fgetpos(FILE* stream, fpos_t* pos);
-int fseek(FILE* stream, long int offset, int origin);
-long int ftell(FILE* stream);
-void rewind(FILE* stream); */
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fgetpos.html */
+int fgetpos(FILE* restrict stream, fpos_t* restrict pos) {
+    lock_file(stream);
+
+    /* FIXME: If "The file descriptor underlying stream is not valid." */
+    if (false) {
+        unlock_file(stream);
+        errno = EBADF;
+        return -1;
+    }
+
+    /* FIXME: If "The file descriptor underlying stream is associated with a pipe, FIFO, or socket." */
+    if (false) {
+        unlock_file(stream);
+        errno = ESPIPE;
+        return -1;
+    }
+
+    *pos = stream->position;
+
+    /* Correct the position for buffered writes and calls to unget. */
+    pos->offset += stream->buffer_index;
+    pos->offset -= stream->pushback_index;
+
+    unlock_file(stream);
+    return 0;
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fsetpos.html */
+int fsetpos(FILE* stream, const fpos_t* pos) {
+    lock_file(stream);
+
+    if (fflush_locked(stream)) {
+        unlock_file(stream);
+        return -1;
+    }
+
+    stream->position = *pos;
+    stream->pushback_buffer.wc = WEOF;
+    stream->pushback_index = 0;
+    stream->eof = false;
+
+    unlock_file(stream);
+    return 0;
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fseek.html */
+int fseek(FILE* stream, long offset, int whence) {
+    lock_file(stream);
+    int result = fseek_locked(stream, offset, whence);
+    unlock_file(stream);
+    return result;
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fseeko.html */
+int fseeko(FILE* stream, off_t offset, int whence) {
+    lock_file(stream);
+    int result = fseeko_locked(stream, offset, whence);
+    unlock_file(stream);
+    return result;
+}
+
+#define FSEEK_GENERIC(fn_name, offset_t, offset_t_max, offset_t_min) \
+static int fn_name(FILE* stream, offset_t offset, int whence) { \
+    /* FIXME: If "The file descriptor underlying `stream` is associated with a pipe, FIFO, or socket." */ \
+    if (false) { \
+        errno = ESPIPE; \
+        return -1; \
+    } \
+\
+    if (fflush_locked(stream)) { \
+        return -1; \
+    } \
+\
+    switch (whence) { \
+    case SEEK_SET: \
+        stream->position.offset = offset; \
+        break; \
+    case SEEK_CUR: \
+        if ( \
+            (stream->position.offset <= offset_t_max && offset > offset_t_max - (long)stream->position.offset) || \
+            stream->position.offset + offset > offset_t_max \
+        ) { \
+            /* Seeking beyond the range of an `offset_t` */ \
+            errno = EOVERFLOW; \
+            return -1; \
+        } \
+        stream->position.offset += offset; \
+        break; \
+    case SEEK_END: \
+        if ( \
+            (stream->length <= LONG_MAX && offset > offset_t_max - (long)stream->length) || \
+            stream->length + offset > offset_t_max \
+        ) { \
+            /* Seeking beyond the range of a `long` */ \
+            errno = EOVERFLOW; \
+            return -1; \
+        } \
+        stream->position.offset = stream->length + offset; \
+        break; \
+    default: \
+        /* Unrecognized seek origin */ \
+        errno = EINVAL; \
+        return -1; \
+    } \
+\
+    stream->pushback_buffer.wc = WEOF; \
+    stream->pushback_index = 0; \
+    stream->eof = false; \
+\
+    return 0; \
+}
+
+FSEEK_GENERIC(fseek_locked, long, LONG_MAX, LONG_MIN)
+FSEEK_GENERIC(fseeko_locked, off_t, OFF_MAX, OFF_MIN)
+
+#define FTELL_GENERIC(fn_name, offset_t, offset_t_max) \
+offset_t fn_name(FILE* stream) { \
+    lock_file(stream); \
+\
+    /* FIXME: If "The file descriptor underlying `stream` is not an open file descriptor." */ \
+    if (false) { \
+        errno = EBADF; \
+        return -1L; \
+    } \
+\
+    /* FIXME: If "The file descriptor underlying `stream` is associated with a pipe, FIFO, or socket." */ \
+    if (false) { \
+        errno = ESPIPE; \
+        return -1L; \
+    } \
+\
+    /* Calculate current offset, including buffered writes and calls to unget. */ \
+    off_t offset = stream->position.offset + stream->buffer_index - stream->pushback_index; \
+\
+    if (offset > offset_t_max) { \
+        errno = EOVERFLOW; \
+        return -1L; \
+    } \
+\
+    unlock_file(stream); \
+    return offset; \
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/ftell.html */
+FTELL_GENERIC(ftell, long, LONG_MAX)
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/ftello.html */
+FTELL_GENERIC(ftello, off_t, OFF_MAX)
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/rewind.html */
+void rewind(FILE* stream) {
+    lock_file(stream);
+
+    (void)fseek_locked(stream, 0L, SEEK_SET);
+    stream->error = false;
+
+    unlock_file(stream);
+}
 
 
 /* Error-handling */
-/* TODO 
-void clearerr(FILE* stream);
-int feof(FILE* stream);
-int ferror(FILE* stream);
-void perror(FILE* stream); */
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/clearerr.html */
+void clearerr(FILE* stream) {
+    lock_file(stream);
+    stream->eof = false;
+    stream->error = false;
+    unlock_file(stream);
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/feof.html */
+int feof(FILE* stream) {
+    lock_file(stream);
+    int result = stream->eof;
+    unlock_file(stream);
+    return result;
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/ferror.html */
+int ferror(FILE* stream) {
+    lock_file(stream);
+    int result = stream->error;
+    unlock_file(stream);
+    return result;
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/perror.html */
+void perror(const char* s) {
+    switch (stderr->char_width) {
+    case CW_UNSET:
+    case CW_NARROW:
+        if (s) {
+            (void)fprintf(stderr, "%s: ", s);
+        }
+        (void)fprintf(stderr, "%s\n", strerror(errno));
+        break;
+    case CW_WIDE:
+        if (s) {
+            fwprintf(stderr, L"%s: ", s);
+        }
+        (void)fwprintf(stderr, L"%s\n", strerror(errno));
+        break;
+    }
+}
+
 
 /*
  * Parses a format specification, as found in calls to printf and scanf.
@@ -849,4 +1301,39 @@ static int parse_scanset(const char* restrict* restrict format, FormatSpec* rest
         }
     }
     return 1;
+}
+
+/*
+ * Tries once to lock a file.
+ *
+ * Parameters:
+ * `stream`: The file to try to lock.
+ *
+ * Returns:
+ * `true` if the attempt was successful; `false` if the file was already locked.
+ */
+static bool try_lock_file(FILE* stream) {
+    return !atomic_flag_test_and_set_explicit(&stream->lock, memory_order_acq_rel);
+}
+
+/*
+ * Locks a file to avoid data races when accessing its contents and position. Blocks if necessary.
+ *
+ * Parameters:
+ * `stream`: The file to lock.
+ */
+static void lock_file(FILE* stream) {
+    while (atomic_flag_test_and_set_explicit(&stream->lock, memory_order_acq_rel)) {
+        sleep(0);
+    }
+}
+
+/*
+ * Unlocks a previously locked file.
+ *
+ * Parameters:
+ * `stream`: The file to unlock.
+ */
+static void unlock_file(FILE* stream) {
+    atomic_flag_clear_explicit(&stream->lock, memory_order_release);
 }

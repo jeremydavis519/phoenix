@@ -25,6 +25,7 @@
 
 #include <stdarg.h>
 #include <stddef.h>
+#include <sys/types.h>
 
 #define BUFSIZ 8192
 #define EOF -1
@@ -85,27 +86,29 @@ int vsscanf(const char* restrict s, const char* restrict format, va_list args);
 
 /* Character input/output */
 int fgetc(FILE* stream);
-#define getc fgetc
+int getc(FILE* stream);
 char* fgets(char* restrict str, int num, FILE* restrict stream);
-int fputc(int character, FILE* stream);
-#define putc fputc
+int fputc(int ch, FILE* stream);
+int putc(int ch, FILE* stream);
 int fputs(const char* restrict str, FILE* restrict stream);
 int getc(FILE* stream);
-#define getchar() fgetc(stdin)
+int getchar(void);
 /* char* gets(char* s) -- Removed from the C standard as of 2011 (prone to buffer overflows) */
-#define putchar(character) fputc(character, stdout)
+int putchar(int ch);
 int puts(const char* str);
-int ungetc(int character, FILE* stream);
+int ungetc(int ch, FILE* stream);
 
 /* Direct input/output */
-size_t fread(void* restrict ptr, size_t size, size_t count, FILE* restrict stream);
-size_t fwrite(const void* restrict ptr, size_t size, size_t count, FILE* restrict stream);
+size_t fread(void* restrict buffer, size_t size, size_t count, FILE* restrict stream);
+size_t fwrite(const void* restrict buffer, size_t size, size_t count, FILE* restrict stream);
 
 /* File positioning */
 int fgetpos(FILE* restrict stream, fpos_t* restrict pos);
 int fsetpos(FILE* stream, const fpos_t* pos);
-int fseek(FILE* stream, long int offset, int origin);
-long int ftell(FILE* stream);
+int fseek(FILE* stream, long offset, int whence);
+int fseeko(FILE* stream, off_t offset, int whence);
+long ftell(FILE* stream);
+off_t ftello(FILE* stream);
 void rewind(FILE* stream);
 
 /* Error-handling */
