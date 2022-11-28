@@ -19,6 +19,8 @@
 #ifndef __PHOENIX_STRING_H
 #define __PHOENIX_STRING_H
 
+#include <locale.h>
+
 #ifdef __cplusplus
 extern "C" {
 #define restrict
@@ -54,6 +56,8 @@ char* strtok(char* restrict s, const char* restrict delimiters);
 /* Other */
 void* memset(void* dest, int ch, size_t count);
 char* strerror(int errnum);
+char* strerror_l(int errnum, locale_t locale);
+int strerror_r(int errnum, char* strerrbuf, size_t buflen);
 size_t strlen(const char* s);
 
 #ifdef __cplusplus
