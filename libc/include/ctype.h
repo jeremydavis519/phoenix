@@ -20,8 +20,8 @@
  * individual characters. Since everything in here is standard, see
  * http://www.cplusplus.com/reference/cctype/ for docs. */
 
-#ifndef _CTYPE_H
-#define _CTYPE_H
+#ifndef __PHOENIX_CTYPE_H
+#define __PHOENIX_CTYPE_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -49,4 +49,4 @@ int toupper(int c);
 }
 #endif
 
-#endif /* _CTYPE_H */
+#endif /* __PHOENIX_CTYPE_H */

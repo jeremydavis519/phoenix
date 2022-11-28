@@ -19,8 +19,8 @@
 /* Integer types defined by the ISO C standard and extended by POSIX
    https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/stdint.h.html */
 
-#ifndef _STDINT_H
-#define _STDINT_H
+#ifndef __PHOENIX_STDINT_H
+#define __PHOENIX_STDINT_H
 
 #include <limits.h>
 
@@ -322,4 +322,4 @@ typedef __UINTPTR_TYPE__ uintptr_t;
 #define SIG_ATOMIC_MIN __SIG_ATOMIC_MIN__
 #define SIG_ATOMIC_MAX __SIG_ATOMIC_MAX__
 
-#endif /* _STDINT_H */
+#endif /* __PHOENIX_STDINT_H */

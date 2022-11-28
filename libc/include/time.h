@@ -19,8 +19,8 @@
 /* This file contains the C standard library's time-related functions and types. Since everything
  * here is standard, see http://www.cplusplus.com/reference/ctime/ for docs. */
 
-#ifndef _TIME_H
-#define _TIME_H
+#ifndef __PHOENIX_TIME_H
+#define __PHOENIX_TIME_H
 
 #include <stddef.h>
 
@@ -64,4 +64,4 @@ size_t strftime(char* restrict ptr, size_t maxsize, const char* restrict format,
 }
 #endif
 
-#endif /* _TIME_H */
+#endif /* __PHOENIX_TIME_H */

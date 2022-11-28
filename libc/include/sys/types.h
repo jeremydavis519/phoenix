@@ -19,8 +19,8 @@
 /* Types defined by the POSIX specification
    (https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/sys_types.h.html) */
 
-#ifndef _SYS_TYPES_H
-#define _SYS_TYPES_H
+#ifndef __PHOENIX_SYS_TYPES_H
+#define __PHOENIX_SYS_TYPES_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -73,4 +73,4 @@ typedef  pthread_rwlockattr_t;
 typedef  pthread_spinlock_t;
 typedef  pthread_t; */
 
-#endif /* _SYS_TYPES_H */
+#endif /* __PHOENIX_SYS_TYPES_H */

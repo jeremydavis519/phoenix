@@ -16,8 +16,8 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#ifndef _ERRNO_H
-#define _ERRNO_H
+#ifndef __PHOENIX_ERRNO_H
+#define __PHOENIX_ERRNO_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -107,4 +107,4 @@ int errno;
 #define EWOULDBLOCK     76
 #define EXDEV           77
 
-#endif /* _ERRNO_H */
+#endif /* __PHOENIX_ERRNO_H */

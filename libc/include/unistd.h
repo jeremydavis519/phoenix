@@ -19,8 +19,8 @@
 /* Miscellaneous constants, types, and functions defined by POSIX
    https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/unistd.h.html */
 
-#ifndef _UNISTD_H
-#define _UNISTD_H
+#ifndef __PHOENIX_UNISTD_H
+#define __PHOENIX_UNISTD_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -409,4 +409,4 @@ ssize_t      write(int, const void*, size_t);
 extern char*  optarg;
 extern int    opterr, optind, optopt;
 
-#endif /* _UNISTD_H */
+#endif /* __PHOENIX_UNISTD_H */

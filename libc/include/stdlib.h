@@ -16,8 +16,8 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#ifndef _STDLIB_H
-#define _STDLIB_H
+#ifndef __PHOENIX_STDLIB_H
+#define __PHOENIX_STDLIB_H
 
 #include <stddef.h>
 #include <wchar.h>
@@ -93,4 +93,4 @@ size_t wcstombs(char* restrict dest, const wchar_t* restrict src, size_t max_byt
 }
 #endif
 
-#endif /* _STDLIB_H */
+#endif /* __PHOENIX_STDLIB_H */

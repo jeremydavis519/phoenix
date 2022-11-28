@@ -16,8 +16,8 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#ifndef _STRING_H
-#define _STRING_H
+#ifndef __PHOENIX_STRING_H
+#define __PHOENIX_STRING_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -61,4 +61,4 @@ size_t strlen(const char* s);
 }
 #endif
 
-#endif /* _STRING_H */
+#endif /* __PHOENIX_STRING_H */

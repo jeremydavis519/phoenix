@@ -16,8 +16,8 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#ifndef _WCHAR_H
-#define _WCHAR_H
+#ifndef __PHOENIX_WCHAR_H
+#define __PHOENIX_WCHAR_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -98,4 +98,4 @@ size_t wcsftime(wchar_t* dest, size_t max_chars, const wchar_t* format, const st
 }
 #endif
 
-#endif /* _WCHAR_H */
+#endif /* __PHOENIX_WCHAR_H */

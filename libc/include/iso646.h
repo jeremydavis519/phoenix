@@ -16,8 +16,8 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#ifndef _ISO646_H
-#define _ISO646_H
+#ifndef __PHOENIX_ISO646_H
+#define __PHOENIX_ISO646_H
 
 #define and &&
 #define and_eq &=
@@ -31,4 +31,4 @@
 #define xor ^
 #define xor_eq ^=
 
-#endif /* _ISO646_H */
+#endif /* __PHOENIX_ISO646_H */

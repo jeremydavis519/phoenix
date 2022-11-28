@@ -20,8 +20,8 @@
  * Phoenix. Since everything in here is standard, see http://www.cplusplus.com/reference/cstdio/
  * for docs. */
 
-#ifndef _STDIO_H
-#define _STDIO_H
+#ifndef __PHOENIX_STDIO_H
+#define __PHOENIX_STDIO_H
 
 #include <stdarg.h>
 #include <stddef.h>
@@ -119,4 +119,4 @@ void perror(const char* s);
 }
 #endif
 
-#endif /* _STDIO_H */
+#endif /* __PHOENIX_STDIO_H */
