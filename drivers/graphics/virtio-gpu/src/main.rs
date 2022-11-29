@@ -79,7 +79,7 @@ fn main() {
             ConfigurationSpace::SIZE,
             QueueIndex::Count as u32,
             Features::empty().bits(),
-            (Features::ANY_LAYOUT | Features::VERSION_1 | Features::ORDER_PLATFORM).bits()
+            (Features::ANY_LAYOUT | Features::VERSION_1 | Features::IN_ORDER | Features::ORDER_PLATFORM).bits()
     ) {
         Ok(x) => x,
         Err(e) => panic!("failed to initialize the VirtIO GPU: {}", e)
