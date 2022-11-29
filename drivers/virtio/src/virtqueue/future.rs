@@ -290,7 +290,7 @@ impl<'a, T: ?Sized> Future for ResponseFuture<'a, T> {
                         if let Some(waker) = virtq.wakers[next_desc_idx as usize].replace(None) {
                             waker.wake();
                         }
-                        if let None = *virtq.wakers[desc_head_idx as usize].borrow() {
+                        if virtq.wakers[desc_head_idx as usize].borrow().is_some() {
                             panic!("ResponseFuture trying to sleep, but waker slot already taken");
                         }
                         *virtq.wakers[desc_head_idx as usize].borrow_mut() = Some(cx.waker().clone());
@@ -345,7 +345,7 @@ impl<'a, T: ?Sized> Future for ResponseFuture<'a, T> {
                     if let Some(waker) = virtq.wakers[found_desc_idx as usize].replace(None) {
                         waker.wake();
                     }
-                    if let None = *virtq.wakers[desc_head_idx as usize].borrow() {
+                    if virtq.wakers[desc_head_idx as usize].borrow().is_some() {
                         panic!("ResponseFuture trying to sleep, but waker slot already taken");
                     }
                     *virtq.wakers[desc_head_idx as usize].borrow_mut() = Some(cx.waker().clone());
