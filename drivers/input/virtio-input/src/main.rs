@@ -33,80 +33,126 @@
 extern crate alloc;
 
 use {
-    alloc::string::String,
+    alloc::{
+        vec::Vec,
+        string::String,
+    },
     core::{
         arch::asm,
         fmt::{self, Write},
         iter,
-        mem,
+        mem::{self, MaybeUninit},
         slice,
     },
     volatile::Volatile,
-    libphoenix::syscall,
+    libphoenix::{
+        allocator::Allocator,
+        syscall,
+    },
     libdriver::Device,
     virtio::{
         DeviceEndian, DeviceDetails, GenericFeatures,
         virtqueue::future::Executor,
     },
     //self::api::*,
+    self::msg::InputEvent,
 };
 
 //mod api;
-//mod msg;
+mod msg;
 
 const DEVICE_TYPE_INPUT: u32 = 18;
 
 fn main() {
     let mut executor = Executor::new();
     for device in iter::from_fn(|| Device::claim("mmio/virtio-18")) {
-        let mut device_details = match virtio::init(
-            &device,
-            DEVICE_TYPE_INPUT,
-            ConfigurationSpace::SIZE,
-            QueueIndex::Count as u32,
-            GenericFeatures::empty().bits(),
-            (GenericFeatures::ANY_LAYOUT | GenericFeatures::VERSION_1 | GenericFeatures::ORDER_PLATFORM).bits()
-        ) {
-            Ok(x) => x,
-            Err(e) => {
-                let _ = write!(KernelWriter, "virtio-input: failed to initialize a device: {e}");
-                continue;
-            },
-        };
+        executor.spawn(async move {
+            let mut device_details = match virtio::init(
+                &device,
+                DEVICE_TYPE_INPUT,
+                ConfigurationSpace::SIZE,
+                QueueIndex::Count as u32,
+                GenericFeatures::empty().bits(),
+                (GenericFeatures::ANY_LAYOUT | GenericFeatures::VERSION_1 | GenericFeatures::ORDER_PLATFORM).bits()
+            ) {
+                Ok(x) => x,
+                Err(e) => {
+                    let _ = write!(KernelWriter, "virtio-input: failed to initialize a device: {e}");
+                    return;
+                },
+            };
 
-        let _ = writeln!(KernelWriter, "virtio-input: found a device");
+            // Log device information
+            let _ = writeln!(KernelWriter, "virtio-input: found a device");
 
-        let virtqueues = device_details.virtqueues();
-        let event_q = &virtqueues[QueueIndex::Event as usize];
-        let status_q = &virtqueues[QueueIndex::Status as usize];
-    
-        let mut config_space = ConfigurationSpace::new(&mut device_details);
+            let mut config_space = ConfigurationSpace::new(&mut device_details);
 
-        let mut name = ConfigurationValue::uninit_string();
-        let size = config_space.read(ConfigSelect::IdName as u8, 0, &mut name);
-        let name = unsafe { slice::from_raw_parts(&name.string[0], size.into()) };
-        let _ = writeln!(KernelWriter, "virtio-input: name = `{}`", String::from_utf8_lossy(name));
+            let mut name = ConfigurationValue::uninit_string();
+            let size = config_space.read(ConfigSelect::IdName as u8, 0, &mut name);
+            let name = unsafe { slice::from_raw_parts(&name.string[0], size.into()) };
+            let _ = writeln!(KernelWriter, "virtio-input: name = `{}`", String::from_utf8_lossy(name));
 
-        let mut serial_number = ConfigurationValue::uninit_string();
-        let size = config_space.read(ConfigSelect::IdSerial as u8, 0, &mut serial_number);
-        let serial_number = unsafe { slice::from_raw_parts(&serial_number.string[0], size.into()) };
-        let _ = writeln!(KernelWriter, "virtio-input: serial number = `{}`", String::from_utf8_lossy(serial_number));
+            let mut serial_number = ConfigurationValue::uninit_string();
+            let size = config_space.read(ConfigSelect::IdSerial as u8, 0, &mut serial_number);
+            let serial_number = unsafe { slice::from_raw_parts(&serial_number.string[0], size.into()) };
+            let _ = writeln!(KernelWriter, "virtio-input: serial number = `{}`", String::from_utf8_lossy(serial_number));
 
-        let mut dev_ids = ConfigurationValue { ids: DevIds::default() };
-        let _ = config_space.read(ConfigSelect::IdDevIds as u8, 0, &mut dev_ids);
-        let dev_ids = unsafe { &dev_ids.ids };
-        let _ = writeln!(KernelWriter, "virtio-input: device IDs: {dev_ids}");
+            let mut dev_ids = ConfigurationValue { ids: DevIds::default() };
+            let _ = config_space.read(ConfigSelect::IdDevIds as u8, 0, &mut dev_ids);
+            let dev_ids = unsafe { &dev_ids.ids };
+            let _ = writeln!(KernelWriter, "virtio-input: device IDs: {dev_ids}");
 
-        let mut properties = ConfigurationValue::uninit_bitmap();
-        let size = config_space.read(ConfigSelect::PropBits as u8, 0, &mut properties);
-        let properties = unsafe { slice::from_raw_parts(&properties.bitmap[0], size.into()) };
-        let _ = writeln!(KernelWriter, "virtio-input: input properties: {:?}", properties);
+            let mut properties = ConfigurationValue::uninit_bitmap();
+            let size = config_space.read(ConfigSelect::PropBits as u8, 0, &mut properties);
+            let properties = unsafe { slice::from_raw_parts(&properties.bitmap[0], size.into()) };
+            let _ = writeln!(KernelWriter, "virtio-input: input properties: {:?}", properties);
 
-        let _ = writeln!(KernelWriter, "virtio-input: VirtIO features: {:#x}", device_details.features());
+            let _ = writeln!(KernelWriter, "virtio-input: VirtIO features: {:#x}", device_details.features());
 
-        /*executor.spawn(async {
-            
-        });*/
+            let virtqueues = device_details.virtqueues();
+            let event_q = &virtqueues[QueueIndex::Event as usize];
+            let status_q = &virtqueues[QueueIndex::Status as usize];
+
+            let new_future = || {
+                // PERF: Allocate all these buffers in one block.
+                const MAX_ADDR_BITS: usize = 44;
+                let Ok(mut buf) = Allocator.malloc_phys::<InputEvent>(MAX_ADDR_BITS) else {
+                    let _ = writeln!(KernelWriter, "virtio-input: WARNING: failed to allocate an event buffer");
+                    return None;
+                };
+                mem::forget(mem::replace(&mut *buf, InputEvent::uninit()));
+                Some(MaybeUninit::new(msg::recv_event(event_q, buf)))
+            };
+
+            let mut futures = Vec::with_capacity(event_q.len().into());
+            futures.extend(
+                iter::from_fn(new_future)
+                    .take(usize::min(16, event_q.len().into()))
+            );
+
+            loop {
+                for future in futures.iter_mut() {
+                    let unwrapped_future = unsafe { mem::replace(future, MaybeUninit::uninit()).assume_init() };
+                    match unwrapped_future.await {
+                        Ok(event) => {
+                            // TODO
+                            let _ = writeln!(KernelWriter, "virtio-input: event received: {:?}", event);
+                            future.write(msg::recv_event(event_q, event));
+                        },
+                        Err(e) => {
+                            let _ = writeln!(KernelWriter, "virtio-input: ERROR: {e}");
+                            return;
+                        }
+                    };
+                }
+                // Keep supplying more buffers until the virtqueue is full.
+                if futures.len() < event_q.len().into() {
+                    if let Some(future) = new_future() {
+                        futures.push(future);
+                    }
+                }
+            }
+        });
     }
 
     executor.block_on_all();
@@ -187,7 +233,7 @@ impl<'a> ConfigurationSpace<'a> {
 
 #[repr(u8)]
 enum ConfigSelect {
-    Unset    = 0x00,
+    // Unset    = 0x00,
     IdName   = 0x01,
     IdSerial = 0x02,
     IdDevIds = 0x03,
