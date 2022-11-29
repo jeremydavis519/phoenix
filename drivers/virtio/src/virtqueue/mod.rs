@@ -75,7 +75,6 @@ impl<'a> VirtQueue<'a> {
             len: u16,
             driver_flags: DriverFlags
     ) -> Self {
-        let len = len as usize;
         let page_size = syscall::memory_page_size();
 
         // Base-2 logarithm, rounded down
@@ -87,9 +86,9 @@ impl<'a> VirtQueue<'a> {
         if legacy {
             // In "legacy" devices, everything needs to be roughly contiguous, so we allocate it
             // all in one chunk.
-            let size_of_descriptors = mem::size_of::<BufferDescriptor>() * len;
-            let size_of_driver_ring = mem::size_of::<u16>() * (3 + len);
-            let size_of_device_ring = mem::size_of::<u16>() * 3 + mem::size_of::<UsedElem>() * len;
+            let size_of_descriptors = mem::size_of::<BufferDescriptor>() * usize::from(len);
+            let size_of_driver_ring = mem::size_of::<u16>() * (3 + usize::from(len));
+            let size_of_device_ring = mem::size_of::<u16>() * 3 + mem::size_of::<UsedElem>() * usize::from(len);
             let align = |x| (x + Self::LEGACY_DEVICE_RING_ALIGN - 1) & !(Self::LEGACY_DEVICE_RING_ALIGN - 1);
             let block = Allocator.malloc_phys_bytes(
                 align(size_of_descriptors + size_of_driver_ring) + align(size_of_device_ring),
@@ -107,8 +106,8 @@ impl<'a> VirtQueue<'a> {
             unimplemented!();
         }
 
-        let mut wakers = Vec::with_capacity(len);
-        wakers.resize_with(len, || RefCell::new(None));
+        let mut wakers = Vec::with_capacity(len.into());
+        wakers.resize_with(len.into(), || RefCell::new(None));
         let wakers = wakers.into_boxed_slice();
 
         VirtQueue {
@@ -125,7 +124,8 @@ impl<'a> VirtQueue<'a> {
         }
     }
 
-    pub(crate) const fn len(&self) -> usize {
+    /// Returns the maximum number of messages that can be waiting in this queue at the same time.
+    pub const fn len(&self) -> u16 {
         self.descriptors.len
     }
 
@@ -187,16 +187,14 @@ impl<'a> VirtQueue<'a> {
 
         // Attach the descriptors to the appropriate parts of the buffer.
         if first_recv_idx > 0 {
-            let first_desc = &self.descriptors[0];
+            let first_desc = &self.descriptors[descriptor_indices[0]];
             first_desc.set_addr(buf.addr_phys() as u64, self.legacy);
             first_desc.set_len(usize::min(buf_size, first_recv_idx) as u32, self.legacy);
-            let _ = writeln!(KernelWriter, "out len = {}", usize::min(buf_size, first_recv_idx));
         }
         if first_recv_idx < buf_size {
-            let last_desc = &self.descriptors[descriptor_indices.len() - 1];
+            let last_desc = &self.descriptors[descriptor_indices[descriptor_indices.len() - 1]];
             last_desc.set_addr((buf.addr_phys() + first_recv_idx) as u64, self.legacy);
             last_desc.set_len((buf_size - first_recv_idx) as u32, self.legacy);
-            let _ = writeln!(KernelWriter, "in len = {}", buf_size - first_recv_idx);
 
             // Mark this as an input buffer (i.e. writable from the device's perspective).
             last_desc.set_flags(last_desc.flags(self.legacy) | BufferFlags::WRITE, self.legacy);
@@ -265,7 +263,7 @@ bitflags! {
 #[derive(Debug)]
 struct DescriptorTable {
     descriptors: DescriptorTableInternal,
-    len: usize,
+    len: u16,
     free_descs: AtomicU16,
     first_free_idx: AtomicU16 // Stored in device-endian order
 }
@@ -277,33 +275,32 @@ enum DescriptorTableInternal {
 }
 
 impl DescriptorTable {
-    fn new_legacy(block: PhysBox<[u8]>, len: usize) -> Self {
+    fn new_legacy(block: PhysBox<[u8]>, len: u16) -> Self {
         DescriptorTable {
             descriptors: DescriptorTableInternal::Legacy(block),
             len,
-            free_descs: AtomicU16::new(len as u16),
+            free_descs: AtomicU16::new(len),
             first_free_idx: AtomicU16::new(0)
         }.clear(true)
     }
 
-    fn new_modern(len: usize) -> Self {
-        let block: PhysBox<[BufferDescriptor]> = Allocator.malloc_phys_array(len, 64)
+    fn new_modern(len: u16) -> Self {
+        let block: PhysBox<[BufferDescriptor]> = Allocator.malloc_phys_array(len.into(), 64)
             .expect("failed to allocate a virtqueue");
         DescriptorTable {
             descriptors: DescriptorTableInternal::Modern(block),
             len,
-            free_descs: AtomicU16::new(len as u16),
+            free_descs: AtomicU16::new(len),
             first_free_idx: AtomicU16::new(0)
         }.clear(false)
     }
 
     fn clear(mut self, legacy: bool) -> Self {
         let len = self.len;
-        assert!(len < u16::max_value() as usize);
         for i in 0 .. len {
             mem::forget(mem::replace(
                 &mut self[i],
-                BufferDescriptor::new(0, 0, BufferFlags::empty(), ((i + 1) % len) as u16, legacy),
+                BufferDescriptor::new(0, 0, BufferFlags::empty(), (i + 1) % len, legacy),
             ));
         }
         self
@@ -341,7 +338,7 @@ impl DescriptorTable {
             return SendRecvResult::Ok(());
         }
 
-        if descriptor_indices.len() > self.len {
+        if descriptor_indices.len() > self.len.into() {
             return SendRecvResult::Err(
                 VirtIoError::new("attempted to make a chain with more descriptors than the queue has")
             );
@@ -388,17 +385,16 @@ impl DescriptorTable {
                 idx
             };
             for i in 0 .. descriptor_indices.len() {
-                descriptor_indices[i] = (first_idx.wrapping_add(i as u16)) % self.len as u16;
+                descriptor_indices[i] = (first_idx.wrapping_add(i as u16)) % self.len;
             }
         } else {
             for i in 0 .. descriptor_indices.len() {
-                let next = &self.first_free_idx;
-                let mut idx = next.load(Ordering::Acquire);
+                let mut idx = self.first_free_idx.load(Ordering::Acquire);
 
                 loop {
-                    let idx_next = self[u16::from_device_endian(idx, legacy) as usize].next(Ordering::Acquire, legacy);
-                    assert_ne!(idx_next as usize, self.len);
-                    match next.compare_exchange(
+                    let idx_next = self[u16::from_device_endian(idx, legacy)].next(Ordering::Acquire, legacy);
+                    assert_ne!(idx_next, self.len);
+                    match self.first_free_idx.compare_exchange(
                         idx,
                         idx_next,
                         Ordering::AcqRel,
@@ -415,12 +411,14 @@ impl DescriptorTable {
 
         // Set up the `next` pointers and flags.
         for i in 0 .. descriptor_indices.len() - 1 {
-            self[i].set_flags(BufferFlags::NEXT, legacy);
+            let idx = descriptor_indices[i];
+            self[idx].set_flags(BufferFlags::NEXT, legacy);
             if !in_order { // If in_order, the `next` pointers are always correct.
-                self[i].next.store(descriptor_indices[i + 1].to_device_endian(legacy), Ordering::Release);
+                self[idx].next.store(descriptor_indices[i + 1].to_device_endian(legacy), Ordering::Release);
             }
         }
-        self[descriptor_indices.len() - 1].set_flags(BufferFlags::empty(), legacy);
+        let idx = descriptor_indices[descriptor_indices.len() - 1];
+        self[idx].set_flags(BufferFlags::empty(), legacy);
 
         SendRecvResult::Ok(())
     }
@@ -435,7 +433,7 @@ impl DescriptorTable {
         assert!(count > 0);
         let mut next = self.first_free_idx.load(Ordering::Acquire); // Device-endian
         loop {
-            let tail = &self[tail_idx as usize];
+            let tail = &self[tail_idx];
             tail.next.store(next, Ordering::Release);
             match self.first_free_idx.compare_exchange_weak(
                 next,
@@ -451,34 +449,36 @@ impl DescriptorTable {
     }
 }
 
-impl Index<usize> for DescriptorTable {
+impl Index<u16> for DescriptorTable {
     type Output = BufferDescriptor;
 
-    fn index(&self, idx: usize) -> &Self::Output {
+    fn index(&self, idx: u16) -> &Self::Output {
         match self.descriptors {
             DescriptorTableInternal::Legacy(ref bytes) => {
-                unsafe {
-                    &*(&bytes[idx * mem::size_of::<BufferDescriptor>()] as *const u8 as *const BufferDescriptor)
-                }
+                unsafe { &*(
+                    &bytes[usize::from(idx) * mem::size_of::<BufferDescriptor>()]
+                        as *const u8 as *const BufferDescriptor
+                ) }
             },
             DescriptorTableInternal::Modern(ref descriptors) => {
-                &descriptors[idx]
-            }
+                &descriptors[usize::from(idx)]
+            },
         }
     }
 }
 
-impl IndexMut<usize> for DescriptorTable {
-    fn index_mut(&mut self, idx: usize) -> &mut Self::Output {
+impl IndexMut<u16> for DescriptorTable {
+    fn index_mut(&mut self, idx: u16) -> &mut Self::Output {
         match self.descriptors {
             DescriptorTableInternal::Legacy(ref mut bytes) => {
-                unsafe {
-                    &mut *(&mut bytes[idx * mem::size_of::<BufferDescriptor>()] as *mut u8 as *mut BufferDescriptor)
-                }
+                unsafe { &mut *(
+                    &mut bytes[usize::from(idx) * mem::size_of::<BufferDescriptor>()]
+                        as *mut u8 as *mut BufferDescriptor
+                ) }
             },
             DescriptorTableInternal::Modern(ref mut descriptors) => {
-                &mut descriptors[idx]
-            }
+                &mut descriptors[usize::from(idx)]
+            },
         }
     }
 }
@@ -490,7 +490,7 @@ struct BufferDescriptor {
     addr:  AtomicU64,
     len:   AtomicU32,
     flags: AtomicU16,
-    next:  AtomicU16
+    next:  AtomicU16,
 }
 
 bitflags! {
@@ -507,7 +507,7 @@ impl BufferDescriptor {
             addr:  AtomicU64::new(addr.to_device_endian(legacy)),
             len:   AtomicU32::new(len.to_device_endian(legacy)),
             flags: AtomicU16::new(flags.bits().to_device_endian(legacy)),
-            next:  AtomicU16::new(next.to_device_endian(legacy))
+            next:  AtomicU16::new(next.to_device_endian(legacy)),
         }
     }
 
@@ -530,7 +530,7 @@ impl BufferDescriptor {
     fn flags(&self, legacy: bool) -> BufferFlags {
         BufferFlags::from_bits(u16::from_device_endian(
             self.flags.load(Ordering::Acquire),
-            legacy
+            legacy,
         )).unwrap()
     }
 
@@ -578,14 +578,14 @@ impl DriverRing {
     const IDX_OFFSET:   usize = 1;
     const RING_OFFSET:  usize = 2;
 
-    unsafe fn new_legacy(block: &PhysBox<[u8]>, offset: usize, len: usize, driver_flags: DriverFlags) -> Self {
+    unsafe fn new_legacy(block: &PhysBox<[u8]>, offset: usize, len: u16, driver_flags: DriverFlags) -> Self {
         let internal = ptr::slice_from_raw_parts(
             &block[offset] as *const u8 as *const AtomicU16,
-            len + 3,
+            usize::from(len) + 3,
         );
         (*internal)[Self::FLAGS_OFFSET].store(driver_flags.bits().to_device_endian(true), Ordering::Release);
         (*internal)[Self::IDX_OFFSET].store(0.to_device_endian(true), Ordering::Release);
-        (*internal)[Self::RING_OFFSET + len].store(0.to_device_endian(true), Ordering::Release);
+        (*internal)[Self::RING_OFFSET + usize::from(len)].store(0.to_device_endian(true), Ordering::Release);
         Self::Legacy { internal, state: DriverRingState::new(len) }
     }
 
@@ -757,20 +757,20 @@ impl DriverRing {
     }
 }
 
-impl Index<usize> for DriverRing {
+impl Index<u16> for DriverRing {
     type Output = AtomicU16;
 
-    fn index(&self, i: usize) -> &Self::Output {
-        &self.internal()[Self::RING_OFFSET + i]
+    fn index(&self, i: u16) -> &Self::Output {
+        &self.internal()[Self::RING_OFFSET + usize::from(i)]
     }
 }
 
 impl DriverRingState {
-    fn new(len: usize) -> Self {
+    fn new(len: u16) -> Self {
         Self {
             next_idx: AtomicU16::new(0),
             entries_flags: iter::repeat(())
-                .take(len)
+                .take(len.into())
                 .map(|()| AtomicU8::new(DriverRingEntryFlags::empty().bits()))
                 .collect(),
         }
@@ -793,10 +793,10 @@ impl DeviceRing {
     const IDX_OFFSET:   usize = 1;
     const RING_OFFSET:  usize = 2;
 
-    unsafe fn new_legacy(block: &PhysBox<[u8]>, offset: usize, len: usize) -> Self {
+    unsafe fn new_legacy(block: &PhysBox<[u8]>, offset: usize, len: u16) -> Self {
         let internal = ptr::slice_from_raw_parts_mut(
             &block[offset] as *const u8 as *mut u8 as *mut u16,
-            len + 3
+            usize::from(len) + 3
         );
         (&mut (*internal)[Self::FLAGS_OFFSET] as *mut u16).write_volatile(0.to_device_endian(true));
         (&mut (*internal)[Self::IDX_OFFSET] as *mut u16).write_volatile(0.to_device_endian(true));

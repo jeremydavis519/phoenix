@@ -259,7 +259,7 @@ impl<'a, T: ?Sized> Future for ResponseFuture<'a, T> {
                     // handle this correctly, we need to resolve the futures in order as well.
 
                     let offset = virtq.accumulated_batch_size.load(Ordering::Acquire);
-                    let next_idx = last_dev_ring_idx.wrapping_add(offset) as usize % virtq.len();
+                    let next_idx = last_dev_ring_idx.wrapping_add(offset) % virtq.len();
                     let next_desc_idx = virtq.driver_ring[next_idx].load(Ordering::Acquire);
                     if next_desc_idx == desc_head_idx {
                         // This future's descriptor is next in line. Handle it as above, except we
@@ -273,7 +273,7 @@ impl<'a, T: ?Sized> Future for ResponseFuture<'a, T> {
                         virtq.accumulated_batch_size.fetch_add(1, Ordering::AcqRel);
 
                         // Wake the next future in line.
-                        let next_idx = next_idx.wrapping_add(1) as usize % virtq.len();
+                        let next_idx = next_idx.wrapping_add(1) % virtq.len();
                         let next_desc_idx = virtq.driver_ring[next_idx].load(Ordering::Acquire);
                         if let Some(waker) = virtq.wakers[next_desc_idx as usize].replace(None) {
                             waker.wake();
@@ -312,7 +312,7 @@ impl<'a, T: ?Sized> Future for ResponseFuture<'a, T> {
                     // descriptor's future.
                     if last_dev_ring_idx != virtq.driver_ring.idx() {
                         let last_dev_ring_idx = virtq.last_dev_ring_idx.load(Ordering::Acquire);
-                        let next_desc_idx = virtq.driver_ring[last_dev_ring_idx as usize % virtq.len()]
+                        let next_desc_idx = virtq.driver_ring[last_dev_ring_idx % virtq.len()]
                             .load(Ordering::Acquire);
                         if let Some(waker) = virtq.wakers[next_desc_idx as usize].replace(None) {
                             waker.wake();
