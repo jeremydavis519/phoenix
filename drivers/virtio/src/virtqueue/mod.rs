@@ -80,6 +80,8 @@ impl<'a> VirtQueue<'a> {
         // Base-2 logarithm, rounded down
         let log_2 = |x: usize| mem::size_of_val(&x) * 8 - x.leading_zeros() as usize + 1;
 
+        let in_order = device_features & GenericFeatures::IN_ORDER.bits() != 0;
+
         let descriptors;
         let driver_ring;
         let device_ring;
@@ -100,7 +102,7 @@ impl<'a> VirtQueue<'a> {
                 driver_ring = DriverRing::new_legacy(&block, size_of_descriptors, len, driver_flags);
                 device_ring = DeviceRing::new_legacy(&block, align(size_of_descriptors + size_of_driver_ring), len);
             }
-            descriptors = DescriptorTable::new_legacy(block, len);
+            descriptors = DescriptorTable::new_legacy(block, len, in_order);
         } else {
             // TODO
             unimplemented!();
@@ -178,8 +180,7 @@ impl<'a> VirtQueue<'a> {
             if first_recv_idx >= buf_size || first_recv_idx == 0 { 0 .. 1 } else { 0 .. 2 }
         ];
 
-        let in_order = self.device_features & GenericFeatures::IN_ORDER.bits() != 0;
-        match self.descriptors.make_chain(descriptor_indices, in_order, self.legacy) {
+        match self.descriptors.make_chain(descriptor_indices, self.legacy) {
             SendRecvResult::Ok(()) => {},
             SendRecvResult::Retry(()) => return SendRecvResult::Retry(buf),
             SendRecvResult::Err(e) => return SendRecvResult::Err(e)
@@ -262,36 +263,39 @@ bitflags! {
 
 #[derive(Debug)]
 struct DescriptorTable {
-    descriptors: DescriptorTableInternal,
-    len: u16,
-    free_descs: AtomicU16,
-    first_free_idx: AtomicU16 // Stored in device-endian order
+    descriptors:    DescriptorTableInternal,
+    len:            u16,
+    free_descs:     AtomicU16,
+    first_free_idx: AtomicU16,  // Stored in device-endian order
+    in_order:       bool,       // True if the `IN_ORDER` feature was negotiated
 }
 
 #[derive(Debug)]
 enum DescriptorTableInternal {
     Legacy(PhysBox<[u8]>),
-    Modern(PhysBox<[BufferDescriptor]>)
+    Modern(PhysBox<[BufferDescriptor]>),
 }
 
 impl DescriptorTable {
-    fn new_legacy(block: PhysBox<[u8]>, len: u16) -> Self {
+    fn new_legacy(block: PhysBox<[u8]>, len: u16, in_order: bool) -> Self {
         DescriptorTable {
             descriptors: DescriptorTableInternal::Legacy(block),
             len,
             free_descs: AtomicU16::new(len),
-            first_free_idx: AtomicU16::new(0)
+            first_free_idx: AtomicU16::new(0),
+            in_order,
         }.clear(true)
     }
 
-    fn new_modern(len: u16) -> Self {
+    fn new_modern(len: u16, in_order: bool) -> Self {
         let block: PhysBox<[BufferDescriptor]> = Allocator.malloc_phys_array(len.into(), 64)
             .expect("failed to allocate a virtqueue");
         DescriptorTable {
             descriptors: DescriptorTableInternal::Modern(block),
             len,
             free_descs: AtomicU16::new(len),
-            first_free_idx: AtomicU16::new(0)
+            first_free_idx: AtomicU16::new(0),
+            in_order,
         }.clear(false)
     }
 
@@ -331,7 +335,6 @@ impl DescriptorTable {
     fn make_chain(
         &self,
         descriptor_indices: &mut [u16],
-        in_order: bool,
         legacy: bool,
     ) -> SendRecvResult<(), (), VirtIoError> {
         if descriptor_indices.len() == 0 {
@@ -364,7 +367,7 @@ impl DescriptorTable {
         }
 
         // Claim the descriptors.
-        if in_order {
+        if self.in_order {
             // The spec doesn't allow the descriptors to be reordered at all when the `IN_ORDER` feature is used.
             let first_idx = if cfg!(target_endian = "little") || legacy {
                 self.first_free_idx.fetch_add(descriptor_indices.len() as u16, Ordering::AcqRel)
@@ -413,7 +416,7 @@ impl DescriptorTable {
         for i in 0 .. descriptor_indices.len() - 1 {
             let idx = descriptor_indices[i];
             self[idx].set_flags(BufferFlags::NEXT, legacy);
-            if !in_order { // If in_order, the `next` pointers are always correct.
+            if !self.in_order { // If in_order, the `next` pointers are always correct.
                 self[idx].next.store(descriptor_indices[i + 1].to_device_endian(legacy), Ordering::Release);
             }
         }
@@ -431,18 +434,20 @@ impl DescriptorTable {
     // - `count`: The number of descriptors in the chain.
     fn dealloc_chain(&self, head_idx: u16, tail_idx: u16, count: u16) {
         assert!(count > 0);
-        let mut next = self.first_free_idx.load(Ordering::Acquire); // Device-endian
-        loop {
-            let tail = &self[tail_idx];
-            tail.next.store(next, Ordering::Release);
-            match self.first_free_idx.compare_exchange_weak(
-                next,
-                head_idx,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ) {
-                Ok(_) => break,
-                Err(x) => next = x // The list has a new head. Retry with that one.
+        if !self.in_order { // Nothing to do if the descriptors are used in order, since they're already connected.
+            let mut next = self.first_free_idx.load(Ordering::Acquire); // Device-endian
+            loop {
+                let tail = &self[tail_idx];
+                tail.next.store(next, Ordering::Release);
+                match self.first_free_idx.compare_exchange_weak(
+                    next,
+                    head_idx,
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                ) {
+                    Ok(_) => break,
+                    Err(x) => next = x // The list has a new head. Retry with that one.
+                }
             }
         }
         self.free_descs.fetch_add(count, Ordering::AcqRel);
