@@ -1,0 +1,4 @@
+// https://dom.spec.whatwg.org/#cdatasection
+[Exposed=Window]
+interface CDATASection : Text {
+};

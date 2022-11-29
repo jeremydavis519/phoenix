@@ -1,0 +1,10 @@
+[package]
+name = "libdom"
+version = "0.1.0"
+authors = ["Jeremy Davis <jeremydavis519@gmail.com>"]
+edition = "2021"
+
+[dependencies]
+intertrait = "0.2"
+linkme = "0.2" # required by intertrait
+idl2rust = { path = "../idl2rust", features = ["intertrait"] }
