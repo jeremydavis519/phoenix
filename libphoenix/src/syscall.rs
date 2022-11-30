@@ -38,7 +38,7 @@ use {
 /// # Example
 /// ```no_run
 /// fn main() {
-///     let child_thread = thread_spawn(entry_point, priority, stack_size);
+///     let child_thread = thread_spawn(do_work, priority, stack_size);
 ///     let status = child_thread.join();
 ///     assert_eq!(status, 42);
 /// }
