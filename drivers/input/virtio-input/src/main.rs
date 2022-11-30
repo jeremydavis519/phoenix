@@ -40,8 +40,9 @@ use {
     core::{
         arch::asm,
         fmt::{self, Write},
+        future::Future,
         iter,
-        mem::{self, MaybeUninit},
+        mem,
         slice,
     },
     volatile::Volatile,
@@ -52,7 +53,10 @@ use {
     libdriver::Device,
     virtio::{
         DeviceEndian, DeviceDetails, GenericFeatures,
-        virtqueue::future::Executor,
+        virtqueue::{
+            VirtQueue,
+            future::Executor,
+        }
     },
     //self::api::*,
     self::msg::InputEvent,
@@ -64,98 +68,121 @@ mod msg;
 const DEVICE_TYPE_INPUT: u32 = 18;
 
 fn main() {
-    let mut executor = Executor::new();
-    for device in iter::from_fn(|| Device::claim("mmio/virtio-18")) {
-        executor.spawn(async move {
-            let mut device_details = match virtio::init(
-                &device,
+    let devices = iter::from_fn(|| Device::claim("mmio/virtio-18"))
+        .collect::<Vec<_>>();
+
+    let mut virtio_devices = devices.iter()
+        .filter_map(|device| {
+            let mut details = match virtio::init(
+                device,
                 DEVICE_TYPE_INPUT,
                 ConfigurationSpace::SIZE,
                 QueueIndex::Count as u32,
                 GenericFeatures::empty().bits(),
-                (GenericFeatures::ANY_LAYOUT | GenericFeatures::VERSION_1 | GenericFeatures::ORDER_PLATFORM).bits()
+                (
+                    GenericFeatures::ANY_LAYOUT |
+                    GenericFeatures::VERSION_1 |
+                    GenericFeatures::IN_ORDER |
+                    GenericFeatures::ORDER_PLATFORM
+                ).bits(),
             ) {
                 Ok(x) => x,
                 Err(e) => {
                     let _ = write!(KernelWriter, "virtio-input: failed to initialize a device: {e}");
-                    return;
+                    return None;
                 },
             };
 
-            // Log device information
-            let _ = writeln!(KernelWriter, "virtio-input: found a device");
+            let virtqueues = details.virtqueues();
 
-            let mut config_space = ConfigurationSpace::new(&mut device_details);
+            Some(VirtIoDevice {
+                details,
+                virtqueues,
+            })
+        })
+        .collect::<Vec<_>>();
 
-            let mut name = ConfigurationValue::uninit_string();
-            let size = config_space.read(ConfigSelect::IdName as u8, 0, &mut name);
-            let name = unsafe { slice::from_raw_parts(&name.string[0], size.into()) };
-            let _ = writeln!(KernelWriter, "virtio-input: name = `{}`", String::from_utf8_lossy(name));
+    let mut executor = Executor::new();
 
-            let mut serial_number = ConfigurationValue::uninit_string();
-            let size = config_space.read(ConfigSelect::IdSerial as u8, 0, &mut serial_number);
-            let serial_number = unsafe { slice::from_raw_parts(&serial_number.string[0], size.into()) };
-            let _ = writeln!(KernelWriter, "virtio-input: serial number = `{}`", String::from_utf8_lossy(serial_number));
+    for device in virtio_devices.iter_mut() {
+        // Log device information.
+        let mut config_space = ConfigurationSpace::new(&mut device.details);
 
-            let mut dev_ids = ConfigurationValue { ids: DevIds::default() };
-            let _ = config_space.read(ConfigSelect::IdDevIds as u8, 0, &mut dev_ids);
-            let dev_ids = unsafe { &dev_ids.ids };
-            let _ = writeln!(KernelWriter, "virtio-input: device IDs: {dev_ids}");
+        let _ = writeln!(KernelWriter, "virtio-input: found a device");
 
-            let mut properties = ConfigurationValue::uninit_bitmap();
-            let size = config_space.read(ConfigSelect::PropBits as u8, 0, &mut properties);
-            let properties = unsafe { slice::from_raw_parts(&properties.bitmap[0], size.into()) };
-            let _ = writeln!(KernelWriter, "virtio-input: input properties: {:?}", properties);
+        let mut name = ConfigurationValue::uninit_string();
+        let size = config_space.read(ConfigSelect::IdName as u8, 0, &mut name);
+        let name = unsafe { slice::from_raw_parts(&name.string[0], size.into()) };
+        let _ = writeln!(KernelWriter, "virtio-input: name = `{}`", String::from_utf8_lossy(name));
 
-            let _ = writeln!(KernelWriter, "virtio-input: VirtIO features: {:#x}", device_details.features());
+        let mut serial_number = ConfigurationValue::uninit_string();
+        let size = config_space.read(ConfigSelect::IdSerial as u8, 0, &mut serial_number);
+        let serial_number = unsafe { slice::from_raw_parts(&serial_number.string[0], size.into()) };
+        let _ = writeln!(KernelWriter, "virtio-input: serial number = `{}`", String::from_utf8_lossy(serial_number));
 
-            let virtqueues = device_details.virtqueues();
-            let event_q = &virtqueues[QueueIndex::Event as usize];
-            let status_q = &virtqueues[QueueIndex::Status as usize];
+        let mut dev_ids = ConfigurationValue { ids: DevIds::default() };
+        let _ = config_space.read(ConfigSelect::IdDevIds as u8, 0, &mut dev_ids);
+        let dev_ids = unsafe { &dev_ids.ids };
+        let _ = writeln!(KernelWriter, "virtio-input: device IDs: {dev_ids}");
 
-            let new_future = || {
-                // PERF: Allocate all these buffers in one block.
-                const MAX_ADDR_BITS: usize = 44;
-                let Ok(mut buf) = Allocator.malloc_phys::<InputEvent>(MAX_ADDR_BITS) else {
-                    let _ = writeln!(KernelWriter, "virtio-input: WARNING: failed to allocate an event buffer");
-                    return None;
-                };
-                mem::forget(mem::replace(&mut *buf, InputEvent::uninit()));
-                Some(MaybeUninit::new(msg::recv_event(event_q, buf)))
-            };
+        let mut properties = ConfigurationValue::uninit_bitmap();
+        let size = config_space.read(ConfigSelect::PropBits as u8, 0, &mut properties);
+        let properties = unsafe { slice::from_raw_parts(&properties.bitmap[0], size.into()) };
+        let _ = writeln!(KernelWriter, "virtio-input: input properties: {:?}", properties);
 
-            let mut futures = Vec::with_capacity(event_q.len().into());
-            futures.extend(
-                iter::from_fn(new_future)
-                    .take(usize::min(16, event_q.len().into()))
-            );
+        let _ = writeln!(KernelWriter, "virtio-input: VirtIO features: {:#x}", device.details.features());
 
-            loop {
-                for future in futures.iter_mut() {
-                    let unwrapped_future = unsafe { mem::replace(future, MaybeUninit::uninit()).assume_init() };
-                    match unwrapped_future.await {
-                        Ok(event) => {
-                            // TODO
-                            let _ = writeln!(KernelWriter, "virtio-input: event received: {:?}", event);
-                            future.write(msg::recv_event(event_q, event));
-                        },
-                        Err(e) => {
-                            let _ = writeln!(KernelWriter, "virtio-input: ERROR: {e}");
-                            return;
-                        }
-                    };
-                }
-                // Keep supplying more buffers until the virtqueue is full.
-                if futures.len() < event_q.len().into() {
-                    if let Some(future) = new_future() {
-                        futures.push(future);
-                    }
-                }
-            }
-        });
+        // Start listening for events.
+        // TODO: Instead of making a new future for every buffer, add a new API to the virtio crate
+        //       to add a lot of buffers all at once and respond to each of them with a callback. The
+        //       existing API works well when sending individual commands but is hard to use when
+        //       simply providing a lot of buffers to the device for input.
+        const INITIAL_BUFFERS_COUNT: usize = 16; // QEMU expects more than 1.
+        for _ in 0 .. INITIAL_BUFFERS_COUNT {
+            executor.spawn(new_event_future(&device.virtqueues[QueueIndex::Event as usize]));
+        }
     }
 
     executor.block_on_all();
+}
+
+fn new_event_future<'a>(event_q: &'a VirtQueue<'a>) -> impl Future<Output = ()> + 'a {
+    // PERF: Allocate all these buffers in one block.
+    const MAX_ADDR_BITS: usize = 44;
+    let mut response_future = match Allocator.malloc_phys::<InputEvent>(MAX_ADDR_BITS) {
+        Ok(mut buf) => {
+            mem::forget(mem::replace(&mut *buf, InputEvent::uninit()));
+            Some(msg::recv_event(event_q, buf))
+        },
+        Err(_) => {
+            let _ = writeln!(KernelWriter, "virtio-input: WARNING: failed to allocate an event buffer");
+            None
+        },
+    };
+
+    async move {
+        if response_future.is_none() { return; };
+        loop {
+            match mem::replace(&mut response_future, None).unwrap().await {
+                Ok(event) => {
+                    // TODO
+                    let _ = writeln!(KernelWriter, "virtio-input: event received: {:?}", event);
+
+                    // Use the same buffer to await another event.
+                    response_future = Some(msg::recv_event(event_q, event));
+                },
+                Err(e) => {
+                    let _ = writeln!(KernelWriter, "virtio-input: ERROR: {e}");
+                    return;
+                }
+            };
+        }
+    }
+}
+
+struct VirtIoDevice<'a> {
+    details:    DeviceDetails<'a>,
+    virtqueues: Vec<VirtQueue<'a>>,
 }
 
 // FIXME: Remove this debugging aid.
