@@ -24,7 +24,6 @@ use {
         convert::TryFrom,
         mem,
     },
-    crate::thread::Thread,
 };
 
 /// Ends the currently running thread with the given status.
@@ -49,7 +48,8 @@ use {
 ///     panic!("This line will never be reached.");
 /// }
 /// ```
-pub fn thread_exit(status: i32) -> ! {
+#[no_mangle]
+pub extern "C" fn thread_exit(status: i32) -> ! {
     unsafe {
         asm!(
             "svc 0x0000",
@@ -73,7 +73,8 @@ pub fn thread_exit(status: i32) -> ! {
 /// thread_sleep(1000);
 /// assert!(time_now() >= first_timestamp + 1000);
 /// ```
-pub fn thread_sleep(milliseconds: usize) {
+#[no_mangle]
+pub extern "C" fn thread_sleep(milliseconds: usize) {
     unsafe {
         asm!(
             "svc 0x0001",
@@ -89,20 +90,36 @@ pub fn thread_sleep(milliseconds: usize) {
 /// way to call it.
 ///
 /// # Returns
-/// An object that represents the new thread.
-pub(crate) fn thread_spawn(entry_point: fn(), priority: u8, stack_size: usize) -> Thread {
+/// The thread's handle.
+pub(crate) fn thread_spawn(entry_point: fn(), priority: u8, stack_size: usize) -> usize {
+    thread_spawn_ffi(call_rust_abi, entry_point as usize, priority, stack_size)
+}
+
+#[export_name = "thread_spawn"]
+extern "C" fn thread_spawn_ffi(
+    entry_point: extern "C" fn(usize),
+    argument: usize,
+    priority: u8,
+    stack_size: usize,
+) -> usize {
     let handle: usize;
     unsafe {
         asm!(
             "svc 0x0002",
             in("x2") entry_point as usize,
-            in("x3") priority,
-            in("x4") stack_size,
+            in("x3") argument,
+            in("x4") priority,
+            in("x5") stack_size,
             lateout("x0") handle,
             options(nomem, nostack, preserves_flags),
         );
     }
-    Thread { _handle: handle }
+    handle
+}
+
+extern "C" fn call_rust_abi(f: usize) {
+    let f = unsafe { mem::transmute::<_, fn()>(f) };
+    f()
 }
 
 /// Ends the currently running process with the given status.
@@ -119,7 +136,8 @@ pub(crate) fn thread_spawn(entry_point: fn(), priority: u8, stack_size: usize) -
 /// # #[allow(dead_code)]
 /// panic!("This code will never be reached.");
 /// ```
-pub fn process_exit(status: i32) -> ! {
+#[no_mangle]
+pub extern "C" fn process_exit(status: i32) -> ! {
     unsafe {
         asm!(
             "svc 0x0100",
@@ -141,12 +159,17 @@ pub fn process_exit(status: i32) -> ! {
 /// # Required permissions
 /// * `own device <name>`
 pub fn device_claim(name: &str) -> usize {
+    device_claim_ffi(name as *const str as *const u8, name.len())
+}
+
+#[export_name = "device_claim"]
+extern "C" fn device_claim_ffi(name: *const u8, len: usize) -> usize {
     let device_addr: usize;
     unsafe {
         asm!(
             "svc 0x0200",
-            in("x2") name as *const str as *const u8 as usize,
-            in("x3") name.len(),
+            in("x2") name as usize,
+            in("x3") len,
             lateout("x0") device_addr,
             options(nomem, nostack, preserves_flags),
         );
@@ -156,10 +179,11 @@ pub fn device_claim(name: &str) -> usize {
 
 /// Frees a block of memory that was allocated by a system call.
 ///
-/// # Panics
+/// # Aborts the thread
 /// If the given address is not the address of the first byte of an allocated block. (The most
 /// likely reason for this to happen is that the memory has already been freed.)
-pub fn memory_free(addr: usize) {
+#[no_mangle]
+pub extern "C" fn memory_free(addr: usize) {
     unsafe {
         asm!(
             "svc 0x0300",
@@ -176,7 +200,8 @@ pub fn memory_free(addr: usize) {
 ///
 /// # Returns
 /// The address of the allocated block, or `0` if the allocation failed.
-pub fn memory_alloc(size: usize, align: usize) -> usize {
+#[no_mangle]
+pub extern "C" fn memory_alloc(size: usize, align: usize) -> usize {
     let addr: usize;
     unsafe {
         asm!(
@@ -214,7 +239,8 @@ pub fn memory_alloc(size: usize, align: usize) -> usize {
 /// }
 /// # }
 /// ```
-pub fn memory_alloc_phys(size: usize, align: usize, max_bits: usize) -> VirtPhysAddr {
+#[no_mangle]
+pub extern "C" fn memory_alloc_phys(size: usize, align: usize, max_bits: usize) -> VirtPhysAddr {
     let virt: usize;
     let phys: usize;
     unsafe {
@@ -241,7 +267,8 @@ pub fn memory_alloc_phys(size: usize, align: usize, max_bits: usize) -> VirtPhys
 /// ```norun
 /// println!("The size of a page is {} bytes.", memory_page_size());
 /// ```
-pub fn memory_page_size() -> usize {
+#[no_mangle]
+pub extern "C" fn memory_page_size() -> usize {
     let page_size: usize;
     unsafe {
         asm!(
@@ -263,7 +290,8 @@ pub fn memory_page_size() -> usize {
 ///     println!("Either the user changed the clock or we just went back in time!");
 /// }
 /// ```
-pub fn time_now_unix() -> u64 {
+#[no_mangle]
+pub extern "C" fn time_now_unix() -> u64 {
     // FIXME: Make this work with word sizes other than 64 bits.
     const { assert!(mem::size_of::<usize>() == mem::size_of::<u64>()) };
 
@@ -291,7 +319,8 @@ pub fn time_now_unix() -> u64 {
 ///     println!("Either the user changed the clock or we just went back in time!");
 /// }
 /// ```
-pub fn time_now_unix_nanos() -> u64 {
+#[no_mangle]
+pub extern "C" fn time_now_unix_nanos() -> u64 {
     // FIXME: Make this work with word sizes other than 64 bits.
     const { assert!(mem::size_of::<usize>() == mem::size_of::<u64>()) };
 
@@ -343,11 +372,12 @@ pub fn time_view_kernel_profile() -> usize {
 
 /// Used for packaging a virtual address and a physical address into a single return value.
 #[derive(Debug)]
+#[repr(C)]
 pub struct VirtPhysAddr {
     /// The virtual address.
     pub virt: usize,
     /// The physical address.
-    pub phys: usize
+    pub phys: usize,
 }
 
 impl VirtPhysAddr {
@@ -366,7 +396,7 @@ pub enum TimeSelector {
     /// Represents the current time.
     Now   = 0,
     /// Represents the last time that the kernel read on behalf of this thread.
-    Saved = 1
+    Saved = 1,
 }
 
 impl TryFrom<usize> for TimeSelector {

@@ -44,8 +44,8 @@ impl Thread {
     ///     println!("Hello from the child thread!");
     /// }
     /// ```
-    pub fn spawn(entry_point: fn(), priority: u8, stack_size: usize) -> Thread {
-        syscall::thread_spawn(entry_point, priority, stack_size)
+    pub fn spawn(entry_point: fn(), priority: u8, stack_size: usize) -> Self {
+        Self { _handle: syscall::thread_spawn(entry_point, priority, stack_size) }
     }
 
     /// Blocks until the given thread completes.

@@ -67,7 +67,7 @@ pub(crate) fn handle_system_call(
     match SystemCall::try_from(syscall) {
         Ok(SystemCall::Thread_Exit)  => thread_exit(thread, args[0]),
         Ok(SystemCall::Thread_Sleep) => thread_sleep(thread, args[0]),
-        Ok(SystemCall::Thread_Spawn) => thread_spawn(thread, args[0], args[1] as u8, args[2], result1),
+        Ok(SystemCall::Thread_Spawn) => thread_spawn(thread, args[0], args[1], args[2] as u8, args[3], result1),
 
         Ok(SystemCall::Process_Exit) => process_exit(thread, args[0]),
 
@@ -153,8 +153,9 @@ fn thread_sleep(thread: Option<&mut Thread<File>>, milliseconds: usize) -> Respo
 // never returns. (Instead, it should use a system call to terminate itself.)
 fn thread_spawn(
         thread: Option<&mut Thread<File>>,
-        entry_point: usize,
-        mut priority: u8,
+        entry_point:    usize,
+        argument:       usize,
+        mut priority:   u8,
         max_stack_size: usize,
         mut handle: Volatile<&mut usize, WriteOnly>,
 ) -> Response {
@@ -167,7 +168,13 @@ fn thread_spawn(
         priority = 1;
     }
     handle.write(
-        scheduler::spawn_thread(parent_thread.exec_image.clone(), entry_point, max_stack_size, priority).unwrap_or(0)
+        scheduler::spawn_thread(
+            parent_thread.exec_image.clone(),
+            entry_point,
+            argument,
+            max_stack_size,
+            priority
+        ).unwrap_or(0)
     );
     profiler_probe!(ENTRANCE);
     Response::eret()

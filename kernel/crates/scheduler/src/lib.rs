@@ -196,12 +196,13 @@ pub fn run(mut thread_queue: ThreadQueue<File>) -> ! {
 /// The thread's ID, which a userspace application can use to refer to it when making system calls.
 pub fn spawn_thread(
         exec_image: Arc<ExecImage<File>>,
-        entry_point: usize,
+        entry_point:    usize,
+        argument:       usize,
         max_stack_size: usize,
-        priority: u8
+        priority:       u8,
 ) -> Result<usize, ThreadCreationError> {
     // Make a new thread and push it onto the list.
-    let mut thread = Thread::new(exec_image, entry_point, max_stack_size, priority)?;
+    let mut thread = Thread::new(exec_image, entry_point, argument, max_stack_size, priority)?;
     let id = thread.id();
     loop {
         match MOVING_THREADS.insert_head(thread) {
@@ -325,10 +326,11 @@ impl<T: Read+Seek> Thread<T> {
     /// Spawns a new thread that will run in the given executable image, starting at the given
     /// entry point, with a stack that is at least the given size.
     pub fn new(
-            exec_image:          Arc<ExecImage<T>>,
-            entry_point:         usize,
-            mut max_stack_size:  usize,
-            priority:            u8
+            exec_image:         Arc<ExecImage<T>>,
+            entry_point:        usize,
+            argument:           usize,
+            mut max_stack_size: usize,
+            priority:           u8,
     ) -> Result<Box<Thread<T>>, ThreadCreationError> {
         TOTAL_THREADS.fetch_add(1, Ordering::Release);
         TOTAL_PRIORITY.fetch_add(priority.into(), Ordering::Release);
@@ -353,7 +355,7 @@ impl<T: Read+Seek> Thread<T> {
             _max_stack_size: max_stack_size,
             spsr: 0, // TODO: This might not be 0 for a new Aarch32 thread.
             elr: entry_point,
-            register_store: Self::initial_register_store(stack_empty_ptr),
+            register_store: Self::initial_register_store(argument, stack_empty_ptr),
             saved_time: SystemTime::now()
         })
             .map_err(|AllocError| ThreadCreationError::OutOfMemory)
@@ -373,8 +375,8 @@ impl<T: Read+Seek> Thread<T> {
         }
     }
 
-    fn initial_register_store(stack_ptr: usize) -> [u64; 32] {
-        [0, 0, 0, 0, 0, 0, 0, 0,
+    fn initial_register_store(x0: usize, stack_ptr: usize) -> [u64; 32] {
+        [u64::try_from(x0).unwrap(), 0, 0, 0, 0, 0, 0, 0,
          0, 0, 0, 0, 0, 0, 0, 0,
          0, 0, 0, 0, 0, 0, 0, 0,
          0, 0, 0, 0, 0, 0, 0, u64::try_from(stack_ptr).unwrap()]
@@ -412,8 +414,9 @@ impl<T: Read+Seek> Thread<T> {
     pub fn new(
             _exec_image:     Arc<ExecImage<T>>,
             _entry_point:    usize,
+            _argument:       usize,
             _max_stack_size: usize,
-            _priority:       u8
+            _priority:       u8,
     ) -> Result<Box<Thread<T>>, ThreadCreationError> {
         // TODO
         unimplemented!();
