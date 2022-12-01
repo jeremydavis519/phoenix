@@ -1,4 +1,4 @@
-# Copyright (c) 2021 Jeremy Davis (jeremydavis519@gmail.com)
+# Copyright (c) 2021-2022 Jeremy Davis (jeremydavis519@gmail.com)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy of this software
 # and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -17,15 +17,28 @@
 
 .PHONY: all aarch64-phoenix test clean
 
+.DELETE_ON_ERROR:
+
+DEBUG_OR_RELEASE ?= release
+
 SRC = $(wildcard src/*.c)
 HEADERS = $(wildcard include/*.h)
 OBJ = $(patsubst src/%.c, build/%.o, $(SRC))
+
+ifeq ($(DEBUG_OR_RELEASE),debug)
+	CC_FLAGS := -Og
+	CARGO_FLAGS :=
+else
+	CC_FLAGS := -O3
+	CARGO_FLAGS := --release
+endif
 
 all: lib/libc.a lib/libg.a
 
 aarch64-phoenix:
 	CC=aarch64-none-elf-gcc \
 	AR=aarch64-none-elf-ar \
+	TARGET=aarch64-phoenix \
 	$(MAKE)
 
 test: aarch64-phoenix
@@ -41,8 +54,14 @@ lib/libg.a: lib/libc.a
 clean:
 	rm -rf build lib
 
-build/%.o: src/%.c
+build/%.o: src/%.c ../libphoenix/target/$(TARGET)/$(DEBUG_OR_RELEASE)/liblibphoenix.a
 	mkdir -p build
-	$(CC) -ffreestanding -Wall -Wextra -Wpedantic -c -Iinclude -o $@ $<
+	$(CC) $(CC_FLAGS) -ffreestanding -Wall -Wextra -Wpedantic -c \
+		-Iinclude -L../libphoenix/target/$(TARGET)/$(DEBUG_OR_RELEASE) -llibphoenix \
+		-o $@ $<
 
 src/%.c: $(HEADERS)
+
+../libphoenix/target/$(TARGET)/$(DEBUG_OR_RELEASE)/liblibphoenix.a:
+	cd ../libphoenix && \
+	xargo build $(CARGO_FLAGS) --target=$(TARGET)
