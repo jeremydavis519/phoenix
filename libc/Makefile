@@ -22,8 +22,12 @@
 DEBUG_OR_RELEASE ?= release
 
 SRC = $(wildcard src/*.c)
-HEADERS = $(wildcard include/*.h)
-OBJ = $(patsubst src/%.c, build/%.o, $(SRC))
+OBJ = $(patsubst src/%.c,build/%.o,$(SRC))
+DEP = $(patsubst src/%.c,build/%.d,$(SRC))
+
+# We should be able to use `-include $(DEP)` here, but for some reason make is only including
+# the first file. So we concatenate them all into a single file.
+-include build/dep/deps.d
 
 ifeq ($(DEBUG_OR_RELEASE),debug)
 	CC_FLAGS := -Og
@@ -36,17 +40,14 @@ endif
 all: lib/libc.a lib/libg.a
 
 aarch64-phoenix:
-	CC=aarch64-none-elf-gcc \
-	AR=aarch64-none-elf-ar \
-	TARGET=aarch64-phoenix \
-	$(MAKE)
+	$(MAKE) --eval="CC := aarch64-none-elf-gcc" --eval="AR := aarch64-none-elf-ar" --eval="TARGET := aarch64-phoenix"
 
 test: aarch64-phoenix
 
 lib/libc.a: $(OBJ)
 	mkdir -p lib
 	rm -f lib/libc.a
-	$(AR) rcu lib/libc.a $^
+	$(AR) rcu lib/libc.a $(OBJ)
 
 lib/libg.a: lib/libc.a
 	cp $< $@
@@ -54,14 +55,19 @@ lib/libg.a: lib/libc.a
 clean:
 	rm -rf build lib
 
-build/%.o: src/%.c ../libphoenix/target/$(TARGET)/$(DEBUG_OR_RELEASE)/liblibphoenix.a
+build/%.o: src/%.c ../libphoenix/target/$(TARGET)/$(DEBUG_OR_RELEASE)/liblibphoenix.a Makefile
 	mkdir -p build
 	$(CC) $(CC_FLAGS) -ffreestanding -Wall -Wextra -Wpedantic -c \
+		-MD "-MF$(patsubst src/%.c,build/%.d,$<)" -MP \
 		-Iinclude -L../libphoenix/target/$(TARGET)/$(DEBUG_OR_RELEASE) -llibphoenix \
 		-o $@ $<
 
-src/%.c: $(HEADERS)
+build/dep/deps.d: $(DEP) $(OBJ)
+	mkdir -p build/dep
+	cat $(DEP) > build/dep/deps.d
 
-../libphoenix/target/$(TARGET)/$(DEBUG_OR_RELEASE)/liblibphoenix.a:
+ifneq ($(TARGET),)
+../libphoenix/target/$(TARGET)/$(DEBUG_OR_RELEASE)/liblibphoenix.a: Makefile
 	cd ../libphoenix && \
 	xargo build $(CARGO_FLAGS) --target=$(TARGET)
+endif
