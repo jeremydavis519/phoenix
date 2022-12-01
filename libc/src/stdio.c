@@ -383,7 +383,7 @@ int vsscanf(const char* restrict s, const char* restrict format, va_list args) {
             store_arg = false;
             ++format;
         }
-        FormatSpec spec;
+        FormatSpec spec = {0};
         if (parse_format_spec(&format, &spec)) {
             goto matching_break;
         }
@@ -405,8 +405,8 @@ int vsscanf(const char* restrict s, const char* restrict format, va_list args) {
             }
 
             i_acc = 0;
+            sign = 1;
             if (width_counter != 0) {
-                sign = 1;
                 switch (c) {
                 case '-':
                     sign = -1;
@@ -618,9 +618,7 @@ int vsscanf(const char* restrict s, const char* restrict format, va_list args) {
             }
             break;
         case FSF_TEXT_SCANSET:
-            if (store_arg) {
-                out = va_arg(args, void*);
-            }
+            out = store_arg ? va_arg(args, void*) : NULL;
             while (width_counter-- && c) {
                 const char* scanner = spec.scanner;
                 do {
