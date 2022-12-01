@@ -31,14 +31,16 @@
 #![feature(panic_info_message)]
 #![feature(slice_as_chunks)]
 
+#![cfg_attr(feature = "global-allocator", feature(default_alloc_error_handler))]
+
 extern crate alloc;
 
 // FIXME: This is only here to allow compiling on an x86-64 host.
 #[cfg(target_arch = "aarch64")]
 pub mod allocator;
 // FIXME: This is only here to allow compiling on an x86-64 host.
-#[cfg(target_arch = "aarch64")]
-pub mod panic; // FIXME: Not `pub` (blocked on making `panic::panic_handler` private).
+#[cfg(all(target_arch = "aarch64", not(feature = "kernelspace")))]
+mod panic;
 pub mod process;
 pub mod profiler;
 // FIXME: This is only here to allow compiling on an x86-64 host.

@@ -203,12 +203,6 @@ impl core::fmt::Write for KernelWriter {
     }
 }
 
-#[panic_handler]
-fn panic_handler(p: &core::panic::PanicInfo) -> ! {
-    let _ = write!(KernelWriter, "Unexpected error: {}\n", p);
-    syscall::thread_exit(255) // TODO: Use a named constant for the exit status.
-}
-
 #[repr(u32)]
 enum QueueIndex {
     Control = 0,

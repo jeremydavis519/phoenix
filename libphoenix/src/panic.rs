@@ -27,12 +27,9 @@ use {
     crate::syscall
 };
 
-// FIXME: #[panic_handler], and not `pub`
-//        Using this attribute here causes a linker error. If it's not fixed soon, we should try to
-//        find a minimal example and submit an issue to the Rust repository.
-#[doc(hidden)] // TODO: Not needed once this becomes private.
+#[panic_handler]
 #[cold]
-pub fn panic_handler(panic_info: &PanicInfo) -> ! {
+fn panic_handler(panic_info: &PanicInfo) -> ! {
     let _ = write!(PanicWriter, "Unexpected error: {}\n", panic_info);
     syscall::thread_exit(255) // TODO: Use a named constant for the exit status.
 }
