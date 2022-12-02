@@ -17,6 +17,8 @@
  */
 
 #include <stdlib.h>
+#include <stdnoreturn.h>
+#include <phoenix.h>
 
 /* String conversion */
 /* TODO
@@ -56,14 +58,20 @@ void* realloc(void* ptr, size_t size); */
 void abort(void);
 int atexit(void (*func)(void)); */
 
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/exit.html */
+noreturn
 void exit(int status) {
     /* FIXME: All this has to be done before exiting the program:
     - Functions registered with atexit are called.
     - All C streams (open with functions in <cstdio>) are closed (and flushed, if buffered), and all files
-      created with tmpfile are removed.
-    - Control is returned to the host environment. */
-    register int st asm ("x2") = status;
-    asm volatile("svc 0x0100" :: "r"(st));
+      created with tmpfile are removed. */
+    _Exit(status);
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/_Exit.html */
+noreturn
+void _Exit(int status) {
+    process_exit(status);
     while (1);
 }
 
