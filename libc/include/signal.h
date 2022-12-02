@@ -170,16 +170,10 @@ typedef struct siginfo_t {
 } siginfo_t;
 
 struct sigaction {
+    void      (*sa_handler)(int);
     sigset_t    sa_mask;
     int         sa_flags;
-#if __STDC_VERSION__ >= 199901L
-    union {
-#endif
-        void  (*sa_handler)(int);
-        void  (*sa_sigaction)(int, siginfo_t*, void*);
-#if __STDC_VERSION__ >= 199901L
-    };
-#endif
+    void      (*sa_sigaction)(int, siginfo_t*, void*);
 };
 
 /* TODO
