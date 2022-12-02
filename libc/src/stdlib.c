@@ -71,6 +71,8 @@ void exit(int status) {
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/_Exit.html */
 noreturn
 void _Exit(int status) {
+    /* FIXME: Implement all the "Consequences of Process Termination" at this link:
+       https://pubs.opengroup.org/onlinepubs/9699919799/functions/_Exit.html#tag_16_01_03_01 */
     process_exit(status);
     while (1);
 }
