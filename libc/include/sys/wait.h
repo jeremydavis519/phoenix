@@ -36,7 +36,7 @@
 #define WSTOPPED        0x20
 
 /* For analysis of process status values */
-#define WEXITSTATUS(stat)   ((stat) & 0xff)
+#define WEXITSTATUS(stat)   ((int8_t)(stat))
 #define WIFCONTINUED(stat)  ((((unsigned int)(stat) >> 8) & 0x03) == 0)
 #define WIFEXITED(stat)     ((((unsigned int)(stat) >> 8) & 0x03) == 1)
 #define WIFSIGNALED(stat)   ((((unsigned int)(stat) >> 8) & 0x03) == 2)
