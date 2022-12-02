@@ -44,8 +44,11 @@
 
 #ifdef __cplusplus
 extern "C" {
-#define restrict
 #endif
+
+#if defined(__cplusplus) || !defined(__STDC_VERSION__) || __STDC_VERSION__ < 199901L
+#define restrict
+#endif /* __cplusplus or __STDC_VERSION__ */
 
 typedef struct FILE   FILE;
 typedef struct fpos_t fpos_t;
@@ -117,8 +120,11 @@ int feof(FILE* stream);
 int ferror(FILE* stream);
 void perror(const char* s);
 
-#ifdef __cplusplus
+#if defined(__cplusplus) || !defined(__STDC_VERSION__) || __STDC_VERSION__ < 199901L
 #undef restrict
+#endif /* __cplusplus or __STDC_VERSION__ */
+
+#ifdef __cplusplus
 }
 #endif
 

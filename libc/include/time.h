@@ -37,8 +37,11 @@
 
 #ifdef __cplusplus
 extern "C" {
-#define restrict
 #endif
+
+#if defined(__cplusplus) || !defined(__STDC_VERSION__) || __STDC_VERSION__ < 199901L
+#define restrict
+#endif /* __cplusplus or __STDC_VERSION__ */
 
 struct sigevent;
 
@@ -118,8 +121,11 @@ extern long     timezone;
 extern char*    tzname[2];
 void        tzset(void);
 
-#ifdef __cplusplus
+#if defined(__cplusplus) || !defined(__STDC_VERSION__) || __STDC_VERSION__ < 199901L
 #undef restrict
+#endif /* __cplusplus or __STDC_VERSION__ */
+
+#ifdef __cplusplus
 }
 #endif
 

@@ -34,8 +34,11 @@
 
 #ifdef __cplusplus
 extern "C" {
-#define restrict
 #endif
+
+#if defined(__cplusplus) || !defined(__STDC_VERSION__) || __STDC_VERSION__ < 199901L
+#define restrict
+#endif /* __cplusplus or __STDC_VERSION__ */
 
 typedef struct {
     int quot;
@@ -142,8 +145,11 @@ int                 unlockpt(int fildes);
 /* Cryptography */
 void                setkey(const char* key);
 
-#ifdef __cplusplus
+#if defined(__cplusplus) || !defined(__STDC_VERSION__) || __STDC_VERSION__ < 199901L
 #undef restrict
+#endif /* __cplusplus or __STDC_VERSION__ */
+
+#ifdef __cplusplus
 }
 #endif
 

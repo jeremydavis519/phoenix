@@ -38,7 +38,7 @@ void* memmove(void* dest, const void* src, size_t count) {
             *sdest++ = *ssrc++;
         }
     } else {
-        // Avoid overwriting not-yet-used src bytes by copying backwards.
+        /* Avoid overwriting not-yet-used src bytes by copying backwards. */
         sdest += count;
         ssrc += count;
         while (count--) {
@@ -65,7 +65,7 @@ char* strncpy(char* restrict dest, const char* restrict src, size_t count) {
         }
     }
 
-    // The rest of the array needs to be padded with null characters.
+    /* The rest of the array needs to be padded with null characters. */
     memset(sdest, '\0', count);
 
     return dest;

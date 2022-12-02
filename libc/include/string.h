@@ -23,8 +23,11 @@
 
 #ifdef __cplusplus
 extern "C" {
-#define restrict
 #endif
+
+#if defined(__cplusplus) || !defined(__STDC_VERSION__) || __STDC_VERSION__ < 199901L
+#define restrict
+#endif /* __cplusplus or __STDC_VERSION__ */
 
 /* Copying */
 void* memcpy(void* restrict dest, const void* restrict src, size_t count);
@@ -60,8 +63,11 @@ char* strerror_l(int errnum, locale_t locale);
 int strerror_r(int errnum, char* strerrbuf, size_t buflen);
 size_t strlen(const char* s);
 
-#ifdef __cplusplus
+#if defined(__cplusplus) || !defined(__STDC_VERSION__) || __STDC_VERSION__ < 199901L
 #undef restrict
+#endif /* __cplusplus or __STDC_VERSION__ */
+
+#ifdef __cplusplus
 }
 #endif
 

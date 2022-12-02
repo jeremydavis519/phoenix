@@ -137,6 +137,10 @@
 extern "C" {
 #endif /* __cplusplus */
 
+#if defined(__cplusplus) || !defined(__STDC_VERSION__) || __STDC_VERSION__ < 199901L
+#define restrict
+#endif /* __cplusplus or __STDC_VERSION__ */
+
 typedef __SIG_ATOMIC_TYPE__ sig_atomic_t;
 typedef uint64_t            sigset_t;
 
@@ -228,6 +232,10 @@ void (*sigset(int sig, void (*disp)(int)))(int);
 /* Diagnostics */
 void   psiginfo(const siginfo_t* pinfo, const char* message);
 void   psignal(int sig, const char* message);
+
+#if defined(__cplusplus) || !defined(__STDC_VERSION__) || __STDC_VERSION__ < 199901L
+#undef restrict
+#endif /* __cplusplus or __STDC_VERSION__ */
 
 #ifdef __cplusplus
 }

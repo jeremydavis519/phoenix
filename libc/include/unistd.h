@@ -323,6 +323,14 @@
 /* Terminal special character handling */
 #define _POSIX_VDISABLE '\0'
 
+#ifdef __cplusplus
+extern "C" {
+#endif /* __cplusplus */
+
+#if defined(__cplusplus) || !defined(__STDC_VERSION__) || __STDC_VERSION__ < 199901L
+#define restrict
+#endif /* __cplusplus or __STDC_VERSION__ */
+
 /* Declarations */
 int          access(const char*, int);
 unsigned int alarm(unsigned int);
@@ -410,5 +418,13 @@ ssize_t      write(int, const void*, size_t);
 
 extern char*  optarg;
 extern int    opterr, optind, optopt;
+
+#if defined(__cplusplus) || !defined(__STDC_VERSION__) || __STDC_VERSION__ < 199901L
+#undef restrict
+#endif /* __cplusplus or __STDC_VERSION__ */
+
+#ifdef __cplusplus
+}
+#endif /* __cplusplus */
 
 #endif /* __PHOENIX_UNISTD_H */

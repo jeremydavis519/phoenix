@@ -28,8 +28,11 @@
 
 #ifdef __cplusplus
 extern "C" {
-#define restrict
 #endif
+
+#if defined(__cplusplus) || !defined(__STDC_VERSION__) || __STDC_VERSION__ < 199901L
+#define restrict
+#endif /* __cplusplus or __STDC_VERSION__ */
 
 typedef struct mbstate_t mbstate_t;
 typedef __WINT_TYPE__ wint_t;
@@ -93,8 +96,11 @@ wchar_t* wmemset(wchar_t* dest, wchar_t wc, size_t num);
 /* Time (mirroring time.h) */
 size_t wcsftime(wchar_t* dest, size_t max_chars, const wchar_t* format, const struct tm* timeptr);
 
-#ifdef __cplusplus
+#if defined(__cplusplus) || !defined(__STDC_VERSION__) || __STDC_VERSION__ < 199901L
 #undef restrict
+#endif /* __cplusplus or __STDC_VERSION__ */
+
+#ifdef __cplusplus
 }
 #endif
 
