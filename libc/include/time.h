@@ -22,17 +22,25 @@
 #ifndef __PHOENIX_TIME_H
 #define __PHOENIX_TIME_H
 
+#include <locale.h>
 #include <stddef.h>
+#include <sys/types.h>
 
-#define CLOCKS_PER_SEC 1
+#define CLOCKS_PER_SEC 1000000
+
+#define CLOCK_MONOTONIC             0
+#define CLOCK_PROCESS_CPUTIME_ID    1
+#define CLOCK_REALTIME              2
+#define CLOCK_THREAD_CPUTIME_ID     3
+
+#define TIMER_ABSTIME               1
 
 #ifdef __cplusplus
 extern "C" {
 #define restrict
 #endif
 
-typedef size_t clock_t;
-typedef size_t time_t;
+struct sigevent;
 
 struct tm {
     int tm_sec;
@@ -46,18 +54,69 @@ struct tm {
     int tm_isdst;
 };
 
+struct timespec {
+    time_t tv_sec;
+    long   tv_nsec;
+};
+
+struct itimerspec {
+    struct timespec it_interval;
+    struct timespec it_value;
+};
+
+int getdate_err;
+
+/* Measurement */
+clock_t     clock(void);
+time_t      time(time_t* time);
+int         clock_getcpuclockid(pid_t pid, clockid_t* clock_id);
+int         clock_getres(clockid_t clock_id, struct timespec* res);
+int         clock_gettime(clockid_t clock_id, struct timespec* time);
+int         clock_settime(clockid_t clock_id, struct timespec* time);
+int         timer_create(clockid_t clock_id, struct sigevent* restrict event, timer_t* restrict timer_id);
+int         timer_delete(timer_t timer_id);
+int         timer_getoverrun(timer_t timer_id);
+int         timer_gettime(timer_t timer_id, struct itimerspec* value);
+int         timer_settime(
+                timer_t                           timer_id,
+                int                               flags,
+                const struct itimerspec* restrict value,
+                struct itimerspec* restrict       ovalue
+            );
+
 /* Time manipulation */
-clock_t clock(void);
-double difftime(time_t end, time_t beginning);
-time_t mktime(struct tm* timeptr);
-time_t time(time_t* timer);
+double      difftime(time_t end, time_t start);
+time_t      mktime(struct tm* time);
+struct tm*  getdate(const char* string);
+
+/* Sleeping */
+int         nanosleep(const struct timespec* until, struct timespec* remaining_time);
+int         clock_nanosleep(clockid_t clock_id, int flags, const struct timespec* until, struct timespec* remaining_time);
 
 /* Conversion */
-char* asctime(const struct tm* timeptr);
-char* ctime(const time_t* timer);
-struct tm* gmtime(const time_t* timer);
-struct tm* localtime(const time_t* timer);
-size_t strftime(char* restrict ptr, size_t maxsize, const char* restrict format, const struct tm* restrict timeptr);
+char*       asctime(const struct tm* time);
+char*       asctime_r(const struct tm* restrict time, char* restrict buf);
+char*       ctime(const time_t* time);
+char*       ctime_r(const time_t* time, char* buf);
+struct tm*  gmtime(const time_t* time);
+struct tm*  gmtime_r(const time_t* restrict time, struct tm* restrict result);
+struct tm*  localtime(const time_t* time);
+struct tm*  localtime_r(const time_t* restrict time, struct tm* restrict result);
+size_t      strftime(char* restrict s, size_t maxsize, const char* restrict format, const struct tm* restrict time);
+size_t      strftime_l(
+                char*            restrict s,
+                size_t           maxsize,
+                const char*      restrict format,
+                const struct tm* restrict time,
+                locale_t         locale
+            );
+char*       strptime(const char* restrict buf, const char* restrict format, struct tm* restrict time);
+
+/* Time zones */
+extern int      daylight;
+extern long     timezone;
+extern char*    tzname[2];
+void        tzset(void);
 
 #ifdef __cplusplus
 #undef restrict

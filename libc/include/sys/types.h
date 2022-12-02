@@ -47,20 +47,20 @@ typedef int32_t off_t;
 
 typedef size_t ssize_t;
 
+typedef uint8_t clockid_t;
+typedef uint64_t clock_t;
 /* TODO
-typedef  clockid_t;
-typedef  clock_t;
-typedef  suseconds_t;
-typedef  time_t;
-typedef  timer_t; */
+typedef  suseconds_t; */
+typedef uint64_t time_t;
+typedef uint16_t timer_t;
 
 typedef uint64_t id_t;
 typedef uint32_t gid_t;
 typedef uint32_t uid_t;
 typedef uint32_t pid_t;
 
+typedef void* pthread_attr_t; /* FIXME: Use a proper type. */
 /* TODO
-typedef  pthread_attr_t;
 typedef  pthread_barrier_t;
 typedef  pthread_barrierattr_t;
 typedef  pthread_cond_t;
@@ -71,7 +71,7 @@ typedef  pthread_mutexattr_t;
 typedef  pthread_once_t;
 typedef  pthread_rwlock_t;
 typedef  pthread_rwlockattr_t;
-typedef  pthread_spinlock_t;
-typedef  pthread_t; */
+typedef  pthread_spinlock_t; */
+typedef size_t pthread_t;
 
 #endif /* __PHOENIX_SYS_TYPES_H */
