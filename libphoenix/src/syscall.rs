@@ -74,7 +74,7 @@ pub extern "C" fn thread_exit(status: i32) -> ! {
 /// assert!(time_now() >= first_timestamp + 1000);
 /// ```
 #[no_mangle]
-pub extern "C" fn thread_sleep(milliseconds: usize) {
+pub extern "C" fn thread_sleep(milliseconds: u64) {
     unsafe {
         asm!(
             "svc 0x0001",
