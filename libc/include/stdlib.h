@@ -50,25 +50,29 @@ typedef struct {
     long rem;
 } ldiv_t;
 
+#if defined(__cplusplus) || __STDC_VERSION__ >= 199901L
 typedef struct {
     long long quot;
     long long rem;
 } lldiv_t;
+#endif
 
 /* String conversion */
 long                a64l(const char* s);
 double              atof(const char* str);
 int                 atoi(const char* str);
 long                atol(const char* str);
-long long           atoll(const char* str);
 char*               l64a(long value);
 float               strtof(const char* restrict str, char** restrict endptr);
 double              strtod(const char* restrict str, char** restrict endptr);
 long double         strtold(const char* restrict str, char** restrict endptr);
 long                strtol(const char* restrict str, char** restrict endptr, int base);
-long long           strtoll(const char* restrict str, char** restrict endptr, int base);
 unsigned long       strtoul(const char* restrict str, char** restrict endptr, int base);
+#if defined(__cplusplus) || __STDC_VERSION__ >= 199901L
+long long           atoll(const char* str);
+long long           strtoll(const char* restrict str, char** restrict endptr, int base);
 unsigned long long  strtoull(const char* restrict str, char** restrict endptr, int base);
+#endif
 
 /* Pseudorandom number generation */
 int                 rand(void);
@@ -119,8 +123,10 @@ int                 abs(int n);
 div_t               div(int numer, int denom);
 long                labs(long n);
 ldiv_t              ldiv(long numer, long denom);
+#if defined(__cplusplus) || __STDC_VERSION__ >= 199901L
 long long           llabs(long long n);
 lldiv_t             lldiv(long long numer, long long denom);
+#endif
 
 /* Multibyte characters */
 int                 mblen(const char* mbc, size_t max_bytes);

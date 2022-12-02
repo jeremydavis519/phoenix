@@ -52,7 +52,7 @@ extern "C" {
 typedef enum {
     P_ALL  = 0,
     P_PGID = 1,
-    P_PID  = 2,
+    P_PID  = 2
 } idtype_t;
 
 pid_t   wait(int* stat_loc);
