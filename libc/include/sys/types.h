@@ -54,7 +54,7 @@ typedef  suseconds_t; */
 typedef uint64_t time_t;
 typedef uint16_t timer_t;
 
-typedef uint64_t id_t;
+typedef uint32_t id_t;
 typedef uint32_t gid_t;
 typedef uint32_t uid_t;
 typedef uint32_t pid_t;
