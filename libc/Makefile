@@ -30,10 +30,10 @@ DEP = $(patsubst src/%.c,build/%.d,$(SRC))
 -include build/dep/deps.d
 
 ifeq ($(DEBUG_OR_RELEASE),debug)
-	CC_FLAGS := -Og
+	CC_OPT := -Og
 	CARGO_FLAGS :=
 else
-	CC_FLAGS := -O3
+	CC_OPT := -O3
 	CARGO_FLAGS := --release
 endif
 
@@ -57,7 +57,7 @@ clean:
 
 build/%.o: src/%.c ../libphoenix/target/$(TARGET)/$(DEBUG_OR_RELEASE)/liblibphoenix.a Makefile
 	mkdir -p build
-	$(CC) $(CC_FLAGS) -ffreestanding -Wall -Wextra -Wpedantic -c \
+	$(CC) $(CC_FLAGS) $(CC_OPT) -ffreestanding -Wall -Wextra -Wpedantic -c \
 		-MD "-MF$(patsubst src/%.c,build/%.d,$<)" -MP \
 		-Iinclude -L../libphoenix/target/$(TARGET)/$(DEBUG_OR_RELEASE) -llibphoenix \
 		-o $@ $<
