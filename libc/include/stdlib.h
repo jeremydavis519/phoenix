@@ -23,6 +23,7 @@
 #define __PHOENIX_STDLIB_H
 
 #include <stddef.h>
+#include <stdnoreturn.h>
 #include <wchar.h>
 #include <sys/wait.h>
 
@@ -92,9 +93,12 @@ void*               realloc(void* ptr, size_t size);
 int                 posix_memalign(void** memptr, size_t alignment, size_t size);
 
 /* Environment */
+noreturn
 void                abort(void);
 int                 atexit(void (*func)(void));
+noreturn
 void                exit(int status);
+noreturn
 void                _Exit(int status);
 char*               getenv(const char* name);
 int                 getsubopt(char** option, char* const* keylist, char** value);

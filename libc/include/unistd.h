@@ -25,6 +25,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdnoreturn.h>
 #include <sys/types.h>
 
 /* Version test macros */
@@ -332,7 +333,8 @@ size_t       confstr(int, char*, size_t);
 char*        crypt(const char*, const char*);
 int          dup(int);
 int          dup2(int, int);
-void         _exit(int);
+noreturn
+void         _exit(int status);
 void         encrypt(char [64], int);
 int          execl(const char*, const char*, ...);
 int          execle(const char*, const char*, ...);
