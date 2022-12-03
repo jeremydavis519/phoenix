@@ -20,6 +20,8 @@
 //! number is set to 1, this is equivalent to a mutex.
 
 use core::{
+    fmt,
+    hint,
     ops::Deref,
     sync::atomic::{AtomicUsize, Ordering}
 };
@@ -87,6 +89,18 @@ impl<T> Semaphore<T> {
     /// only in cases where it can be proven that the guarantee of limited access is unnecessary.
     pub const unsafe fn force_access(&self) -> &T {
         &self.value
+    }
+}
+
+impl<T: fmt::Debug> fmt::Debug for Semaphore<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let value = loop {
+            match self.try_access_weak() {
+                Ok(value) => break value,
+                Err(_) => hint::spin_loop(),
+            }
+        };
+        value.fmt(f)
     }
 }
 
