@@ -16,7 +16,7 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-/// This module defines how the Phoenix kernel responds to system calls.
+//! This module defines how the Phoenix kernel responds to system calls.
 
 use {
     core::{
@@ -169,7 +169,7 @@ fn thread_spawn(
     }
     handle.write(
         scheduler::spawn_thread(
-            parent_thread.exec_image.clone(),
+            parent_thread.process.clone(),
             entry_point,
             argument,
             max_stack_size,
@@ -210,18 +210,18 @@ fn device_claim(
     profiler_probe!(=> ENTRANCE);
     let thread = thread.expect("kernel thread attempted to get a device");
 
-    let root_page_table = thread.exec_image.page_table();
+    let root_page_table = thread.process.exec_image.page_table();
 
     let dev_path = match UserspaceStr::from_raw_parts(
             root_page_table,
-            thread.exec_image.virt_reader(),
+            thread.process.exec_image.virt_reader(),
             dev_name_userspace_addr,
             dev_name_len,
     ) {
         Some(path) => path,
         None => return Response::leave_userspace(ThreadStatus::Terminated) // Part of the argument is unmapped.
     };
-    userspace_addr.write(DEVICES.claim_device(dev_path, thread.exec_image.page_table()).unwrap_or(0));
+    userspace_addr.write(DEVICES.claim_device(dev_path, thread.process.exec_image.page_table()).unwrap_or(0));
 
     profiler_probe!(ENTRANCE);
     Response::eret()
@@ -267,7 +267,7 @@ fn memory_alloc(
         Err(AllocError) => None,
     };
 
-    let root_page_table = thread.exec_image.page_table();
+    let root_page_table = thread.process.exec_image.page_table();
 
     userspace_addr.write(match maybe_block {
         Some(ref block) => {
@@ -275,7 +275,7 @@ fn memory_alloc(
                     block.base().as_addr_phys(),
                     None,
                     NonZeroUsize::new(block.size()).unwrap(),
-                    memory::phys::RegionType::Ram
+                    memory::phys::RegionType::Ram,
             ) {
                 Ok(addr) => addr,
                 Err(()) => {
@@ -323,7 +323,7 @@ fn memory_alloc_phys(
         Err(AllocError) => None,
     };
 
-    let root_page_table = thread.exec_image.page_table();
+    let root_page_table = thread.process.exec_image.page_table();
 
     userspace_and_phys_addrs.write(match maybe_block {
         Some(ref block) => {
@@ -332,7 +332,7 @@ fn memory_alloc_phys(
                     phys_addr,
                     None,
                     NonZeroUsize::new(block.size()).unwrap(),
-                    memory::phys::RegionType::Ram
+                    memory::phys::RegionType::Ram,
             ) {
                 Ok(virt_addr) => [virt_addr, phys_addr],
                 Err(()) => {
@@ -430,7 +430,7 @@ fn time_view_kernel_profile(
     assert_eq!(phys_base % page_size, 0, "misaligned kernel profile (address = {phys_base:#018x})");
     assert_eq!(size % page_size, 0, "wrongly sized kernel profile (size = {size:#018x})");
 
-    let root_page_table = thread.exec_image.page_table();
+    let root_page_table = thread.process.exec_image.page_table();
 
     userspace_addr.write(if let Some(size) = NonZeroUsize::new(size) {
         // FIXME: Remember where this is mapped so the process can request that it be unmapped.

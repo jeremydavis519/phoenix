@@ -299,15 +299,15 @@ fn handle_mmu_abort(thread: Option<&Thread<File>>, syndrome: Syndrome, exc_level
         MmuIss::FS_TRANSLATION_LEVEL_2    => try_map_page(thread, fault_address(), iss),
         MmuIss::FS_TRANSLATION_LEVEL_3    => try_map_page(thread, fault_address(), iss),
         MmuIss::FS_ACCESS_FLAG_LEVEL_1    => {
-            paging::set_accessed_flag(thread.map(|t| t.exec_image.page_table()), TranslationLevel::Level1, fault_address());
+            paging::set_accessed_flag(thread.map(|t| t.process.exec_image.page_table()), TranslationLevel::Level1, fault_address());
             Response::eret()
         },
         MmuIss::FS_ACCESS_FLAG_LEVEL_2    => {
-            paging::set_accessed_flag(thread.map(|t| t.exec_image.page_table()), TranslationLevel::Level2, fault_address());
+            paging::set_accessed_flag(thread.map(|t| t.process.exec_image.page_table()), TranslationLevel::Level2, fault_address());
             Response::eret()
         },
         MmuIss::FS_ACCESS_FLAG_LEVEL_3    => {
-            paging::set_accessed_flag(thread.map(|t| t.exec_image.page_table()), TranslationLevel::Level3, fault_address());
+            paging::set_accessed_flag(thread.map(|t| t.process.exec_image.page_table()), TranslationLevel::Level3, fault_address());
             Response::eret()
         },
         MmuIss::FS_PERMISSION_LEVEL_1     => handle_permission_fault(thread, exc_level, TranslationLevel::Level1, fault_address(), iss),
@@ -359,7 +359,7 @@ fn try_map_page(thread: Option<&Thread<File>>, fault_address: usize, iss: MmuIss
             Err(()) => {}
         };
         // The unmapped page isn't in the swapfile, so look in the thread's executable file.
-        match thread.exec_image.load_segment_piece(fault_address, access_size) {
+        match thread.process.exec_image.load_segment_piece(fault_address, access_size) {
             Ok(Some(block)) => { // Successfully mapped
                 // FIXME: Instead of forgetting the block, push it onto a vector of blocks owned by
                 // the thread's process.
@@ -375,7 +375,7 @@ fn try_map_page(thread: Option<&Thread<File>>, fault_address: usize, iss: MmuIss
             Err(_) => {} // Failed
         };
 
-        match thread.exec_image.page_table().page_status(fault_address) {
+        match thread.process.exec_image.page_table().page_status(fault_address) {
             // If the page is already mapped, that means another CPU has already resolved this fault.
             PageStatus::Mapped       => Response::eret(),
 
@@ -393,7 +393,7 @@ fn try_map_page(thread: Option<&Thread<File>>, fault_address: usize, iss: MmuIss
 }
 
 fn load_page_from_swapfile(thread: &Thread<File>, fault_address: usize) -> Result<(), ()> {
-    let page_table = thread.exec_image.page_table();
+    let page_table = thread.process.exec_image.page_table();
     if let Some(_location) = page_table.location_in_swapfile(fault_address) {
         // TODO
         unimplemented!("load the page from the swapfile");
@@ -424,7 +424,7 @@ fn handle_permission_fault(thread: Option<&Thread<File>>, exc_level: ExceptionLe
     };
 
     if iss.contains(MmuIss::CAUSED_BY_WRITE) {
-        match paging::resolve_write_fault(thread.exec_image.page_table(), exc_level, trans_level, fault_address, iss.access_size()) {
+        match paging::resolve_write_fault(thread.process.exec_image.page_table(), exc_level, trans_level, fault_address, iss.access_size()) {
             Ok(block) => { // Resolved!
                 if let Some(block) = block {
                     // FIXME: Instead of forgetting the block, push it onto a vector of blocks

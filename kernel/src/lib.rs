@@ -45,7 +45,7 @@ use {
     fs::File,
     i18n::Text,
     io::{Read, Write},
-    scheduler::Thread
+    scheduler::{Process, Thread},
 };
 
 // TODO: Remove this temporary function.
@@ -296,9 +296,9 @@ fn shell() {
                             Ok(file) => {
                                 match exec::read_exe(file) {
                                     Ok(image) => {
-                                        let image = Arc::new(image);
                                         let entry_point = image.entry_point;
-                                        match Thread::new(image, entry_point, 0, 0x0001_0000, 10) {
+                                        let process = Arc::new(Process::new(image));
+                                        match Thread::new(process, entry_point, 0, 0x0001_0000, 10) {
                                             Ok(thread) => scheduler::run(vec![thread]),
                                             Err(e) => println!("Error creating the thread: {}", e)
                                         };

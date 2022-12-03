@@ -39,53 +39,26 @@ extern crate alloc;
 #[macro_use] extern crate shared;
 
 use {
-    alloc::{
-        boxed::Box,
-        vec::Vec,
-        sync::Arc
-    },
+    alloc::sync::Arc,
     core::{
-        fmt,
-        mem,
         sync::atomic::{AtomicU32, AtomicUsize, Ordering},
-        time::Duration
+        time::Duration,
     },
     collections::{AtomicLinkedList, AtomicLinkedListSemaphore},
-    exec::ExecImage,
-    io::{Read, Seek, printlndebug},
+    io::printlndebug,
     locks::Semaphore,
     shared::{/*count_cpus, cpu_index,*/ wait_for_event},
     fs::File,
-    timers::SCHEDULING_TIMER
-};
-#[cfg(target_arch = "aarch64")]
-use {
-    alloc::alloc::AllocError,
-    core::{
-        convert::TryFrom,
-        ffi::c_void,
-        num::NonZeroUsize
-    },
-    memory::virt::paging,
-    time::SystemTime
+    timers::SCHEDULING_TIMER,
 };
 
-#[cfg(target_arch = "aarch64")]
-// enter_userspace(page_table, spsr, entry_point, trampoline_stack_ptr, thread) -> ThreadStatus
-type EnterUserspaceFn<T> = extern fn(*const c_void, u64, usize, usize, *const Thread<T>) -> u8;
+mod process;
+mod thread;
 
-extern {
-    /// Saves the kernel's state, loads the state of the thread from the given parameters, and
-    /// jumps into userspace, then returns the thread's updated running state.
-    #[cfg(target_arch = "aarch64")]
-    fn enter_userspace(
-        page_table: *const c_void,
-        spsr: u64,
-        entry_point: usize,
-        trampoline_stack_ptr: usize,
-        thread: *const c_void
-    ) -> u8;
-}
+pub use {
+    process::Process,
+    thread::{Thread, ThreadStatus, ThreadQueue, ThreadCreationError},
+};
 
 const fn quantum(priority: u8) -> Duration {
     Duration::from_millis(priority as u64)
@@ -99,7 +72,7 @@ pub fn run(mut thread_queue: ThreadQueue<File>) -> ! {
     let cpu_index = 0;
     let cpu_count = 1;
 
-    let mut priority_sum = thread_queue.iter().fold(0, |s, thread| s + u32::from(thread.priority));
+    let mut priority_sum = thread_queue.iter().fold(0, |s, thread| s + u32::from(thread.priority()));
 
     // This is our pseudorandom number generator for load balancing. It is _extremely_ simple, for
     // two reasons: (1) we want to spend as little time as possible between threads (and constant
@@ -125,7 +98,7 @@ pub fn run(mut thread_queue: ThreadQueue<File>) -> ! {
         // Run all the threads we currently have.
         let mut i = 0;
         while i < thread_queue.len() {
-            SCHEDULING_TIMER.interrupt_after(quantum(thread_queue[i].priority));
+            SCHEDULING_TIMER.interrupt_after(quantum(thread_queue[i].priority()));
             match thread_queue[i].run() {
                 ThreadStatus::Running => {
                     // Just move on to the next thread.
@@ -138,8 +111,8 @@ pub fn run(mut thread_queue: ThreadQueue<File>) -> ! {
                 ThreadStatus::Terminated => {
                     // Remove the terminated thread.
                     printlndebug!("Terminating thread {:#x}", thread_queue[i].id());
-                    priority_sum -= u32::from(thread_queue.swap_remove(i).priority);
-                }
+                    priority_sum -= u32::from(thread_queue.swap_remove(i).priority());
+                },
             };
         }
 
@@ -162,7 +135,7 @@ pub fn run(mut thread_queue: ThreadQueue<File>) -> ! {
                 // suboptimally is better than not at all.
                 if let Some(thread) = moving_threads.head() {
                     if let Ok(thread) = moving_threads.remove_head(thread) {
-                        priority_sum += u32::from(thread.priority);
+                        priority_sum += u32::from(thread.priority());
                         thread_queue.push(thread);
                     }
                 }
@@ -171,7 +144,7 @@ pub fn run(mut thread_queue: ThreadQueue<File>) -> ! {
                 // We have more threads than we need.
                 let idx = rand(PRNG_PICK_THREAD) as usize % thread_queue.len();
                 let thread = &thread_queue[idx];
-                if priority_sum - u32::from(thread.priority) >= ideal_priority_sum - rand(PRNG_FUZZY_PRIORITY) as u32 & u32::from(u8::MAX) {
+                if priority_sum - u32::from(thread.priority()) >= ideal_priority_sum - rand(PRNG_FUZZY_PRIORITY) as u32 & u32::from(u8::MAX) {
                     // The thread's priority is low enough that we'll stay near the ideal sum if we
                     // remove it.
                     // TODO: Do a randomized CPU affinity check, weighted by the ratio (in the
@@ -199,14 +172,14 @@ pub fn run(mut thread_queue: ThreadQueue<File>) -> ! {
 /// # Returns
 /// The thread's ID, which a userspace application can use to refer to it when making system calls.
 pub fn spawn_thread(
-        exec_image: Arc<ExecImage<File>>,
+        process:        Arc<Process<File>>,
         entry_point:    usize,
         argument:       usize,
         max_stack_size: usize,
         priority:       u8,
 ) -> Result<usize, ThreadCreationError> {
     // Make a new thread and push it onto the list.
-    let mut thread = Thread::new(exec_image, entry_point, argument, max_stack_size, priority)?;
+    let mut thread = Thread::new(process, entry_point, argument, max_stack_size, priority)?;
     let id = thread.id();
     loop {
         match MOVING_THREADS.insert_head(thread) {
@@ -235,228 +208,3 @@ static MOVING_THREADS: Semaphore<AtomicLinkedList<Thread<File>>> = AtomicLinkedL
 // A place to temporarily store threads that are sleeping for a particular amount of time. These
 // are sorted by wake-up time, so that any that should wake up now are at the head of the list.
 // TODO: static SLEEPING_THREADS: Semaphore<AtomicLinkedList<Thread<File>>> = AtomicLinkedList::new();
-
-ffi_enum! {
-    #[repr(u8)]
-    #[derive(Debug)]
-    #[must_use]
-    /// Determines whether a given thread is running, sleeping, blocking on I/O, etc. This probably
-    /// won't actually be stored with a `Thread` object. Instead, it's returned from `Thread::run` to
-    /// tell the scheduler what the thread's new state should be.
-    pub enum ThreadStatus {
-        /// The thread is currently running or waiting to start running again.
-        Running = 0,
-
-        /// The thread is currently sleeping and should not be started until its wake time.
-        Sleeping = 1,
-
-        /// The thread has been terminated and will never run again.
-        Terminated = 255
-    }
-}
-
-#[cfg(target_arch = "aarch64")]
-/// Represents the current state of a thread of execution.
-#[derive(Debug)]
-pub struct Thread<T: Read+Seek> {
-    /// The "raw" timestamp (i.e. as if `SystemTime::set_now` had never been called) at which the
-    /// thread should wake up, if it's currently sleeping.
-    pub wake_time: SystemTime,
-
-    /// The image of the executable file that this thread comes from.
-    pub exec_image: Arc<ExecImage<T>>,
-
-    priority: u8,              // The thread's priority. A higher value means longer time slices.
-
-    _stack_empty_ptr: usize,   // The highest address on the stack (i.e. the value of SP when the stack is empty)
-    _max_stack_size: usize,    // The stack's logical size, even though we initially allocate less
-    spsr: u64,                 // Saved Program Status Register (a snapshot of PSTATE)
-    elr: usize,                // Exception Link Register (where the thread will start or continue running)
-
-    // A place to store the thread's general-purpose registers when we've switched away from it.
-    // This is managed almost entirely by ASM functions; we just need to ensure it's the right size
-    // and has the right initial contents.
-    register_store: [u64; 32],
-
-    /// A place to store a time in case reading it all requires multiple system calls.
-    pub saved_time: SystemTime
-}
-
-#[cfg(target_arch = "aarch64")]
-/// Returns a pointer to the given `Thread`'s register store so the registers can be saved or
-/// restored.
-#[no_mangle]
-// TODO: Make this `Thread` reference generic somehow.
-extern fn get_thread_register_store(thread: Option<&mut Thread<File>>) -> &mut [u64; 32] {
-    let thread = thread.expect("attempted to get the register store for a kernel thread");
-    &mut thread.register_store
-}
-
-#[cfg(target_arch = "x86_64")]
-/// Represents the current state of a thread of execution.
-#[derive(Debug)]
-pub struct Thread<T: Read+Seek> {
-    // TODO
-    priority: u8,
-    data: core::marker::PhantomData<T>
-}
-
-impl<T: Read+Seek> Thread<T> {
-    /// Returns this thread's unique Thread ID.
-    pub fn id(&self) -> usize {
-        self as *const _ as usize
-    }
-
-    /// Converts a Thread ID into a raw pointer to a thread. Note that the thread is *NOT*
-    /// guaranteed to actually exist, hence the raw pointer. Dereferencing it is unsafe unless this
-    /// CPU currently owns the thread.
-    ///
-    /// # Returns
-    /// The raw pointer, or `Err` if the Thread ID is invalid.
-    pub fn from_id(id: usize) -> Result<*const Thread<T>, ()> {
-        if id % mem::align_of::<Thread<T>>() == 0 {
-            Ok(id as *const _)
-        } else {
-            Err(())
-        }
-    }
-}
-
-#[cfg(target_arch = "aarch64")]
-impl<T: Read+Seek> Thread<T> {
-    /// Spawns a new thread that will run in the given executable image, starting at the given
-    /// entry point, with a stack that is at least the given size.
-    pub fn new(
-            exec_image:         Arc<ExecImage<T>>,
-            entry_point:        usize,
-            argument:           usize,
-            mut max_stack_size: usize,
-            priority:           u8,
-    ) -> Result<Box<Thread<T>>, ThreadCreationError> {
-        TOTAL_THREADS.fetch_add(1, Ordering::Release);
-        TOTAL_PRIORITY.fetch_add(priority.into(), Ordering::Release);
-
-        // Reserve the page table entries for the stack without allocating any physical memory for
-        // now.
-        let page_size = paging::page_size();
-        max_stack_size = max_stack_size.wrapping_add(page_size - 1) / page_size * page_size;
-        let stack_empty_ptr = if let Some(max_stack_size) = NonZeroUsize::new(max_stack_size) {
-            let stack_base = exec_image.page_table().map_zeroed(None, max_stack_size)
-                .map_err(|()| ThreadCreationError::StackAddrConflict)?;
-            stack_base + max_stack_size.get()
-        } else {
-            0
-        };
-
-        Box::try_new(Thread {
-            wake_time: SystemTime::UNIX_EPOCH,
-            exec_image,
-            priority,
-            _stack_empty_ptr: stack_empty_ptr,
-            _max_stack_size: max_stack_size,
-            spsr: 0, // TODO: This might not be 0 for a new Aarch32 thread.
-            elr: entry_point,
-            register_store: Self::initial_register_store(argument, stack_empty_ptr),
-            saved_time: SystemTime::now()
-        })
-            .map_err(|AllocError| ThreadCreationError::OutOfMemory)
-    }
-
-    // Saves the current state of the thread into this object so that the thread can be resumed
-    // later.
-    fn save_state(&mut self) {
-        unsafe {
-            asm!(
-                "mrs {}, SPSR_EL1",
-                "mrs {}, ELR_EL1",
-                out(reg) self.spsr,
-                out(reg) self.elr,
-                options(nomem, nostack, preserves_flags)
-            );
-        }
-    }
-
-    fn initial_register_store(x0: usize, stack_ptr: usize) -> [u64; 32] {
-        [u64::try_from(x0).unwrap(), 0, 0, 0, 0, 0, 0, 0,
-         0, 0, 0, 0, 0, 0, 0, 0,
-         0, 0, 0, 0, 0, 0, 0, 0,
-         0, 0, 0, 0, 0, 0, 0, u64::try_from(stack_ptr).unwrap()]
-    }
-}
-
-#[cfg(target_arch = "aarch64")]
-impl Thread<File> {
-    // TODO: Find a way to make this generic over all `Thread`s, not just those that use `File`s.
-    // Transfers control to this thread.
-    fn run(&mut self) -> ThreadStatus {
-        // Switch to the thread's address space and transfer control to it.
-        let status = unsafe {
-            let func: EnterUserspaceFn<File> = mem::transmute(paging::trampoline(enter_userspace as *const ()));
-            match ThreadStatus::try_from((func)(
-                &*self.exec_image.page_table().table_ptr(),
-                self.spsr,
-                self.elr,
-                paging::trampoline_stack_ptr(),
-                self
-            )) {
-                Ok(status) => status,
-                Err(e) => panic!("{}", e)
-            }
-        };
-        self.save_state();
-        status
-    }
-}
-
-#[cfg(target_arch = "x86_64")]
-impl<T: Read+Seek> Thread<T> {
-    /// Spawns a new thread that will run in the given executable image, starting at the given
-    /// entry point, with a stack that is at least the given size.
-    pub fn new(
-            _exec_image:     Arc<ExecImage<T>>,
-            _entry_point:    usize,
-            _argument:       usize,
-            _max_stack_size: usize,
-            _priority:       u8,
-    ) -> Result<Box<Thread<T>>, ThreadCreationError> {
-        // TODO
-        unimplemented!();
-    }
-
-    fn run(&mut self) -> ThreadStatus {
-        // TODO
-        unimplemented!();
-    }
-}
-
-impl<T: Read+Seek> Drop for Thread<T> {
-    fn drop(&mut self) {
-        if TOTAL_THREADS.fetch_sub(1, Ordering::AcqRel) == 1 {
-            // TODO: There are no more threads left; do something like shutting down the computer.
-            panic!("all threads have been terminated");
-        }
-        TOTAL_PRIORITY.fetch_sub(self.priority.into(), Ordering::AcqRel);
-    }
-}
-
-/// An array of threads for a CPU to execute.
-pub type ThreadQueue<T> = Vec<Box<Thread<T>>>;
-
-/// An error that can occur when creating a new thread.
-#[derive(Debug)]
-pub enum ThreadCreationError {
-    /// An error occurred when trying to map virtual memory for the stack (probably already mapped).
-    StackAddrConflict,
-    /// The kernel ran out of memory when allocating the thread.
-    OutOfMemory
-}
-
-impl fmt::Display for ThreadCreationError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // TODO: internationalize?
-        match *self {
-            Self::StackAddrConflict => write!(f, "failed to map virtual memory for the thread's stack"),
-            Self::OutOfMemory => write!(f, "ran out of memory when allocating the thread")
-        }
-    }
-}
