@@ -97,7 +97,7 @@ pub(crate) fn thread_spawn(entry_point: fn(), priority: u8, stack_size: usize) -
 
 #[export_name = "thread_spawn"]
 extern "C" fn thread_spawn_ffi(
-    entry_point: extern "C" fn(usize),
+    entry_point: extern "C" fn(usize) -> !,
     argument: usize,
     priority: u8,
     stack_size: usize,
@@ -117,9 +117,10 @@ extern "C" fn thread_spawn_ffi(
     handle
 }
 
-extern "C" fn call_rust_abi(f: usize) {
+extern "C" fn call_rust_abi(f: usize) -> ! {
     let f = unsafe { mem::transmute::<_, fn()>(f) };
-    f()
+    f();
+    thread_exit(0);
 }
 
 /// Ends the currently running process with the given status.
