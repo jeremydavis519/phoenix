@@ -1,4 +1,4 @@
-/* Copyright (c) 2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2021-2022 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -22,16 +22,21 @@ use {
     alloc::boxed::Box,
     core::{
         cmp,
+        fmt,
         mem,
         ops::Deref,
         sync::atomic::{AtomicUsize, Ordering}
     },
     locks::Semaphore,
-    tagged_ptr::TaggedPtr
+    tagged_ptr::TaggedPtr,
 };
 
 /// A linked list that can be accessed and modified atomically.
-pub struct AtomicLinkedList<T, ListAlloc: alloc::alloc::Allocator+Copy = alloc::alloc::Global, ElemAlloc: alloc::alloc::Allocator = ListAlloc> {
+pub struct AtomicLinkedList<
+    T,
+    ListAlloc: alloc::alloc::Allocator+Copy = alloc::alloc::Global,
+    ElemAlloc: alloc::alloc::Allocator = ListAlloc,
+> {
     allocator: ListAlloc,
     head: TaggedPtr<Node<T, ElemAlloc>>
 }
@@ -40,14 +45,14 @@ pub struct AtomicLinkedList<T, ListAlloc: alloc::alloc::Allocator+Copy = alloc::
 struct Node<T, ElemAlloc: alloc::alloc::Allocator> {
     element: Option<Box<T, ElemAlloc>>, // This is always `Some` as long as the node is in the list.
     next: TaggedPtr<Node<T, ElemAlloc>>,
-    ref_drop_counter: AtomicUsize
+    ref_drop_counter: AtomicUsize,
 }
 
 /// A reference to an element in an `AtomicLinkedList`. While this reference is held, the element
 /// it refers to cannot be removed from the list.
 pub struct ElemRef<'a, T: 'a, ListAlloc: 'a+alloc::alloc::Allocator+Copy, ElemAlloc: 'a+alloc::alloc::Allocator> {
     node: &'a Node<T, ElemAlloc>,
-    list: &'a AtomicLinkedList<T, ListAlloc, ElemAlloc>
+    list: &'a AtomicLinkedList<T, ListAlloc, ElemAlloc>,
 }
 
 impl<T> AtomicLinkedList<T> {
@@ -307,14 +312,34 @@ impl<T, ListAlloc: alloc::alloc::Allocator+Copy, ElemAlloc: alloc::alloc::Alloca
     }
 }
 
+impl<T: fmt::Debug, ListAlloc: alloc::alloc::Allocator+Copy, ElemAlloc: alloc::alloc::Allocator>
+fmt::Debug for AtomicLinkedList<T, ListAlloc, ElemAlloc> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_list()
+            .entries(self.iter())
+            .finish()
+    }
+}
+
+impl<'a, T: 'a+fmt::Debug, ListAlloc: 'a+alloc::alloc::Allocator+Copy, ElemAlloc: 'a+alloc::alloc::Allocator>
+fmt::Debug for ElemRef<'a, T, ListAlloc, ElemAlloc> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Some(ref elem) = self.node.element {
+            elem.fmt(f)
+        } else {
+            write!(f, "<missing element>")
+        }
+    }
+}
+
 /// An iterator over all the elements in an `AtomicLinkedList`.
 pub struct AtomicLinkedListIter<'a, T: 'a, ListAlloc: 'a+alloc::alloc::Allocator+Copy, ElemAlloc: 'a+alloc::alloc::Allocator> {
     list: &'a AtomicLinkedList<T, ListAlloc, ElemAlloc>,
-    next_ptr: &'a TaggedPtr<Node<T, ElemAlloc>>
+    next_ptr: &'a TaggedPtr<Node<T, ElemAlloc>>,
 }
 
-impl<'a, T: 'a, ListAlloc: 'a+alloc::alloc::Allocator+Copy, ElemAlloc: 'a+alloc::alloc::Allocator> Iterator
-        for AtomicLinkedListIter<'a, T, ListAlloc, ElemAlloc> {
+impl<'a, T: 'a, ListAlloc: 'a+alloc::alloc::Allocator+Copy, ElemAlloc: 'a+alloc::alloc::Allocator>
+Iterator for AtomicLinkedListIter<'a, T, ListAlloc, ElemAlloc> {
     type Item = ElemRef<'a, T, ListAlloc, ElemAlloc>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -342,18 +367,21 @@ pub trait AtomicLinkedListSemaphore<T, ElemAlloc: alloc::alloc::Allocator> {
     /// Returns `true` if the list is empty.
     fn is_empty(&self) -> bool;
 }
-impl<T, ListAlloc: alloc::alloc::Allocator+Copy, ElemAlloc: alloc::alloc::Allocator> AtomicLinkedListSemaphore<T, ElemAlloc>
-        for Semaphore<AtomicLinkedList<T, ListAlloc, ElemAlloc>> {
+impl<T, ListAlloc: alloc::alloc::Allocator+Copy, ElemAlloc: alloc::alloc::Allocator>
+AtomicLinkedListSemaphore<T, ElemAlloc> for Semaphore<AtomicLinkedList<T, ListAlloc, ElemAlloc>> {
     fn insert_head(&self, new_element: Box<T, ElemAlloc>) -> Result<(), Box<T, ElemAlloc>> {
+        // Safe because we never create an `ElemRef`.
         unsafe { self.force_access().insert_head(new_element) }
     }
 
     fn is_empty(&self) -> bool {
+        // Safe because we never create an `ElemRef`.
         unsafe { self.force_access().is_empty() }
     }
 }
 
-impl<'a, T: 'a, ListAlloc: 'a+alloc::alloc::Allocator+Copy, ElemAlloc: 'a+alloc::alloc::Allocator> ElemRef<'a, T, ListAlloc, ElemAlloc> {
+impl<'a, T: 'a, ListAlloc: 'a+alloc::alloc::Allocator+Copy, ElemAlloc: 'a+alloc::alloc::Allocator>
+ElemRef<'a, T, ListAlloc, ElemAlloc> {
     fn new(ptr: &TaggedPtr<Node<T, ElemAlloc>>, list: &'a AtomicLinkedList<T, ListAlloc, ElemAlloc>)
             -> (Option<ElemRef<'a, T, ListAlloc, ElemAlloc>>, (*mut Node<T, ElemAlloc>, usize)) {
         let (node, tag) = ptr.fetch_add_tag(TaggedPtr::<Node<T, ElemAlloc>>::TAG_UNIT, Ordering::AcqRel);
@@ -372,7 +400,8 @@ impl<'a, T: 'a, ListAlloc: 'a+alloc::alloc::Allocator+Copy, ElemAlloc: 'a+alloc:
     }
 }
 
-impl<'a, T: 'a, ListAlloc: 'a+alloc::alloc::Allocator+Copy, ElemAlloc: 'a+alloc::alloc::Allocator> Deref for ElemRef<'a, T, ListAlloc, ElemAlloc> {
+impl<'a, T: 'a, ListAlloc: 'a+alloc::alloc::Allocator+Copy, ElemAlloc: 'a+alloc::alloc::Allocator>
+Deref for ElemRef<'a, T, ListAlloc, ElemAlloc> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -380,7 +409,8 @@ impl<'a, T: 'a, ListAlloc: 'a+alloc::alloc::Allocator+Copy, ElemAlloc: 'a+alloc:
     }
 }
 
-impl<'a, T: 'a, ListAlloc: 'a+alloc::alloc::Allocator+Copy, ElemAlloc: 'a+alloc::alloc::Allocator> Drop for ElemRef<'a, T, ListAlloc, ElemAlloc> {
+impl<'a, T: 'a, ListAlloc: 'a+alloc::alloc::Allocator+Copy, ElemAlloc: 'a+alloc::alloc::Allocator>
+Drop for ElemRef<'a, T, ListAlloc, ElemAlloc> {
     fn drop(&mut self) {
         self.node.ref_drop_counter.fetch_add(TaggedPtr::<Node<T, ElemAlloc>>::TAG_UNIT, Ordering::AcqRel);
     }
