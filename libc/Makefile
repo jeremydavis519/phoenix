@@ -15,7 +15,7 @@
 # DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-.PHONY: all aarch64-phoenix test clean
+.PHONY: all aarch64-phoenix test clean null
 
 .DELETE_ON_ERROR:
 
@@ -24,6 +24,8 @@ DEBUG_OR_RELEASE ?= release
 SRC = $(wildcard src/*.c)
 OBJ = $(patsubst src/%.c,build/%.o,$(SRC))
 DEP = $(patsubst src/%.c,build/%.d,$(SRC))
+
+LIBPHOENIX_ROOT = ../libphoenix
 
 # We should be able to use `-include $(DEP)` here, but for some reason make is only including
 # the first file. So we concatenate them all into a single file.
@@ -60,14 +62,17 @@ build/dep/deps.d: $(DEP) $(OBJ)
 	cat $(DEP) > build/dep/deps.d
 
 ifneq ($(TARGET),)
-build/%.o: src/%.c ../libphoenix/clib/target/$(TARGET)/$(DEBUG_OR_RELEASE)/liblibphoenix.a Makefile
+build/%.o: src/%.c $(LIBPHOENIX_ROOT)/clib/target/$(TARGET)/$(DEBUG_OR_RELEASE)/liblibphoenix.a Makefile
 	mkdir -p build
 	$(CC) $(CC_FLAGS) $(CC_OPT) -ffreestanding -Wall -Wextra -Wpedantic -c \
 		-MD "-MF$(patsubst src/%.c,build/%.d,$<)" -MP \
-		-Iinclude -L../libphoenix/clib/target/$(TARGET)/$(DEBUG_OR_RELEASE) -llibphoenix \
+		-Iinclude -L$(LIBPHOENIX_ROOT)/clib/target/$(TARGET)/$(DEBUG_OR_RELEASE) -llibphoenix \
 		-o $@ $<
 
-../libphoenix/clib/target/$(TARGET)/$(DEBUG_OR_RELEASE)/liblibphoenix.a: Makefile
-	cd ../libphoenix/clib && \
+$(LIBPHOENIX_ROOT)/clib/target/$(TARGET)/$(DEBUG_OR_RELEASE)/liblibphoenix.a: null
+	cd $(LIBPHOENIX_ROOT)/clib && \
 	xargo build $(CARGO_FLAGS) --target=$(TARGET)
 endif
+
+null:
+	@true
