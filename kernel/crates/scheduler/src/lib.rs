@@ -52,7 +52,7 @@ use {
     timers::SCHEDULING_TIMER,
 };
 
-mod process;
+pub mod process;
 mod thread;
 
 pub use {

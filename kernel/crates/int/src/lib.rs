@@ -27,5 +27,7 @@
 
 #![deny(warnings, missing_docs)]
 
+extern crate alloc;
+
 #[cfg(any(target_arch = "arm", target_arch = "armv5te", target_arch = "armv7", target_arch = "aarch64"))]
 mod arm;

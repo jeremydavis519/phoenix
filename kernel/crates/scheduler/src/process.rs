@@ -16,9 +16,17 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+//! Processes and related concepts.
+//!
+//! The main type in this module is `Process`, and everything else attaches to it.
+
 use {
+    alloc::sync::Arc,
+    collections::atomic::AtomicLinkedList,
     exec::ExecImage,
     io::{Read, Seek},
+    locks::Semaphore,
+    memory::phys::block::BlockMut,
 };
 
 /// The combination of an address space and a set of permissions.
@@ -30,6 +38,9 @@ use {
 pub struct Process<T: Read+Seek> {
     /// The image of the executable file that this process comes from.
     pub exec_image: ExecImage<T>,
+
+    /// A record of all the memory this process might be sharing with another.
+    pub shared_memory: Semaphore<AtomicLinkedList<SharedMemory>>,
 }
 
 impl<T: Read+Seek> Process<T> {
@@ -37,6 +48,31 @@ impl<T: Read+Seek> Process<T> {
     ///
     /// The new process won't have any threads. Call `Thread::new` to make one.
     pub fn new(exec_image: ExecImage<T>) -> Self {
-        Self { exec_image }
+        Self { exec_image, shared_memory: AtomicLinkedList::new() }
+    }
+}
+
+/// A record of a block of memory being shared.
+///
+/// When this object is cloned or dropped, a reference count to the shared memory is updated, and
+/// when the last one is dropped, the shared memory is deallocated.
+#[derive(Debug, Clone)]
+pub struct SharedMemory {
+    _block:    Arc<BlockMut<u8>>,
+    virt_addr: usize,
+}
+
+impl SharedMemory {
+    /// Creates a new record of shared memory from the given block and virtual address.
+    pub fn new(block: BlockMut<u8>, virt_addr: usize) -> Self {
+        Self {
+            _block: Arc::new(block),
+            virt_addr,
+        }
+    }
+
+    /// Returns the virtual address of the shared memory in the appropriate address space.
+    pub fn virt_addr(&self) -> usize {
+        self.virt_addr
     }
 }

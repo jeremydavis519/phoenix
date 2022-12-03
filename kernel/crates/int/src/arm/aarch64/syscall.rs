@@ -19,8 +19,11 @@
 //! This module defines how the Phoenix kernel responds to system calls.
 
 use {
-    core::{
+    alloc::{
         alloc::AllocError,
+        boxed::Box,
+    },
+    core::{
         convert::{TryFrom, TryInto},
         ffi::c_void,
         mem,
@@ -35,6 +38,7 @@ use {
         profiler, profiler_probe, profiler_setup,
         syscall::TimeSelector,
     },
+    collections::atomic::AtomicLinkedListSemaphore,
     devices::DEVICES,
     fs::File,
     io::{println, Read},
@@ -43,7 +47,10 @@ use {
         phys::ptr::PhysPtr,
         virt::paging,
     },
-    scheduler::{Thread, ThreadStatus},
+    scheduler::{
+        process::SharedMemory,
+        Thread, ThreadStatus,
+    },
     shared::ffi_enum,
     time::SystemTime,
     userspace::UserspaceStr,
@@ -76,6 +83,7 @@ pub(crate) fn handle_system_call(
         Ok(SystemCall::Memory_Free) => memory_free(thread, args[0]),
         Ok(SystemCall::Memory_Alloc) => memory_alloc(thread, args[0], args[1], result1),
         Ok(SystemCall::Memory_AllocPhys) => memory_alloc_phys(thread, args[0], args[1], args[2], result),
+        Ok(SystemCall::Memory_AllocShared) => memory_alloc_shared(thread, args[0], result1),
         Ok(SystemCall::Memory_PageSize) => memory_page_size(result1),
 
         Ok(SystemCall::Time_NowUnix) => time_now_unix(thread, args[0], args[1], result1),
@@ -111,6 +119,7 @@ ffi_enum! {
         Memory_Free             = 0x0300,
         Memory_Alloc            = 0x0301,
         Memory_AllocPhys        = 0x0302,
+        Memory_AllocShared      = 0x0303,
         Memory_PageSize         = 0x0380,
 
         Time_NowUnix            = 0x0400,
@@ -239,7 +248,9 @@ fn memory_free(
 
     // TODO: Locate the block with the given address that is owned by this thread's process. If this can't
     //       be done in constant time, do it asynchronously.
-    // TODO: Drop that block.
+    // TODO: If the block isn't shared memory, drop it.
+    // TODO: If the block is shared memory, find the `SharedMemory` object in `thread.process.shared_memory`
+    //       and drop that. (Major security flaw if we don't check for shared memory here!)
 
     profiler_probe!(ENTRANCE);
     Response::eret()
@@ -354,6 +365,61 @@ fn memory_alloc_phys(
 
     // FIXME: Instead of forgetting the block, attach it to the process.
     mem::forget(maybe_block);
+
+    profiler_probe!(ENTRANCE);
+    Response::eret()
+}
+
+fn memory_alloc_shared(
+    thread: Option<&mut Thread<File>>,
+    size: usize,
+    mut userspace_addr: Volatile<&mut usize, WriteOnly>,
+) -> Response {
+    profiler_probe!(=> ENTRANCE);
+    let thread = thread.expect("kernel thread attempted to allocate memory with a system call");
+    let page_size = paging::page_size();
+
+    // FIXME: Do this asynchronously. Memory allocation has unbounded time complexity, and we can't
+    //        pre-empt the thread during a system call.
+    let maybe_block = match AllMemAlloc.malloc::<u8>(
+        size.saturating_add(page_size - 1) / page_size * page_size,
+        NonZeroUsize::new(page_size).unwrap()
+    ) {
+        Ok(block) => Some(block),
+        Err(AllocError) => None,
+    };
+
+    let root_page_table = thread.process.exec_image.page_table();
+
+    let virt_addr = match maybe_block {
+        Some(block) => {
+            if let Some(size) = NonZeroUsize::new(block.size()) {
+                // FIXME: Mark the page as shared.
+                match root_page_table.map(
+                    block.base().as_addr_phys(),
+                    None,
+                    size,
+                    memory::phys::RegionType::Ram,
+                ) {
+                    Ok(addr) => {
+                        match thread.process.shared_memory.insert_head(Box::new(SharedMemory::new(block, addr))) {
+                            Ok(()) => {},
+                            Err(_shared_mem_record) => {
+                                // TODO
+                                todo!("prepare to retry without reallocating anything and return RetrySyscall");
+                            },
+                        };
+                        addr
+                    },
+                    Err(()) => 0,
+                }
+            } else {
+                0
+            }
+        },
+        None => 0,
+    };
+    userspace_addr.write(virt_addr);
 
     profiler_probe!(ENTRANCE);
     Response::eret()
