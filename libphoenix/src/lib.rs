@@ -1,4 +1,4 @@
-/* Copyright (c) 2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2021-2022 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -30,6 +30,7 @@
 #![feature(layout_for_ptr)]
 #![feature(panic_info_message)]
 #![feature(slice_as_chunks)]
+#![feature(strict_provenance)]
 
 #![cfg_attr(feature = "global-allocator", feature(default_alloc_error_handler))]
 
@@ -38,6 +39,8 @@ extern crate alloc;
 // FIXME: This is only here to allow compiling on an x86-64 host.
 #[cfg(target_arch = "aarch64")]
 pub mod allocator;
+#[cfg(not(feature = "kernelspace"))]
+pub mod ipc;
 // FIXME: This is only here to allow compiling on an x86-64 host.
 #[cfg(all(target_arch = "aarch64", not(feature = "kernelspace")))]
 mod panic;

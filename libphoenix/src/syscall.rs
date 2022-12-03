@@ -258,6 +258,36 @@ pub extern "C" fn memory_alloc_phys(size: usize, align: usize, max_bits: usize) 
     VirtPhysAddr { virt, phys }
 }
 
+/// Allocates a new block of shared virtual memory with the given size.
+///
+/// This is a low-level primitive for inter-process communication and should probably not be used
+/// directly. Instead, use one of the abstractions in the [`ipc` module].
+///
+/// The memory is always aligned to a page boundary, and the given size is rounded up to a multiple
+/// of the page size (see [`memory_page_size`]).
+///
+/// The memory will not be immediately shared, but it will be shared automatically with any child
+/// processes that are created after it is allocated.
+///
+/// # Returns
+/// The address of the allocated block, or `0` if the allocation failed.
+///
+/// [`ipc` module]: ../ipc/index.html
+/// [`memory_page_size`]: fn.memory_page_size.html
+#[no_mangle]
+pub extern "C" fn memory_alloc_shared(size: usize) -> usize {
+    let addr: usize;
+    unsafe {
+        asm!(
+            "svc 0x0303",
+            in("x2") size,
+            lateout("x0") addr,
+            options(nomem, nostack, preserves_flags),
+        );
+    }
+    addr
+}
+
 /// Returns the number of bytes in a page.
 ///
 /// A page is the smallest unit of memory that the kernel will allocate for a userspace program, and
