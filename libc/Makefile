@@ -55,19 +55,19 @@ lib/libg.a: lib/libc.a
 clean:
 	rm -rf build lib
 
-build/%.o: src/%.c ../libphoenix/target/$(TARGET)/$(DEBUG_OR_RELEASE)/liblibphoenix.a Makefile
-	mkdir -p build
-	$(CC) $(CC_FLAGS) $(CC_OPT) -ffreestanding -Wall -Wextra -Wpedantic -c \
-		-MD "-MF$(patsubst src/%.c,build/%.d,$<)" -MP \
-		-Iinclude -L../libphoenix/target/$(TARGET)/$(DEBUG_OR_RELEASE) -llibphoenix \
-		-o $@ $<
-
 build/dep/deps.d: $(DEP) $(OBJ)
 	mkdir -p build/dep
 	cat $(DEP) > build/dep/deps.d
 
 ifneq ($(TARGET),)
-../libphoenix/target/$(TARGET)/$(DEBUG_OR_RELEASE)/liblibphoenix.a: Makefile
-	cd ../libphoenix && \
+build/%.o: src/%.c ../libphoenix/clib/target/$(TARGET)/$(DEBUG_OR_RELEASE)/liblibphoenix.a Makefile
+	mkdir -p build
+	$(CC) $(CC_FLAGS) $(CC_OPT) -ffreestanding -Wall -Wextra -Wpedantic -c \
+		-MD "-MF$(patsubst src/%.c,build/%.d,$<)" -MP \
+		-Iinclude -L../libphoenix/clib/target/$(TARGET)/$(DEBUG_OR_RELEASE) -llibphoenix \
+		-o $@ $<
+
+../libphoenix/clib/target/$(TARGET)/$(DEBUG_OR_RELEASE)/liblibphoenix.a: Makefile
+	cd ../libphoenix/clib && \
 	xargo build $(CARGO_FLAGS) --target=$(TARGET)
 endif

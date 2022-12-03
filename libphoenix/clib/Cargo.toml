@@ -5,7 +5,7 @@ authors = ["Jeremy Davis <jeremydavis519@gmail.com>"]
 edition = "2018"
 
 [lib]
-crate-type = ["lib"]
+crate-type = ["staticlib"]
 
 [dependencies]
 
