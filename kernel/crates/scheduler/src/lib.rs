@@ -220,9 +220,6 @@ static TOTAL_THREADS: AtomicUsize = AtomicUsize::new(0);
 // aren't included in this sum.)
 static TOTAL_PRIORITY: AtomicU32 = AtomicU32::new(0);
 
-// A place to temporarily store threads that have been offloaded by an overworked CPU. It doesn't
-// have to be big, since another CPU should pick them up soon.
-// TODO: static READY_THREADS: AtomicCircularArray<[Option<&'static mut Thread<File>>; 32]> = AtomicCircularArray::
 // TODO: Blocking threads shouldn't be in any ThreadQueues or circular arrays. Instead,
 // they should be handed off to whatever system will wake them up.
 
