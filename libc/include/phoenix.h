@@ -43,6 +43,7 @@ typedef struct {
 void            memory_free(void* ptr);
 void*           memory_alloc(size_t size, size_t align);
 VirtPhysAddr    memory_alloc_phys(size_t size, size_t align, size_t max_bits);
+void*           memory_alloc_shared(size_t size);
 size_t          memory_page_size(void);
 
 uint64_t        time_now_unix(void);
