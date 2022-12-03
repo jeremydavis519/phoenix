@@ -1,4 +1,4 @@
-/* Copyright (c) 2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2021-2022 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -68,7 +68,7 @@ impl<T> Semaphore<T> {
     ///
     /// # Returns
     /// An RAII guard if successful, else `Err(x)`, where `x` is how many more visitors can fit in
-    /// the semaphore right now..
+    /// the semaphore right now.
     pub fn try_access_weak(&self) -> Result<SemaphoreGuard<T>, usize> {
         let tickets = self.tickets.load(Ordering::Acquire);
         if tickets > 0 {
