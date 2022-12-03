@@ -1,4 +1,4 @@
-/* Copyright (c) 2018-2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2018-2022 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -21,8 +21,12 @@
 //! preempting other threads, high-priority threads simply have longer quanta--that is, they run
 //! for longer periods of time.
 //!
-//! For the sake of efficiency in the scheduler, the exact order of threads is allowed to change,
-//! but not in a way that could ever cause a thread's turn to be skipped.
+//! For the sake of efficiency in the scheduler, the exact order of threads is allowed to change in
+//! unspecified ways at unspecified times, but not in a way that could lead to a thread's
+//! starvation. More precisely, the scheduler works through the list of threads in laps, and while
+//! the exact order of the upcoming threads is unspecified, every thread will be run exactly once
+//! per lap (unless it is sleeping, otherwise blocked, or being moved between CPUs for load
+//! balancing).
 
 #![no_std]
 
