@@ -41,6 +41,8 @@ extern crate alloc;
 pub mod allocator;
 #[cfg(not(feature = "kernelspace"))]
 pub mod ipc;
+#[cfg(not(feature = "kernelspace"))]
+pub mod lock;
 // FIXME: This is only here to allow compiling on an x86-64 host.
 #[cfg(all(target_arch = "aarch64", not(feature = "kernelspace")))]
 mod panic;
