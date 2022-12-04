@@ -71,6 +71,7 @@ build/%.o: src/%.c $(LIBPHOENIX_ROOT)/clib/target/$(TARGET)/$(DEBUG_OR_RELEASE)/
 
 $(LIBPHOENIX_ROOT)/clib/target/$(TARGET)/$(DEBUG_OR_RELEASE)/liblibphoenix.a: null
 	cd $(LIBPHOENIX_ROOT)/clib && \
+	RUST_TARGET_PATH="$$PWD" \
 	xargo build $(CARGO_FLAGS) --target=$(TARGET)
 endif
 
