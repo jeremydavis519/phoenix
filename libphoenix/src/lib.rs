@@ -30,6 +30,7 @@
 #![feature(layout_for_ptr)]
 #![feature(panic_info_message)]
 #![feature(slice_as_chunks)]
+#![feature(slice_ptr_get)]
 #![feature(strict_provenance)]
 
 #![cfg_attr(feature = "global-allocator", feature(default_alloc_error_handler))]

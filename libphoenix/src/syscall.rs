@@ -22,7 +22,7 @@ use {
     core::{
         arch::asm,
         convert::TryFrom,
-        mem,
+        mem::{self, MaybeUninit},
     },
 };
 
@@ -184,14 +184,12 @@ extern "C" fn device_claim_ffi(name: *const u8, len: usize) -> usize {
 /// If the given address is not the address of the first byte of an allocated block. (The most
 /// likely reason for this to happen is that the memory has already been freed.)
 #[no_mangle]
-pub extern "C" fn memory_free(addr: usize) {
-    unsafe {
-        asm!(
-            "svc 0x0300",
-            in("x2") addr,
-            options(nomem, nostack, preserves_flags),
-        );
-    }
+pub unsafe extern "C" fn memory_free(ptr: *mut MaybeUninit<u8>) {
+    asm!(
+        "svc 0x0300",
+        in("x2") ptr,
+        options(nomem, nostack, preserves_flags),
+    );
 }
 
 /// Allocates a new block of virtual memory with the given size and alignment.
@@ -202,8 +200,8 @@ pub extern "C" fn memory_free(addr: usize) {
 /// # Returns
 /// The address of the allocated block, or `0` if the allocation failed.
 #[no_mangle]
-pub extern "C" fn memory_alloc(size: usize, align: usize) -> usize {
-    let addr: usize;
+pub extern "C" fn memory_alloc(size: usize, align: usize) -> *mut MaybeUninit<u8> {
+    let addr: *mut MaybeUninit<u8>;
     unsafe {
         asm!(
             "svc 0x0301",
@@ -242,7 +240,7 @@ pub extern "C" fn memory_alloc(size: usize, align: usize) -> usize {
 /// ```
 #[no_mangle]
 pub extern "C" fn memory_alloc_phys(size: usize, align: usize, max_bits: usize) -> VirtPhysAddr {
-    let virt: usize;
+    let virt: *mut MaybeUninit<u8>;
     let phys: usize;
     unsafe {
         asm!(
@@ -275,8 +273,8 @@ pub extern "C" fn memory_alloc_phys(size: usize, align: usize, max_bits: usize) 
 /// [`ipc` module]: ../ipc/index.html
 /// [`memory_page_size`]: fn.memory_page_size.html
 #[no_mangle]
-pub extern "C" fn memory_alloc_shared(size: usize) -> usize {
-    let addr: usize;
+pub extern "C" fn memory_alloc_shared(size: usize) -> *mut MaybeUninit<u8> {
+    let addr: *mut MaybeUninit<u8>;
     unsafe {
         asm!(
             "svc 0x0303",
@@ -405,8 +403,8 @@ pub fn time_view_kernel_profile() -> usize {
 #[derive(Debug)]
 #[repr(C)]
 pub struct VirtPhysAddr {
-    /// The virtual address.
-    pub virt: usize,
+    /// A pointer to the value using a virtual address.
+    pub virt: *mut MaybeUninit<u8>,
     /// The physical address.
     pub phys: usize,
 }
@@ -414,8 +412,8 @@ pub struct VirtPhysAddr {
 impl VirtPhysAddr {
     /// Returns `true` if the address is null.
     pub fn is_null(&self) -> bool {
-        assert_eq!(self.virt == 0, self.phys == 0);
-        self.virt == 0
+        assert_eq!(self.virt.is_null(), self.phys == 0);
+        self.virt.is_null()
     }
 }
 

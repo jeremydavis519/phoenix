@@ -61,8 +61,9 @@ impl Allocator {
         if addr.is_null() {
             Err(AllocError)
         } else {
+            unsafe { addr.virt.write(MaybeUninit::uninit()); }
             Ok(PhysBox {
-                ptr: addr.virt as *mut MaybeUninit<T>,
+                ptr: addr.virt.cast::<MaybeUninit<T>>(),
                 phys: addr.phys,
             })
         }
@@ -81,8 +82,12 @@ impl Allocator {
         if addr.is_null() {
             Err(AllocError)
         } else {
+            let slice = ptr::slice_from_raw_parts_mut(addr.virt.cast::<MaybeUninit<T>>(), len);
+            for i in 0 .. len {
+                unsafe { slice.get_unchecked_mut(i).write(MaybeUninit::uninit()); }
+            }
             Ok(PhysBox {
-                ptr: ptr::slice_from_raw_parts_mut(addr.virt as *mut MaybeUninit<T>, len),
+                ptr:  slice,
                 phys: addr.phys,
             })
         }
@@ -102,8 +107,12 @@ impl Allocator {
         if addr.is_null() {
             Err(AllocError)
         } else {
+            let slice = ptr::slice_from_raw_parts_mut(addr.virt, size);
+            for i in 0 .. size {
+                unsafe { slice.get_unchecked_mut(i).write(MaybeUninit::uninit()); }
+            }
             Ok(PhysBox {
-                ptr: ptr::slice_from_raw_parts_mut(addr.virt as *mut MaybeUninit<u8>, size),
+                ptr: slice,
                 phys: addr.phys,
             })
         }
@@ -121,9 +130,9 @@ unsafe impl GlobalAlloc for Allocator {
         );
         addr as *mut u8
     }
-    
+
     unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
-        syscall::memory_free(ptr as usize);
+        syscall::memory_free(ptr.cast::<MaybeUninit<u8>>());
     }
 }
 

@@ -26,7 +26,7 @@ use {
     alloc::alloc::AllocError,
     core::{
         ops::Deref,
-        slice,
+        ptr,
         sync::atomic::AtomicU8,
     },
     crate::syscall,
@@ -35,7 +35,7 @@ use {
 /// An RAII-enabled representation of a shared memory block.
 #[derive(Debug)]
 pub struct SharedMemory {
-    bytes: &'static [AtomicU8],
+    bytes: *mut [AtomicU8],
 }
 
 impl SharedMemory {
@@ -46,13 +46,17 @@ impl SharedMemory {
     /// # Returns
     /// `Ok`, or `Err(AllocError)` if the block couldn't be allocated for any reason.
     pub fn try_new(len: usize) -> Result<Self, AllocError> {
-        let addr = syscall::memory_alloc_shared(len);
-        if addr == 0 {
+        let ptr = syscall::memory_alloc_shared(len);
+        if ptr.is_null() {
             return Err(AllocError);
         }
-        Ok(Self {
-            bytes: unsafe { slice::from_raw_parts(addr as *const AtomicU8, len) }
-        })
+
+        let bytes = ptr::slice_from_raw_parts_mut(ptr.cast::<AtomicU8>(), len);
+        for i in 0 .. len {
+            unsafe { bytes.get_unchecked_mut(i).write(AtomicU8::new(0)); }
+        }
+
+        Ok(Self { bytes })
     }
 }
 
@@ -60,12 +64,12 @@ impl Deref for SharedMemory {
     type Target = [AtomicU8];
 
     fn deref(&self) -> &Self::Target {
-        self.bytes
+        unsafe { &*self.bytes }
     }
 }
 
 impl Drop for SharedMemory {
     fn drop(&mut self) {
-        syscall::memory_free((self.bytes as *const _ as *const AtomicU8).addr());
+        unsafe { syscall::memory_free(self.bytes.as_mut_ptr().cast()); }
     }
 }
