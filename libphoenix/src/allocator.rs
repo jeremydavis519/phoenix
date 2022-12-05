@@ -139,10 +139,10 @@ pub struct PhysBox<T: ?Sized> {
 impl<T> PhysBox<T> {
     /// Allocates a box and places the given value inside it. Analogous to `Box::new`.
     pub fn new(value: T) -> Self {
-        let mut phys_box = Allocator.malloc_phys(mem::size_of::<usize>() * 8)
+        let mut phys_box = Allocator.malloc_phys::<MaybeUninit<T>>(mem::size_of::<usize>() * 8)
             .expect("failed to allocate a PhysBox");
-        mem::forget(mem::replace(&mut *phys_box, value));
-        phys_box
+        phys_box.write(value);
+        PhysBox::assume_init(phys_box)
     }
 }
 
