@@ -1,4 +1,4 @@
-/* Copyright (c) 2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2021-2022 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -32,7 +32,7 @@ use {
     alloc::alloc::{Layout, GlobalAlloc, AllocError},
     core::{
         marker::Unsize,
-        mem,
+        mem::{self, MaybeUninit},
         ops::{CoerceUnsized, Deref, DerefMut},
         ptr,
     },
@@ -166,6 +166,14 @@ impl<T: ?Sized> PhysBox<T> {
     /// this method.
     pub fn from_raw(ptr: *mut T, phys: usize) -> Self {
         Self { ptr, phys }
+    }
+}
+
+impl<T> PhysBox<MaybeUninit<T>> {
+    /// Unwraps the `MaybeUninit` in the same manner as `MaybeUninit::assume_init`.
+    pub fn assume_init(boxed: Self) -> PhysBox<T> {
+        let (ptr, phys) = PhysBox::into_raw(boxed);
+        PhysBox::from_raw(ptr as *mut T, phys)
     }
 }
 

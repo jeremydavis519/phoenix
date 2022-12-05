@@ -1,4 +1,4 @@
-/* Copyright (c) 2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2021-2022 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -24,8 +24,9 @@ use {
         convert::TryFrom,
         fmt,
         future::Future,
-        mem,
+        mem::{self, MaybeUninit},
         pin::Pin,
+        ptr::{self, addr_of, addr_of_mut},
         slice,
         task::{Context, Poll}
     },
@@ -83,12 +84,12 @@ pub struct CmdGetDisplayInfo {
 impl CmdGetDisplayInfo {
     pub fn new() -> Result<PhysBox<Self>, AllocError> {
         let flags = MsgFlags::empty();
-        let mut boxed = Allocator.malloc_phys::<Self>(64)?;
-        mem::forget(mem::replace(&mut *boxed, Self {
+        let mut boxed = Allocator.malloc_phys::<MaybeUninit<Self>>(64)?;
+        boxed.write(Self {
             header:   ControlQHeader::new(MsgType::CmdGetDisplayInfo, flags),
             response: RespOkDisplayInfo::new(flags)
-        }));
-        Ok(boxed)
+        });
+        Ok(PhysBox::assume_init(boxed))
     }
 }
 
@@ -137,16 +138,16 @@ impl CmdResourceCreate2D {
             height: u32,
             flags: MsgFlags
     ) -> Result<PhysBox<Self>, AllocError> {
-        let mut boxed = Allocator.malloc_phys::<Self>(64)?;
-        mem::forget(mem::replace(&mut *boxed, Self {
+        let mut boxed = Allocator.malloc_phys::<MaybeUninit<Self>>(64)?;
+        boxed.write(Self {
             header:      ControlQHeader::new(MsgType::CmdResourceCreate2D, flags),
             resource_id: u32::to_le(resource_id),
             format,
             width:       u32::to_le(width),
             height:      u32::to_le(height),
             response:    RespOkNoData::new(flags)
-        }));
-        Ok(boxed)
+        });
+        Ok(PhysBox::assume_init(boxed))
     }
 }
 
@@ -172,14 +173,14 @@ pub struct CmdResourceUnref {
 impl CmdResourceUnref {
     // `resource_id` must be non-zero
     pub fn new(resource_id: u32) -> Result<PhysBox<Self>, AllocError> {
-        let mut boxed = Allocator.malloc_phys::<Self>(64)?;
-        mem::forget(mem::replace(&mut *boxed, Self {
+        let mut boxed = Allocator.malloc_phys::<MaybeUninit<Self>>(64)?;
+        boxed.write(Self {
             header:      ControlQHeader::new(MsgType::CmdResourceUnref, MsgFlags::empty()),
             resource_id: u32::to_le(resource_id),
             padding:     u32::to_le(0),
             response:    RespOkNoData::new(MsgFlags::FENCE)
-        }));
-        Ok(boxed)
+        });
+        Ok(PhysBox::assume_init(boxed))
     }
 }
 
@@ -211,15 +212,15 @@ impl CmdSetScanout {
             rect: Rectangle,
             flags: MsgFlags
     ) -> Result<PhysBox<Self>, AllocError> {
-        let mut boxed = Allocator.malloc_phys::<Self>(64)?;
-        mem::forget(mem::replace(&mut *boxed, Self {
+        let mut boxed = Allocator.malloc_phys::<MaybeUninit<Self>>(64)?;
+        boxed.write(Self {
             header:      ControlQHeader::new(MsgType::CmdSetScanout, flags),
             rect:        rect.into(),
             scanout_id:  u32::to_le(scanout_id),
             resource_id: u32::to_le(resource_id),
             response:    RespOkNoData::new(flags)
-        }));
-        Ok(boxed)
+        });
+        Ok(PhysBox::assume_init(boxed))
     }
 }
 
@@ -250,15 +251,15 @@ impl CmdResourceFlush {
             rect: Rectangle,
             flags: MsgFlags
     ) -> Result<PhysBox<Self>, AllocError> {
-        let mut boxed = Allocator.malloc_phys::<Self>(64)?;
-        mem::forget(mem::replace(&mut *boxed, Self {
+        let mut boxed = Allocator.malloc_phys::<MaybeUninit<Self>>(64)?;
+        boxed.write(Self {
             header:      ControlQHeader::new(MsgType::CmdResourceFlush, flags),
             rect:        rect.into(),
             resource_id: u32::to_le(resource_id),
             padding:     u32::to_le(0),
             response:    RespOkNoData::new(flags)
-        }));
-        Ok(boxed)
+        });
+        Ok(PhysBox::assume_init(boxed))
     }
 }
 
@@ -291,16 +292,16 @@ impl CmdTransferToHost2D {
             dest_offset: u64,
             flags: MsgFlags
     ) -> Result<PhysBox<Self>, AllocError> {
-        let mut boxed = Allocator.malloc_phys::<Self>(64)?;
-        mem::forget(mem::replace(&mut *boxed, Self {
+        let mut boxed = Allocator.malloc_phys::<MaybeUninit<Self>>(64)?;
+        boxed.write(Self {
             header:      ControlQHeader::new(MsgType::CmdTransferToHost2D, flags),
             rect:        rect.into(),
             dest_offset: u64::to_le(dest_offset),
             resource_id: u32::to_le(resource_id),
             padding:     u32::to_le(0),
             response:    RespOkNoData::new(flags)
-        }));
-        Ok(boxed)
+        });
+        Ok(PhysBox::assume_init(boxed))
     }
 }
 
@@ -325,7 +326,7 @@ struct CmdResourceAttachBacking {
     response:    RespOkNoData
 }*/
 // The version that Rust will actually compile (requires accessors)
-#[repr(C)]
+#[repr(transparent)]
 pub struct CmdResourceAttachBacking([u8]);
 
 #[derive(Debug)]
@@ -342,9 +343,9 @@ impl CmdResourceAttachBacking {
 
     // `resource_id` must be non-zero.
     pub fn new(
-            resource_id: u32,
-            entries: &[&PhysBox<[u8]>],
-            flags: MsgFlags
+        resource_id: u32,
+        entries: &[&PhysBox<[u8]>],
+        flags: MsgFlags,
     ) -> Result<PhysBox<Self>, AllocError> {
         // Allocate space for the command on the heap.
         let size =
@@ -352,84 +353,112 @@ impl CmdResourceAttachBacking {
             2 * mem::size_of::<Le32>() +
             entries.len() * mem::size_of::<MemEntry>() +
             mem::size_of::<RespOkNoData>();
-        let mut boxed = {
-            let boxed_bytes = Allocator.malloc_phys_bytes(size, Self::ALIGNMENT, 64)?;
-            let (bytes_ptr, phys_addr) = PhysBox::into_raw(boxed_bytes);
-            PhysBox::from_raw(bytes_ptr as *mut CmdResourceAttachBacking, phys_addr)
-        };
+        let mut boxed_bytes = Allocator.malloc_phys_bytes(size, Self::ALIGNMENT, 64)?;
+        let cmd = &mut *boxed_bytes as *mut _ as *mut Self;
 
         // Initialize the command.
-        mem::forget(mem::replace(boxed.header_mut(), ControlQHeader::new(MsgType::CmdResourceAttachBacking, flags)));
-        mem::forget(mem::replace(boxed.resource_id_mut(), u32::to_le(resource_id)));
-        mem::forget(mem::replace(boxed.entries_len_mut(), u32::to_le(
-            u32::try_from(entries.len()).expect("GPU CmdResourceAttachBacking: too many entries")
-        )));
-        for i in 0 .. u32::from_le(*boxed.entries_len()) as usize {
-            mem::forget(mem::replace(&mut boxed.entries_mut()[i], MemEntry {
-                base:    u64::to_le(
-                    u64::try_from(entries[i].addr_phys())
-                        .expect("GPU CmdResourceAttachBacking: physical address doesn't fit in 64 bits")
-                ),
-                size:    u32::to_le(
-                    u32::try_from(mem::size_of_val(&**entries[i]))
-                        .expect("GPU CmdResourceAttachBacking: more than 4 GiB requested in one entry")
-                ),
-                padding: u32::to_le(0)
-            }));
+        unsafe {
+            Self::header_ptr_mut(cmd).write(ControlQHeader::new(MsgType::CmdResourceAttachBacking, flags));
+            Self::resource_id_ptr_mut(cmd).write(u32::to_le(resource_id));
+            Self::entries_len_ptr_mut(cmd).write(u32::to_le(
+                u32::try_from(entries.len()).expect("GPU CmdResourceAttachBacking: too many entries")
+            ));
+            for i in 0 .. u32::from_le(*Self::entries_len_ptr(cmd)) as usize {
+                Self::entries_ptr_mut(cmd).get_unchecked_mut(i).write(MemEntry {
+                    base:    u64::to_le(
+                        u64::try_from(entries[i].addr_phys())
+                            .expect("GPU CmdResourceAttachBacking: physical address doesn't fit in 64 bits")
+                    ),
+                    size:    u32::to_le(
+                        u32::try_from(mem::size_of_val(&**entries[i]))
+                            .expect("GPU CmdResourceAttachBacking: more than 4 GiB requested in one entry")
+                    ),
+                    padding: u32::to_le(0),
+                });
+            }
+            Self::response_ptr_mut(cmd).write(RespOkNoData::new(flags));
         }
-        mem::forget(mem::replace(boxed.response_mut(), RespOkNoData::new(flags)));
 
-        Ok(boxed)
+        let (bytes_ptr, phys_addr) = PhysBox::into_raw(boxed_bytes);
+        Ok(PhysBox::from_raw(cmd, phys_addr))
     }
 
     fn header(&self) -> &ControlQHeader {
-        unsafe { &*(&self.0[0] as *const u8 as *const ControlQHeader) }
+        unsafe { &*Self::header_ptr(self) }
     }
 
-    fn header_mut(&mut self) -> &mut ControlQHeader {
-        unsafe { &mut *(&mut self.0[0] as *mut u8 as *mut ControlQHeader) }
+    // Unsafe: `ptr` must not be null.
+    unsafe fn header_ptr(ptr: *const Self) -> *const ControlQHeader {
+        addr_of!((*ptr).0[0]) as *const ControlQHeader
+    }
+
+    // Unsafe: `ptr` must not be null.
+    unsafe fn header_ptr_mut(ptr: *mut Self) -> *mut ControlQHeader {
+        addr_of_mut!((*ptr).0[0]) as *mut ControlQHeader
     }
 
     fn resource_id(&self) -> &Le32 {
-        unsafe { &*(&self.0[mem::size_of::<ControlQHeader>()] as *const u8 as *const Le32) }
+        unsafe { &*Self::resource_id_ptr(self) }
     }
 
-    fn resource_id_mut(&mut self) -> &mut Le32 {
-        unsafe { &mut *(&mut self.0[mem::size_of::<ControlQHeader>()] as *mut u8 as *mut Le32) }
+    // Unsafe: `ptr` must not be null.
+    unsafe fn resource_id_ptr(ptr: *const Self) -> *const Le32 {
+        addr_of!((*ptr).0[mem::size_of::<ControlQHeader>()]) as *const Le32
+    }
+
+    // Unsafe: `ptr` must not be null.
+    unsafe fn resource_id_ptr_mut(ptr: *mut Self) -> *mut Le32 {
+        addr_of_mut!((*ptr).0[mem::size_of::<ControlQHeader>()]) as *mut Le32
     }
 
     fn entries_len(&self) -> &Le32 {
-        unsafe { &*(&self.0[
-            mem::size_of::<ControlQHeader>() + mem::size_of::<Le32>()
-        ] as *const u8 as *const Le32) }
+        unsafe { &*Self::entries_len_ptr(self) }
     }
 
-    fn entries_len_mut(&mut self) -> &mut Le32 {
-        unsafe { &mut *(&mut self.0[
-            mem::size_of::<ControlQHeader>() + mem::size_of::<Le32>()
-        ] as *mut u8 as *mut Le32) }
+    // Unsafe: `ptr` must not be null.
+    unsafe fn entries_len_ptr(ptr: *const Self) -> *const Le32 {
+        addr_of!((*ptr).0[mem::size_of::<ControlQHeader>() + mem::size_of::<Le32>()]) as *const Le32
+    }
+
+    // Unsafe: `ptr` must not be null.
+    unsafe fn entries_len_ptr_mut(ptr: *mut Self) -> *mut Le32 {
+        addr_of_mut!((*ptr).0[mem::size_of::<ControlQHeader>() + mem::size_of::<Le32>()]) as *mut Le32
     }
 
     fn entries(&self) -> &[MemEntry] {
-        let base_ptr = &self.0[
-            mem::size_of::<ControlQHeader>() + 2 * mem::size_of::<Le32>()
-        ] as *const u8 as *const MemEntry;
-        unsafe { slice::from_raw_parts(base_ptr, usize::try_from(u32::from_le(*self.entries_len())).unwrap()) }
+        unsafe { &*Self::entries_ptr(self) }
     }
 
-    fn entries_mut(&mut self) -> &mut [MemEntry] {
-        let base_ptr = &mut self.0[
-            mem::size_of::<ControlQHeader>() + 2 * mem::size_of::<Le32>()
-        ] as *mut u8 as *mut MemEntry;
-        unsafe { slice::from_raw_parts_mut(base_ptr, usize::try_from(u32::from_le(*self.entries_len())).unwrap()) }
+    // Unsafe: `(*ptr).entries_len()` must be defined.
+    unsafe fn entries_ptr(ptr: *const Self) -> *const [MemEntry] {
+        let base_ptr = addr_of!((*ptr).0[mem::size_of::<ControlQHeader>() + 2 * mem::size_of::<Le32>()]) as *const MemEntry;
+        ptr::slice_from_raw_parts(base_ptr, usize::try_from(u32::from_le(*(*ptr).entries_len())).unwrap())
+    }
+
+    // Unsafe: `(*ptr).entries_len()` must be defined.
+    unsafe fn entries_ptr_mut(ptr: *mut Self) -> *mut [MemEntry] {
+        let base_ptr = addr_of_mut!((*ptr).0[mem::size_of::<ControlQHeader>() + 2 * mem::size_of::<Le32>()]) as *mut MemEntry;
+        ptr::slice_from_raw_parts_mut(base_ptr, usize::try_from(u32::from_le(*(*ptr).entries_len())).unwrap())
     }
 
     fn response(&self) -> &RespOkNoData {
-        unsafe { &*(&self.0[self.response_offset()] as *const u8 as *const RespOkNoData) }
+        unsafe { &*Self::response_ptr(self) }
     }
 
-    fn response_mut(&mut self) -> &mut RespOkNoData {
-        unsafe { &mut *(&mut self.0[self.response_offset()] as *mut u8 as *mut RespOkNoData) }
+    // Unsafe: `(*ptr).entries_len()` must be defined.
+    unsafe fn response_ptr(ptr: *const Self) -> *const RespOkNoData {
+        addr_of!((*ptr).0[Self::response_offset_unsafe(ptr)]) as *const RespOkNoData
+    }
+
+    // Unsafe: `(*ptr).entries_len()` must be defined.
+    unsafe fn response_ptr_mut(ptr: *mut Self) -> *mut RespOkNoData {
+        addr_of_mut!((*ptr).0[Self::response_offset_unsafe(ptr)]) as *mut RespOkNoData
+    }
+
+    // Unsafe: `(*ptr).entries_len()` must be defined.
+    unsafe fn response_offset_unsafe(ptr: *const Self) -> usize {
+        let entries_offset = mem::size_of::<ControlQHeader>() + mem::size_of::<Le32>() * 2;
+        entries_offset + usize::try_from(u32::from_le(*(*ptr).entries_len())).unwrap() * mem::size_of::<MemEntry>()
     }
 }
 
@@ -446,8 +475,7 @@ impl fmt::Debug for CmdResourceAttachBacking {
 
 impl Command for CmdResourceAttachBacking {
     fn response_offset(&self) -> usize {
-        let entries_offset = mem::size_of::<ControlQHeader>() + mem::size_of::<Le32>() * 2;
-        entries_offset + usize::try_from(u32::from_le(*self.entries_len())).unwrap() * mem::size_of::<MemEntry>()
+        unsafe { Self::response_offset_unsafe(self) }
     }
 
     fn response_type(&self) -> MsgType {
@@ -470,14 +498,14 @@ impl CmdResourceDetachBacking {
             resource_id: u32,
             flags: MsgFlags
     ) -> Result<PhysBox<Self>, AllocError> {
-        let mut boxed = Allocator.malloc_phys::<Self>(64)?;
-        mem::forget(mem::replace(&mut *boxed, Self {
+        let mut boxed = Allocator.malloc_phys::<MaybeUninit<Self>>(64)?;
+        boxed.write(Self {
             header:      ControlQHeader::new(MsgType::CmdResourceDetachBacking, flags),
             resource_id: u32::to_le(resource_id),
             padding:     u32::to_le(0),
             response:    RespOkNoData::new(flags)
-        }));
-        Ok(boxed)
+        });
+        Ok(PhysBox::assume_init(boxed))
     }
 }
 
@@ -536,8 +564,8 @@ impl CursorCommand {
             hot_y: u32,
             flags: MsgFlags
     ) -> Result<PhysBox<Self>, AllocError> {
-        let mut boxed = Allocator.malloc_phys::<Self>(64)?;
-        mem::forget(mem::replace(&mut *boxed, Self {
+        let mut boxed = Allocator.malloc_phys::<MaybeUninit<Self>>(64)?;
+        boxed.write(Self {
             header:      ControlQHeader::new(MsgType::CmdUpdateCursor, flags),
             position,
             resource_id: u32::to_le(resource_id),
@@ -545,16 +573,16 @@ impl CursorCommand {
             hot_y:       u32::to_le(hot_y),
             padding:     u32::to_le(0),
             response:    RespOkNoData::new(flags)
-        }));
-        Ok(boxed)
+        });
+        Ok(PhysBox::assume_init(boxed))
     }
 
     pub fn new_move(
             position: CursorPosition,
             flags: MsgFlags
     ) -> Result<PhysBox<Self>, AllocError> {
-        let mut boxed = Allocator.malloc_phys::<Self>(64)?;
-        mem::forget(mem::replace(&mut *boxed, Self {
+        let mut boxed = Allocator.malloc_phys::<MaybeUninit<Self>>(64)?;
+        boxed.write(Self {
             header:      ControlQHeader::new(MsgType::CmdMoveCursor, flags),
             position,
             resource_id: u32::from_le(0),
@@ -562,8 +590,8 @@ impl CursorCommand {
             hot_y:       u32::from_le(0),
             padding:     u32::from_le(0),
             response:    RespOkNoData::new(flags)
-        }));
-        Ok(boxed)
+        });
+        Ok(PhysBox::assume_init(boxed))
     }
 }
 
