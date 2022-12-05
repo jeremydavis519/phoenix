@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2019-2022 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -176,11 +176,9 @@ impl<'a, 'b: 'a> Image<'a, 'b> {
             (tile_length as u32 + colors_per_tile as u32 * bytes_per_color as u32) * width * height
         ) as usize;
 
-        let mut backing = Allocator.malloc_phys_bytes(backing_len, 1, mem::size_of::<*mut u8>() * 8)
+        let backing = Allocator.malloc_phys_bytes(backing_len, 1, mem::size_of::<*mut u8>() * 8)
             .map_err(|AllocError| GpuError::AllocError)?;
-        for byte in backing.iter_mut() {
-            *byte = 0;
-        }
+        let backing = PhysBox::init_each(backing, |_| 0);
 
         let mut img = Image {
             tile_length,

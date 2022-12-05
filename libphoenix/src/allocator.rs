@@ -51,7 +51,7 @@ impl Allocator {
     /// Allocates a new `T` object on the heap in a way that makes its physical address visible.
     ///
     /// See [`memory_alloc_phys`](crate::syscall::memory_alloc_phys) for more details.
-    pub fn malloc_phys<T>(&self, max_bits: usize) -> Result<PhysBox<T>, AllocError> {
+    pub fn malloc_phys<T>(&self, max_bits: usize) -> Result<PhysBox<MaybeUninit<T>>, AllocError> {
         let addr = syscall::memory_alloc_phys(
             mem::size_of::<T>(),
             mem::align_of::<T>(),
@@ -62,7 +62,7 @@ impl Allocator {
             Err(AllocError)
         } else {
             Ok(PhysBox {
-                ptr: addr.virt as *mut T,
+                ptr: addr.virt as *mut MaybeUninit<T>,
                 phys: addr.phys,
             })
         }
@@ -71,7 +71,7 @@ impl Allocator {
     /// Allocates a new `[T]` array on the heap in a way that makes its physical address visible.
     ///
     /// See [`memory_alloc_phys`](crate::syscall::memory_alloc_phys) for more details.
-    pub fn malloc_phys_array<T>(&self, len: usize, max_bits: usize) -> Result<PhysBox<[T]>, AllocError> {
+    pub fn malloc_phys_array<T>(&self, len: usize, max_bits: usize) -> Result<PhysBox<[MaybeUninit<T>]>, AllocError> {
         let addr = syscall::memory_alloc_phys(
             mem::size_of::<T>() * len,
             mem::align_of::<T>(),
@@ -82,7 +82,7 @@ impl Allocator {
             Err(AllocError)
         } else {
             Ok(PhysBox {
-                ptr: ptr::slice_from_raw_parts_mut(addr.virt as *mut T, len),
+                ptr: ptr::slice_from_raw_parts_mut(addr.virt as *mut MaybeUninit<T>, len),
                 phys: addr.phys,
             })
         }
@@ -91,7 +91,8 @@ impl Allocator {
     /// Allocates a new array of bytes on the heap in a way that makes its physical address visible.
     ///
     /// See [`memory_alloc_phys`](crate::syscall::memory_alloc_phys) for more details.
-    pub fn malloc_phys_bytes(&self, size: usize, align: usize, max_bits: usize) -> Result<PhysBox<[u8]>, AllocError> {
+    pub fn malloc_phys_bytes(&self, size: usize, align: usize, max_bits: usize)
+            -> Result<PhysBox<[MaybeUninit<u8>]>, AllocError> {
         let addr = syscall::memory_alloc_phys(
             size,
             align,
@@ -102,7 +103,7 @@ impl Allocator {
             Err(AllocError)
         } else {
             Ok(PhysBox {
-                ptr: ptr::slice_from_raw_parts_mut(addr.virt as *mut u8, size),
+                ptr: ptr::slice_from_raw_parts_mut(addr.virt as *mut MaybeUninit<u8>, size),
                 phys: addr.phys,
             })
         }
@@ -139,7 +140,7 @@ pub struct PhysBox<T: ?Sized> {
 impl<T> PhysBox<T> {
     /// Allocates a box and places the given value inside it. Analogous to `Box::new`.
     pub fn new(value: T) -> Self {
-        let mut phys_box = Allocator.malloc_phys::<MaybeUninit<T>>(mem::size_of::<usize>() * 8)
+        let mut phys_box = Allocator.malloc_phys::<T>(mem::size_of::<usize>() * 8)
             .expect("failed to allocate a PhysBox");
         phys_box.write(value);
         PhysBox::assume_init(phys_box)
@@ -174,6 +175,24 @@ impl<T> PhysBox<MaybeUninit<T>> {
     pub fn assume_init(boxed: Self) -> PhysBox<T> {
         let (ptr, phys) = PhysBox::into_raw(boxed);
         PhysBox::from_raw(ptr as *mut T, phys)
+    }
+}
+
+impl<T> PhysBox<[MaybeUninit<T>]> {
+    /// Unwraps all the `MaybeUninit` values in the slice in the same manner as `MaybeUninit::assume_init`.
+    pub fn slice_assume_init(boxed: Self) -> PhysBox<[T]> {
+        let (ptr, phys) = PhysBox::into_raw(boxed);
+        PhysBox::from_raw(ptr as *mut [T], phys)
+    }
+
+    /// Initializes each value in the slice using the given function.
+    ///
+    /// The argument to the function is the index of the element being initialized.
+    pub fn init_each<F: Fn(usize) -> T>(mut boxed: Self, f: F) -> PhysBox<[T]> {
+        for (i, value) in boxed.iter_mut().enumerate() {
+            value.write(f(i));
+        }
+        Self::slice_assume_init(boxed)
     }
 }
 

@@ -47,7 +47,7 @@ use {
     },
     volatile::Volatile,
     libphoenix::{
-        allocator::Allocator,
+        allocator::{Allocator, PhysBox},
         syscall,
     },
     libdriver::Device,
@@ -151,8 +151,8 @@ fn new_event_future<'a>(event_q: &'a VirtQueue<'a>) -> impl Future<Output = ()> 
     const MAX_ADDR_BITS: usize = 44;
     let mut response_future = match Allocator.malloc_phys::<InputEvent>(MAX_ADDR_BITS) {
         Ok(mut buf) => {
-            mem::forget(mem::replace(&mut *buf, InputEvent::uninit()));
-            Some(msg::recv_event(event_q, buf))
+            buf.write(InputEvent::uninit());
+            Some(msg::recv_event(event_q, PhysBox::assume_init(buf)))
         },
         Err(_) => {
             let _ = writeln!(KernelWriter, "virtio-input: WARNING: failed to allocate an event buffer");

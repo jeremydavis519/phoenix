@@ -30,7 +30,7 @@ use {
         cell::RefCell,
         convert::TryInto,
         iter,
-        mem,
+        mem::{self, MaybeUninit},
         ops::{Index, IndexMut},
         ptr,
         slice,
@@ -92,14 +92,22 @@ impl<'a> VirtQueue<'a> {
             let size_of_driver_ring = mem::size_of::<u16>() * (3 + usize::from(len));
             let size_of_device_ring = mem::size_of::<u16>() * 3 + mem::size_of::<UsedElem>() * usize::from(len);
             let align = |x| (x + Self::LEGACY_DEVICE_RING_ALIGN - 1) & !(Self::LEGACY_DEVICE_RING_ALIGN - 1);
-            let block = Allocator.malloc_phys_bytes(
+            let mut block = Allocator.malloc_phys_bytes(
                 align(size_of_descriptors + size_of_driver_ring) + align(size_of_device_ring),
                 usize::max(Self::LEGACY_DEVICE_RING_ALIGN, page_size),
                 32 + log_2(page_size)
             )
                 .expect("failed to allocate a virtqueue");
+
             unsafe {
-                driver_ring = DriverRing::new_legacy(&block, size_of_descriptors, len, driver_flags);
+                DescriptorTable::init_legacy(&mut block, len);
+                DriverRing::init_legacy(&mut block, size_of_descriptors, len, driver_flags);
+                DeviceRing::init_legacy(&mut block, align(size_of_descriptors + size_of_driver_ring), len);
+            }
+
+            let block = PhysBox::slice_assume_init(block);
+            unsafe {
+                driver_ring = DriverRing::new_legacy(&block, size_of_descriptors, len);
                 device_ring = DeviceRing::new_legacy(&block, align(size_of_descriptors + size_of_driver_ring), len);
             }
             descriptors = DescriptorTable::new_legacy(block, len, in_order);
@@ -277,6 +285,18 @@ enum DescriptorTableInternal {
 }
 
 impl DescriptorTable {
+    // Must be called before `new_legacy` as part of initializing `block`.
+    // Unsafe: `block` must be laid out as if it had type `PhysBox<[BufferDescriptor]>`.
+    unsafe fn init_legacy(block: &mut PhysBox<[MaybeUninit<u8>]>, len: u16) {
+        for i in 0 .. len {
+            let desc = &mut block[usize::from(i) * mem::size_of::<BufferDescriptor>()] as *mut _ as *mut MaybeUninit<BufferDescriptor>;
+            (*desc).write(
+                BufferDescriptor::new(0, 0, BufferFlags::empty(), (i + 1) % len, true)
+            );
+        }
+
+    }
+
     fn new_legacy(block: PhysBox<[u8]>, len: u16, in_order: bool) -> Self {
         DescriptorTable {
             descriptors: DescriptorTableInternal::Legacy(block),
@@ -284,30 +304,24 @@ impl DescriptorTable {
             free_descs: AtomicU16::new(len),
             first_free_idx: AtomicU16::new(0),
             in_order,
-        }.clear(true)
+        }
     }
 
     fn new_modern(len: u16, in_order: bool) -> Self {
-        let block: PhysBox<[BufferDescriptor]> = Allocator.malloc_phys_array(len.into(), 64)
+        let mut block: PhysBox<[MaybeUninit<BufferDescriptor>]> = Allocator.malloc_phys_array(len.into(), 64)
             .expect("failed to allocate a virtqueue");
+
+        for i in 0 .. len {
+            block[usize::from(i)].write(BufferDescriptor::new(0, 0, BufferFlags::empty(), (i + 1) % len, false));
+        }
+
         DescriptorTable {
-            descriptors: DescriptorTableInternal::Modern(block),
+            descriptors: DescriptorTableInternal::Modern(PhysBox::slice_assume_init(block)),
             len,
             free_descs: AtomicU16::new(len),
             first_free_idx: AtomicU16::new(0),
             in_order,
-        }.clear(false)
-    }
-
-    fn clear(mut self, legacy: bool) -> Self {
-        let len = self.len;
-        for i in 0 .. len {
-            mem::forget(mem::replace(
-                &mut self[i],
-                BufferDescriptor::new(0, 0, BufferFlags::empty(), (i + 1) % len, legacy),
-            ));
         }
-        self
     }
 
     fn base_addr_phys(&self) -> usize {
@@ -583,14 +597,23 @@ impl DriverRing {
     const IDX_OFFSET:   usize = 1;
     const RING_OFFSET:  usize = 2;
 
-    unsafe fn new_legacy(block: &PhysBox<[u8]>, offset: usize, len: u16, driver_flags: DriverFlags) -> Self {
-        let internal = ptr::slice_from_raw_parts(
-            &block[offset] as *const u8 as *const AtomicU16,
+    // Must be called before `new_legacy` as part of initializing `block`.
+    // Safety: `block` must be laid out as if it had type `PhysBox<[AtomicU16]>`.
+    unsafe fn init_legacy(block: &mut PhysBox<[MaybeUninit<u8>]>, offset: usize, len: u16, driver_flags: DriverFlags) {
+        let internal = slice::from_raw_parts_mut(
+            &mut block[offset] as *mut _ as *mut MaybeUninit<AtomicU16>,
             usize::from(len) + 3,
         );
-        (*internal)[Self::FLAGS_OFFSET].store(driver_flags.bits().to_device_endian(true), Ordering::Release);
-        (*internal)[Self::IDX_OFFSET].store(0.to_device_endian(true), Ordering::Release);
-        (*internal)[Self::RING_OFFSET + usize::from(len)].store(0.to_device_endian(true), Ordering::Release);
+        internal[Self::FLAGS_OFFSET].write(AtomicU16::new(driver_flags.bits().to_device_endian(true)));
+        internal[Self::IDX_OFFSET].write(AtomicU16::new(0.to_device_endian(true)));
+        internal[Self::RING_OFFSET + usize::from(len)].write(AtomicU16::new(0.to_device_endian(true)));
+    }
+
+    unsafe fn new_legacy(block: &PhysBox<[u8]>, offset: usize, len: u16) -> Self {
+        let internal = ptr::slice_from_raw_parts(
+            &block[offset] as *const _ as *const AtomicU16,
+            usize::from(len) + 3,
+        );
         Self::Legacy { internal, state: DriverRingState::new(len) }
     }
 
@@ -798,13 +821,22 @@ impl DeviceRing {
     const IDX_OFFSET:   usize = 1;
     const RING_OFFSET:  usize = 2;
 
-    unsafe fn new_legacy(block: &PhysBox<[u8]>, offset: usize, len: u16) -> Self {
-        let internal = ptr::slice_from_raw_parts_mut(
-            &block[offset] as *const u8 as *mut u8 as *mut u16,
+    // Must be called before `new_legacy` as part of initializing `block`.
+    // Safety: `block` must be laid out as if it had type `PhysBox<[u16]>`.
+    unsafe fn init_legacy(block: &mut PhysBox<[MaybeUninit<u8>]>, offset: usize, len: u16) {
+        let internal = slice::from_raw_parts_mut(
+            &mut block[offset] as *mut _ as *mut MaybeUninit<u16>,
             usize::from(len) + 3
         );
-        (&mut (*internal)[Self::FLAGS_OFFSET] as *mut u16).write_volatile(0.to_device_endian(true));
-        (&mut (*internal)[Self::IDX_OFFSET] as *mut u16).write_volatile(0.to_device_endian(true));
+        internal[Self::FLAGS_OFFSET].as_mut_ptr().write_volatile(0.to_device_endian(true));
+        internal[Self::IDX_OFFSET].as_mut_ptr().write_volatile(0.to_device_endian(true));
+    }
+
+    unsafe fn new_legacy(block: &PhysBox<[u8]>, offset: usize, len: u16) -> Self {
+        let internal = ptr::slice_from_raw_parts_mut(
+            &block[offset] as *const _ as *mut u16,
+            usize::from(len) + 3
+        );
         Self::Legacy(internal)
     }
 

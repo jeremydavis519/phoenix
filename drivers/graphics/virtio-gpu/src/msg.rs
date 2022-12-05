@@ -24,7 +24,7 @@ use {
         convert::TryFrom,
         fmt,
         future::Future,
-        mem::{self, MaybeUninit},
+        mem,
         pin::Pin,
         ptr::{self, addr_of, addr_of_mut},
         slice,
@@ -84,7 +84,7 @@ pub struct CmdGetDisplayInfo {
 impl CmdGetDisplayInfo {
     pub fn new() -> Result<PhysBox<Self>, AllocError> {
         let flags = MsgFlags::empty();
-        let mut boxed = Allocator.malloc_phys::<MaybeUninit<Self>>(64)?;
+        let mut boxed = Allocator.malloc_phys::<Self>(64)?;
         boxed.write(Self {
             header:   ControlQHeader::new(MsgType::CmdGetDisplayInfo, flags),
             response: RespOkDisplayInfo::new(flags)
@@ -138,7 +138,7 @@ impl CmdResourceCreate2D {
             height: u32,
             flags: MsgFlags
     ) -> Result<PhysBox<Self>, AllocError> {
-        let mut boxed = Allocator.malloc_phys::<MaybeUninit<Self>>(64)?;
+        let mut boxed = Allocator.malloc_phys::<Self>(64)?;
         boxed.write(Self {
             header:      ControlQHeader::new(MsgType::CmdResourceCreate2D, flags),
             resource_id: u32::to_le(resource_id),
@@ -173,7 +173,7 @@ pub struct CmdResourceUnref {
 impl CmdResourceUnref {
     // `resource_id` must be non-zero
     pub fn new(resource_id: u32) -> Result<PhysBox<Self>, AllocError> {
-        let mut boxed = Allocator.malloc_phys::<MaybeUninit<Self>>(64)?;
+        let mut boxed = Allocator.malloc_phys::<Self>(64)?;
         boxed.write(Self {
             header:      ControlQHeader::new(MsgType::CmdResourceUnref, MsgFlags::empty()),
             resource_id: u32::to_le(resource_id),
@@ -212,7 +212,7 @@ impl CmdSetScanout {
             rect: Rectangle,
             flags: MsgFlags
     ) -> Result<PhysBox<Self>, AllocError> {
-        let mut boxed = Allocator.malloc_phys::<MaybeUninit<Self>>(64)?;
+        let mut boxed = Allocator.malloc_phys::<Self>(64)?;
         boxed.write(Self {
             header:      ControlQHeader::new(MsgType::CmdSetScanout, flags),
             rect:        rect.into(),
@@ -251,7 +251,7 @@ impl CmdResourceFlush {
             rect: Rectangle,
             flags: MsgFlags
     ) -> Result<PhysBox<Self>, AllocError> {
-        let mut boxed = Allocator.malloc_phys::<MaybeUninit<Self>>(64)?;
+        let mut boxed = Allocator.malloc_phys::<Self>(64)?;
         boxed.write(Self {
             header:      ControlQHeader::new(MsgType::CmdResourceFlush, flags),
             rect:        rect.into(),
@@ -292,7 +292,7 @@ impl CmdTransferToHost2D {
             dest_offset: u64,
             flags: MsgFlags
     ) -> Result<PhysBox<Self>, AllocError> {
-        let mut boxed = Allocator.malloc_phys::<MaybeUninit<Self>>(64)?;
+        let mut boxed = Allocator.malloc_phys::<Self>(64)?;
         boxed.write(Self {
             header:      ControlQHeader::new(MsgType::CmdTransferToHost2D, flags),
             rect:        rect.into(),
@@ -498,7 +498,7 @@ impl CmdResourceDetachBacking {
             resource_id: u32,
             flags: MsgFlags
     ) -> Result<PhysBox<Self>, AllocError> {
-        let mut boxed = Allocator.malloc_phys::<MaybeUninit<Self>>(64)?;
+        let mut boxed = Allocator.malloc_phys::<Self>(64)?;
         boxed.write(Self {
             header:      ControlQHeader::new(MsgType::CmdResourceDetachBacking, flags),
             resource_id: u32::to_le(resource_id),
@@ -564,7 +564,7 @@ impl CursorCommand {
             hot_y: u32,
             flags: MsgFlags
     ) -> Result<PhysBox<Self>, AllocError> {
-        let mut boxed = Allocator.malloc_phys::<MaybeUninit<Self>>(64)?;
+        let mut boxed = Allocator.malloc_phys::<Self>(64)?;
         boxed.write(Self {
             header:      ControlQHeader::new(MsgType::CmdUpdateCursor, flags),
             position,
@@ -581,7 +581,7 @@ impl CursorCommand {
             position: CursorPosition,
             flags: MsgFlags
     ) -> Result<PhysBox<Self>, AllocError> {
-        let mut boxed = Allocator.malloc_phys::<MaybeUninit<Self>>(64)?;
+        let mut boxed = Allocator.malloc_phys::<Self>(64)?;
         boxed.write(Self {
             header:      ControlQHeader::new(MsgType::CmdMoveCursor, flags),
             position,
