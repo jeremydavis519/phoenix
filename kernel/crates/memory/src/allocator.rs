@@ -397,16 +397,17 @@ impl SlabAllocatorList {
                         .map(|(allocs_ptr, allocation)| (arena, buffer, allocs_ptr, allocation))
                     ) {
                 Ok((arena, buffer, allocs_ptr, allocation)) => {
-                    let allocators = unsafe { &mut *(allocs_ptr.as_virt_unchecked() as *mut SlabAllocatorList) };
-                    mem::forget(mem::replace(
-                        allocators,
-                        Self {
-                            head: SlabAllocator::new(arena, buffer, unsafe { NonZeroUsize::new_unchecked(page_size) }),
-                            tail: AtomicPtr::new(tail),
-                            _self_allocation: allocation,
-                        },
-                    ));
-                    return Ok(allocators);
+                    let allocators = allocs_ptr.as_virt_unchecked().cast::<SlabAllocatorList>();
+                    unsafe {
+                        allocators.write(
+                            Self {
+                                head: SlabAllocator::new(arena, buffer, NonZeroUsize::new_unchecked(page_size)),
+                                tail: AtomicPtr::new(tail),
+                                _self_allocation: allocation,
+                            },
+                        );
+                    }
+                    return Ok(unsafe { &mut *allocators });
                 },
                 Err(AllocError) => {
                     if slabs_count == 1 {
