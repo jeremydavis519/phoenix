@@ -26,6 +26,8 @@
 
 #![deny(warnings, missing_docs)]
 
+#![feature(slice_ptr_get)]
+
 extern crate alloc;
 
 use {
@@ -36,7 +38,7 @@ use {
     core::{
         mem,
         num::NonZeroUsize,
-        slice,
+        ptr::{self, addr_of_mut},
         sync::atomic::{AtomicBool, Ordering}
     },
     io::{Read, Seek},
@@ -199,17 +201,15 @@ impl DeviceTree {
                     )
                         .map_err(|_| ())?;
 
-                    let device_contents = unsafe {
-                        &mut *(device_contents_block.index(0) as *mut DeviceContents)
-                    };
+                    let device_contents = device_contents_block.index(0).cast::<DeviceContents>();
                     let device_contents_resources = unsafe {
-                        slice::from_raw_parts_mut(
-                            &mut device_contents.resources as *mut [Resource; 0] as *mut Resource,
-                            resources.len()
+                        ptr::slice_from_raw_parts_mut(
+                            addr_of_mut!((*device_contents).resources).cast::<Resource>(),
+                            resources.len(),
                         )
                     };
 
-                    mem::forget(mem::replace(&mut device_contents.resources_count, resources.len()));
+                    unsafe { addr_of_mut!((*device_contents).resources_count).write(resources.len()); }
 
                     // Give the process access to the device's resources.
                     for (i, resource) in resources.iter().enumerate() {
@@ -242,11 +242,13 @@ impl DeviceTree {
                                         size,
                                         RegionType::Mmio
                                     )? + resource.base % page_size;
-                                    mem::forget(mem::replace(&mut device_contents_resources[i], Resource {
-                                        bus: resource.bus,
-                                        base: userspace_addr,
-                                        size: resource.size
-                                    }));
+                                    unsafe {
+                                        device_contents_resources.get_unchecked_mut(i).write(Resource {
+                                            bus: resource.bus,
+                                            base: userspace_addr,
+                                            size: resource.size,
+                                        });
+                                    }
                                 }
                             }
                         };
