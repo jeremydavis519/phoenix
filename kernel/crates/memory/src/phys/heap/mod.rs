@@ -351,11 +351,8 @@ fn alloc_masters(map: &MemoryMap) -> Result<(), AllocError> {
 
         // Initialize the block of memory as a master block.
         unsafe {
-            let master_block_ptr = PhysPtr::<_, *mut _>::from_addr_phys(allocation.node.base()).as_virt().unwrap();
-            mem::forget(mem::replace(
-                &mut *master_block_ptr,
-                MasterBlock::new(Some(allocation))
-            ));
+            let master_block_ptr = PhysPtr::<_, *mut MasterBlock>::from_addr_phys(allocation.node.base()).as_virt().unwrap();
+            master_block_ptr.write(MasterBlock::new(Some(allocation)));
             (*master_block_ptr).allocation().as_ref().unwrap().node.set_is_master(true, Ordering::Release);
         }
 
