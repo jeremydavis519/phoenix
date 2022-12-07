@@ -29,7 +29,7 @@ use {
     alloc::alloc::{Layout, Allocator, AllocError},
     core::{
         any::type_name,
-        mem,
+        mem::{self, MaybeUninit},
         num::NonZeroUsize,
         ptr::{self, NonNull},
         sync::atomic::{AtomicPtr, AtomicUsize, Ordering},
@@ -96,7 +96,7 @@ impl AllMemAlloc {
     ///   * `Ok(block)` if the block was successfully reserved, where `block` is a `BlockMut` representing
     ///         the reserved block.
     ///   * `Err(AllocErr)` on failure.
-    pub fn malloc<T>(&self, size: usize, align: NonZeroUsize) -> Result<BlockMut<T>, AllocError> {
+    pub fn malloc<T>(&self, size: usize, align: NonZeroUsize) -> Result<BlockMut<MaybeUninit<T>>, AllocError> {
         profiler_probe!(=> ENTRANCE);
         assert_eq!(
             align.get() % mem::align_of::<T>(), 0,
@@ -162,7 +162,7 @@ impl AllMemAlloc {
             // No need to touch the heap if we're allocating zero bytes.
             (align.get(), None)
         };
-        let block = BlockMut::<T>::new(
+        let block = BlockMut::<MaybeUninit<T>>::new(
             PhysPtr::<_, *mut _>::from_addr_phys(base),
             size / mem::size_of::<T>(),
             allocation,
@@ -181,7 +181,7 @@ impl AllMemAlloc {
     ///         the reserved block.
     ///   * `Err(AllocErr)` on failure.
     pub fn malloc_low<T>(&self, size: usize, align: NonZeroUsize, max_bits: usize)
-            -> Result<BlockMut<T>, AllocError> {
+            -> Result<BlockMut<MaybeUninit<T>>, AllocError> {
         profiler_probe!(=> ENTRANCE);
         assert_eq!(
             align.get() % mem::align_of::<T>(), 0,
@@ -204,7 +204,7 @@ impl AllMemAlloc {
             // No need to touch the heap if we're allocating zero bytes.
             (align.get(), None)
         };
-        let block = BlockMut::<T>::new(
+        let block = BlockMut::<MaybeUninit<T>>::new(
             PhysPtr::<_, *mut _>::from_addr_phys(base),
             size / mem::size_of::<T>(),
             allocation,
@@ -259,7 +259,10 @@ unsafe impl Allocator for AllMemAlloc {
             let ptr = block.base().as_virt_unchecked();
             let size = block.size();
             mem::forget(block);
-            Ok(unsafe { NonNull::slice_from_raw_parts(NonNull::new_unchecked(ptr), size) })
+            unsafe {
+                ptr.write(MaybeUninit::uninit());
+                Ok(NonNull::slice_from_raw_parts(NonNull::new_unchecked((*ptr).as_mut_ptr()), size))
+            }
         } else {
             // TODO: Do everything you can to free some memory instead of returning Err. Anything
             // is better than having the kernel panic, even if it means crashing a program. Maybe

@@ -26,7 +26,7 @@ use {
     core::{
         convert::{TryFrom, TryInto},
         ffi::c_void,
-        mem,
+        mem::{self, MaybeUninit},
         num::NonZeroUsize,
         time::Duration,
     },
@@ -402,6 +402,12 @@ fn memory_alloc_shared(
                     memory::phys::RegionType::Ram,
                 ) {
                     Ok(addr) => {
+                        // Scrub the page.
+                        for i in 0 .. block.size() {
+                            unsafe { block.index(i).write(MaybeUninit::new(0)); }
+                        }
+                        let block = block.assume_init();
+
                         match thread.process.shared_memory.insert_head(Box::new(SharedMemory::new(block, addr))) {
                             Ok(()) => {},
                             Err(_shared_mem_record) => {

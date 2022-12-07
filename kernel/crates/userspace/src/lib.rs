@@ -22,8 +22,13 @@
 #![no_std]
 #![deny(warnings, missing_docs)]
 
+#![feature(maybe_uninit_slice)]
+
 use {
-    core::convert::TryInto,
+    core::{
+        convert::TryInto,
+        mem::MaybeUninit,
+    },
     io::{Read, Seek, SeekFrom},
     memory::{
         phys::RegionType,
@@ -152,14 +157,14 @@ fn userspace_addr_to_kernel_addr<E: Read+Seek>(
         |addr, mut buffer| {
             exe_reader.seek(SeekFrom::Start(addr.try_into().map_err(|_| ())?)).map_err(|_| ())?;
             while buffer.len() > 0 {
-                match exe_reader.read(buffer) {
+                match exe_reader.read(unsafe { MaybeUninit::slice_assume_init_mut(buffer) }) {
                     Ok(0) => break, // EOF
                     Ok(n) => buffer = &mut buffer[n .. ],
                     Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
                     Err(_) => return Err(()),
                 };
             }
-            buffer.fill(0); // In case of EOF
+            buffer.fill(MaybeUninit::new(0)); // In case of EOF
             Ok(())
         }
     )

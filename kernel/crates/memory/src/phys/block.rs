@@ -23,7 +23,7 @@
 //! entire block is present in virtual memory at all times.
 
 use {
-    core::mem,
+    core::mem::{self, MaybeUninit},
 
     i18n::Text,
 
@@ -140,3 +140,15 @@ macro_rules! impl_phys_block_common {
 
 impl_phys_block_common!(BlockMut);
 impl_phys_block_common!(Mmio);
+
+impl<T> BlockMut<MaybeUninit<T>> {
+    /// Assumes everything in the block is initialized in a similar manner to
+    /// `MaybeUninit::assume_init`.
+    pub fn assume_init(mut self) -> BlockMut<T> {
+        BlockMut {
+            base: PhysPtr::<T, *mut T>::from_addr_phys(self.base.as_addr_phys()),
+            size: self.size,
+            allocation: mem::replace(&mut self.allocation, None),
+        }
+    }
+}

@@ -27,9 +27,9 @@ use {
         convert::{TryFrom, TryInto},
         fmt,
         ffi::c_void,
-        mem::{self, size_of},
+        mem::{self, size_of, MaybeUninit},
         num::NonZeroUsize,
-        ptr,
+        ptr::{self, addr_of_mut},
         slice,
         sync::atomic::{AtomicU8, AtomicUsize, AtomicPtr, Ordering}
     },
@@ -144,8 +144,9 @@ lazy_static! {
             ).expect("failed to allocate the zeroes page");
 
             for i in 0 .. block.size() {
-                *block.index(i) = 0;
+                block.index(i).write(MaybeUninit::new(0));
             }
+            let block = block.assume_init();
 
             let base_ptr = block.index(0);
             let size = block.size();
@@ -232,9 +233,11 @@ macro_rules! define_root_page_table {
                     mem::size_of::<RootPageTable>(),
                     NonZeroUsize::new(mem::align_of::<RootPageTable>()).unwrap()
                 )?;
-                let root = unsafe { &mut *block.index(0) };
-                mem::forget(mem::replace(&mut root.exception_level, exception_level));
-                mem::forget(mem::replace(&mut root.asid, asid));
+                let root = unsafe { (*block.index(0)).as_mut_ptr() };
+                unsafe {
+                    addr_of_mut!((*root).exception_level).write(exception_level);
+                    addr_of_mut!((*root).asid).write(asid);
+                }
                 match page_size() {
                     $(
                         $page_size => {
@@ -243,13 +246,19 @@ macro_rules! define_root_page_table {
                                 NonZeroUsize::new(mem::align_of::<$table_root>()).unwrap()
                             )?;
                             unsafe {
-                                <$table_root>::make_new(table_block.index(0));
+                                let table_ptr = table_block.index(0);
+                                table_ptr.write(MaybeUninit::uninit());
+                                <$table_root>::make_new(&mut *table_ptr);
                             }
-                            mem::forget(mem::replace(&mut root.internals, RootPageTableInternal::$table(table_block)));
+                            let table_block = table_block.assume_init();
+                            unsafe {
+                                addr_of_mut!((*root).internals).write(RootPageTableInternal::$table(table_block));
+                            }
                         },
                     )*
                     page_size => panic!("unsupported page size {:#x}", page_size)
                 };
+                let block = block.assume_init();
                 Ok(block)
             }
 
@@ -272,7 +281,7 @@ macro_rules! define_root_page_table {
 
             /// Returns an address in kernelspace that is mapped to the same byte as the given address
             /// in userspace.
-            pub fn userspace_addr_to_kernel_addr<E: FnOnce(usize, &mut [u8]) -> Result<(), ()>>(
+            pub fn userspace_addr_to_kernel_addr<E: FnOnce(usize, &mut [MaybeUninit<u8>]) -> Result<(), ()>>(
                 &self,
                 userspace_addr: usize,
                 region_type: RegionType,
@@ -302,9 +311,11 @@ macro_rules! define_root_page_table {
                     mem::size_of::<RootPageTable>(),
                     NonZeroUsize::new(mem::align_of::<RootPageTable>()).unwrap()
                 )?;
-                let root = unsafe { &mut *block.index(0) };
-                mem::forget(mem::replace(&mut root.exception_level, ExceptionLevel::El1));
-                mem::forget(mem::replace(&mut root.asid, asid));
+                let root_ptr = unsafe { (*block.index(0)).as_mut_ptr() };
+                unsafe {
+                    addr_of_mut!((*root_ptr).exception_level).write(ExceptionLevel::El1);
+                    addr_of_mut!((*root_ptr).asid).write(asid);
+                }
 
                 match page_size {
                     $(
@@ -315,14 +326,19 @@ macro_rules! define_root_page_table {
                             )?;
                             unsafe {
                                 let table_ptr = table_block.index(0);
-                                <$table_root>::make_new(table_ptr);
-                                <$table_root>::identity_map(table_ptr, regions)?;
+                                table_ptr.write(MaybeUninit::uninit());
+                                <$table_root>::make_new(&mut *table_ptr);
+                                <$table_root>::identity_map((*table_ptr).assume_init_mut(), regions)?;
                             }
-                            mem::forget(mem::replace(&mut root.internals, RootPageTableInternal::$table(table_block)));
+                            let table_block = table_block.assume_init();
+                            unsafe {
+                                addr_of_mut!((*root_ptr).internals).write(RootPageTableInternal::$table(table_block));
+                            }
                         },
                     )*
                     _ => panic!("unsupported page size {:#x}", page_size)
                 };
+                let block = block.assume_init();
                 Ok(block)
             }
 
@@ -704,13 +720,17 @@ macro_rules! impl_branch_table {
 
     ( @internal $table:ty, $next:ty : bits $bits_lo:expr => $bits_hi:expr ; kiB $granule_size:expr ; $blocks_allowed:expr ) => {
         impl $table {
-            unsafe fn make_new(table: *mut $table) {
-                for entry in (*table).entries.iter() {
-                    entry.store(Descriptor { table: PageTableEntry::UNMAPPED }, Ordering::Release);
+            fn make_new(table: &mut MaybeUninit<$table>) {
+                unsafe {
+                    let entry_0 = addr_of_mut!((*table.as_mut_ptr()).entries).cast::<Atomic64Bit<_>>();
+                    const ENTRIES_COUNT: usize = (2 << $bits_hi) / (1 << $bits_lo);
+                    for i in 0 .. ENTRIES_COUNT {
+                        entry_0.add(i).write(Atomic64Bit::new(Descriptor { table: PageTableEntry::UNMAPPED }));
+                    }
                 }
             }
 
-            fn virt_addr_to_phys_addr<E: FnOnce(usize, &mut [u8]) -> Result<(), ()>>(
+            fn virt_addr_to_phys_addr<E: FnOnce(usize, &mut [MaybeUninit<u8>]) -> Result<(), ()>>(
                 &self,
                 virt_addr: usize,
                 region_type: RegionType,
@@ -787,19 +807,24 @@ macro_rules! impl_branch_table {
             // same page, it is mapped only once, for the first region. The given bases and sizes
             // are required to be multiples of `PAGE_SIZE`.
             #[allow(dead_code)] // This function is only called on the root tables.
-            unsafe fn identity_map(table: *mut $table, regions: &[(usize, NonZeroUsize, RegionType, ShareabilityDomain)]) -> Result<(), AllocError> {
+            fn identity_map(table: &mut $table, regions: &[(usize, NonZeroUsize, RegionType, ShareabilityDomain)]) -> Result<(), AllocError> {
                 // This block actually consists of all of the lower-level page tables, not just
                 // those in the next level. Its correctness relies on the fact that all of the non-
                 // root translation tables always have the same size as each other and they're all
                 // laid out in the same way.
                 let subtables = AllMemAlloc.malloc::<$next>(<$next>::identity_map_size(regions), NonZeroUsize::new(mem::align_of::<$next>()).unwrap())?;
                 for i in 0 .. subtables.size() {
-                    <$next>::make_new(subtables.index(i) as *mut $next);
+                    unsafe {
+                        let subtable_ptr = subtables.index(i);
+                        subtable_ptr.write(MaybeUninit::uninit());
+                        <$next>::make_new(&mut *subtable_ptr);
+                    }
                 }
+                let subtables = subtables.assume_init();
 
                 let mut subtable_addr = subtables.get_ptr_phys(0).as_addr_phys();
                 for &(base, size, region_type, shareability) in regions {
-                    subtable_addr = Self::identity_map_single_region(&mut *table, base, size, region_type, shareability, subtable_addr);
+                    subtable_addr = Self::identity_map_single_region(table, base, size, region_type, shareability, subtable_addr);
                 }
                 mem::forget(subtables);
 
@@ -985,8 +1010,11 @@ macro_rules! impl_branch_table {
                         )
                             .map_err(|AllocError| None)?;
                         unsafe {
-                            <$next>::make_new(subtable_block.index(0));
+                            let subtable_ptr = subtable_block.index(0);
+                            subtable_ptr.write(MaybeUninit::uninit());
+                            <$next>::make_new(&mut *subtable_ptr);
                         }
+                        let subtable_block = subtable_block.assume_init();
                         let subtable_addr = subtable_block.get_ptr_phys(0).as_addr_phys();
                         let access_flags = match exception_level {
                             ExceptionLevel::El0 => PageTableEntry::PXN,
@@ -1203,13 +1231,17 @@ macro_rules! impl_branch_table {
 macro_rules! impl_leaf_table {
     ( $table:ty : bits $bits_lo:expr => $bits_hi:expr ; kiB $granule_size:expr ) => {
         impl $table {
-            unsafe fn make_new(table: *mut $table) {
-                for entry in (*table).entries.iter() {
-                    entry.store(PageEntry::UNMAPPED, Ordering::Release);
+            fn make_new(table: &mut MaybeUninit<$table>) {
+                unsafe {
+                    let entry_0 = addr_of_mut!((*table.as_mut_ptr()).entries).cast::<Atomic64Bit<_>>();
+                    const ENTRIES_COUNT: usize = (2 << $bits_hi) / (1 << $bits_lo);
+                    for i in 0 .. ENTRIES_COUNT {
+                        entry_0.add(i).write(Atomic64Bit::new(Descriptor { table: PageTableEntry::UNMAPPED }));
+                    }
                 }
             }
 
-            fn virt_addr_to_phys_addr<E: FnOnce(usize, &mut [u8]) -> Result<(), ()>>(
+            fn virt_addr_to_phys_addr<E: FnOnce(usize, &mut [MaybeUninit<u8>]) -> Result<(), ()>>(
                 &self,
                 virt_addr: usize,
                 region_type: RegionType,
@@ -1248,11 +1280,15 @@ macro_rules! impl_leaf_table {
                                     Err(AllocError) => return None, // FIXME: Swap out another page and retry.
                                 };
 
+                                for i in 0 .. page.size() {
+                                    unsafe { page.index(i).write(MaybeUninit::uninit()); }
+                                }
+
                                 let virt_base = virt_addr & !(page_size - 1);
                                 let buffer = unsafe { slice::from_raw_parts_mut(page.index(0), page.size()) };
                                 if read_exe_file(virt_base, buffer).is_err() { return None; }
 
-                                page
+                                page.assume_init()
                             },
                             Page(page) => page,
                         };
@@ -2083,7 +2119,7 @@ fn resolve_write_fault_byte(root: &RootPageTable, exc_level: ExceptionLevel, tra
                         let src = PhysPtr::<u8, *const u8>::from_addr_phys(page.address(64).try_into().unwrap()).as_virt_unchecked();
                         for i in 0 .. size1 {
                             unsafe {
-                                *block.index(i) = *src.add(i);
+                                block.index(i).write(MaybeUninit::new(*src.add(i)));
                             }
                         }
                         let new_page = page & !PageEntry::COW & !PageEntry::NOT_DIRTY & !PageEntry::ADDRESS
@@ -2098,7 +2134,7 @@ fn resolve_write_fault_byte(root: &RootPageTable, exc_level: ExceptionLevel, tra
                                 // Ensure that the mapped entry is flushed to memory before trying
                                 // to use it.
                                 dsb_sy();
-                                return Ok(Some(block))
+                                return Ok(Some(block.assume_init()));
                             },
                             Err(_) => panic!("interference while working on temporarily unmapped page at {:#018x}", addr)
                         };
@@ -2183,7 +2219,7 @@ fn resolve_write_fault_byte(root: &RootPageTable, exc_level: ExceptionLevel, tra
                         let src = PhysPtr::<u8, *const u8>::from_addr_phys(page.address(64).try_into().unwrap()).as_virt_unchecked();
                         for i in 0 .. size2 {
                             unsafe {
-                                *block.index(i) = *src.add(i);
+                                block.index(i).write(MaybeUninit::new(*src.add(i)));
                             }
                         }
                         let new_page = page & !PageEntry::COW & !PageEntry::NOT_DIRTY & !PageEntry::ADDRESS
@@ -2192,13 +2228,13 @@ fn resolve_write_fault_byte(root: &RootPageTable, exc_level: ExceptionLevel, tra
                             Descriptor { page: temp_unmapped },
                             Descriptor { page: new_page },
                             Ordering::AcqRel,
-                            Ordering::Acquire
+                            Ordering::Acquire,
                         ) {
                             Ok(_) => {
                                 // Ensure that the mapped entry is flushed to memory before trying
                                 // to use it.
                                 dsb_sy();
-                                return Ok(Some(block))
+                                return Ok(Some(block.assume_init()))
                             },
                             Err(_) => panic!("interference while working on temporarily unmapped page at {:#018x}", addr)
                         };
@@ -2258,7 +2294,7 @@ fn resolve_write_fault_byte(root: &RootPageTable, exc_level: ExceptionLevel, tra
                             entry,
                             temp_unmapped,
                             Ordering::AcqRel,
-                            Ordering::Acquire
+                            Ordering::Acquire,
                         ) {
                             Ok(_) => {
                                 // Ensure that the unmapped entry is flushed to memory.
@@ -2270,7 +2306,7 @@ fn resolve_write_fault_byte(root: &RootPageTable, exc_level: ExceptionLevel, tra
                             Err(x) => {
                                 entry = x;
                                 continue;
-                            }
+                            },
                         };
                         // Now that we've temporarily unmapped the page, we should have exclusive
                         // access to its entry. Allocate, initialize, and map the new memory.
@@ -2282,7 +2318,7 @@ fn resolve_write_fault_byte(root: &RootPageTable, exc_level: ExceptionLevel, tra
                         // That will avoid filling the cache with useless zeroes.
                         for i in 0 .. size3 {
                             unsafe {
-                                *block.index(i) = *src.add(i);
+                                block.index(i).write(MaybeUninit::new(*src.add(i)));
                             }
                         }
                         let new_entry = entry & !PageEntry::COW & !PageEntry::NOT_DIRTY & !PageEntry::ADDRESS
@@ -2291,15 +2327,15 @@ fn resolve_write_fault_byte(root: &RootPageTable, exc_level: ExceptionLevel, tra
                             temp_unmapped,
                             new_entry,
                             Ordering::AcqRel,
-                            Ordering::Acquire
+                            Ordering::Acquire,
                         ) {
                             Ok(_) => {
                                 // Ensure that the mapped entry is flushed to memory before trying
                                 // to use it.
                                 dsb_sy();
-                                return Ok(Some(block))
+                                return Ok(Some(block.assume_init()))
                             },
-                            Err(_) => panic!("interference while working on temporarily unmapped page at {:#018x}", addr)
+                            Err(_) => panic!("interference while working on temporarily unmapped page at {:#018x}", addr),
                         };
                     } else {
                         // The thread tried to access a read-only page.

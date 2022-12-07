@@ -40,6 +40,7 @@ use {
     core::{
         convert::TryInto,
         fmt,
+        mem::MaybeUninit,
         num::NonZeroUsize,
         slice
     },
@@ -140,15 +141,22 @@ impl<T: Read+Seek> ExecImage<T> {
 
         // Clear any bytes that won't come from the file.
         if base < segment.vaddr {
-            let dest: &mut [u8] = unsafe { slice::from_raw_parts_mut(block.index(0), segment.vaddr - base) };
-            dest.iter_mut().for_each(|x| *x = 0);
+            for i in 0 .. segment.vaddr - base {
+                unsafe { block.index(i).write(MaybeUninit::new(0)); }
+            }
         }
         let block_overflows = base.checked_add(size).is_none();
         if !segment_overflows && (block_overflows || base + size > segment.vaddr + segment.file_sz) {
             let file_end = segment.vaddr + segment.file_sz;
-            let dest: &mut [u8] = unsafe { slice::from_raw_parts_mut(block.index(file_end - base), end.wrapping_sub(file_end)) };
-            dest.iter_mut().for_each(|x| *x = 0);
+            for i in file_end - base .. end.wrapping_sub(file_end) {
+                unsafe { block.index(i).write(MaybeUninit::new(0)); }
+            }
         }
+        // The block isn't fully initialized yet, but `reader.read_exact` expects `&mut [u8]`. Not
+        // ideal, but it should be fine because this is a block of plain-old-data from outside the
+        // abstract machine. (Rust has no idea where it came from, and the bytes aren't dropped
+        // when they're overwritten.)
+        let block = block.assume_init();
 
         // Read any bytes in this segment piece that are contained in the file.
         if (segment_overflows || base < segment.vaddr + segment.file_sz)
@@ -160,7 +168,7 @@ impl<T: Read+Seek> ExecImage<T> {
                 let buffer_base = usize::max(base, segment.vaddr);
                 let buffer_size = usize::min(
                     base         .wrapping_add(size)           .wrapping_sub(buffer_base),
-                    segment.vaddr.wrapping_add(segment.file_sz).wrapping_sub(buffer_base)
+                    segment.vaddr.wrapping_add(segment.file_sz).wrapping_sub(buffer_base),
                 );
                 let buffer: &mut [u8] = unsafe { slice::from_raw_parts_mut(block.index(buffer_base - base), buffer_size) };
                 reader.read_exact(buffer)
