@@ -137,9 +137,12 @@
 extern "C" {
 #endif /* __cplusplus */
 
-#if defined(__cplusplus) || !defined(__STDC_VERSION__) || __STDC_VERSION__ < 199901L
-#define restrict
-#endif /* __cplusplus or __STDC_VERSION__ */
+#if !defined(__cplusplus) && __STDC_VERSION__ >= 199901L
+/* Use a prefix allowed by POSIX */
+#define SIG_restrict restrict
+#else
+#define SIG_restrict
+#endif /* __cplusplus and __STDC_VERSION__ */
 
 typedef __SIG_ATOMIC_TYPE__ sig_atomic_t;
 typedef uint64_t            sigset_t;
@@ -200,20 +203,20 @@ void (*signal(int sig, void (*func)(int)))(int);
 int    sigqueue(pid_t pid, int sig, union sigval value);
 
 /* Handling signals */
-int    sigaction(int sig, const struct sigaction* restrict act, struct sigaction* restrict oact);
-int    sigaltstack(const stack_t* restrict ss, stack_t* restrict oss);
+int    sigaction(int sig, const struct sigaction* SIG_restrict act, struct sigaction* SIG_restrict oact);
+int    sigaltstack(const stack_t* SIG_restrict ss, stack_t* SIG_restrict oss);
 int    siginterrupt(int sig, int flag);
 
 /* Waiting for signals */
 int    sigpending(sigset_t* set);
 int    sigsuspend(const sigset_t* sigmask);
-int    sigtimedwait(const sigset_t* restrict set, siginfo_t* restrict info, const struct timespec* restrict timeout);
-int    sigwait(const sigset_t* restrict set, int* restrict sig);
-int    sigwaitinfo(const sigset_t* restrict set, siginfo_t* restrict info);
+int    sigtimedwait(const sigset_t* SIG_restrict set, siginfo_t* SIG_restrict info, const struct timespec* SIG_restrict timeout);
+int    sigwait(const sigset_t* SIG_restrict set, int* SIG_restrict sig);
+int    sigwaitinfo(const sigset_t* SIG_restrict set, siginfo_t* SIG_restrict info);
 
 /* Signal sets */
-int    pthread_sigmask(int how, const sigset_t* restrict set, sigset_t* restrict oset);
-int    sigprocmask(int how, const sigset_t* restrict set, sigset_t* restrict oset);
+int    pthread_sigmask(int how, const sigset_t* SIG_restrict set, sigset_t* SIG_restrict oset);
+int    sigprocmask(int how, const sigset_t* SIG_restrict set, sigset_t* SIG_restrict oset);
 int    sigaddset(sigset_t* set, int sig);
 int    sigdelset(sigset_t* set, int sig);
 int    sigemptyset(sigset_t* set);

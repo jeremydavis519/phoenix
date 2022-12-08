@@ -327,9 +327,12 @@
 extern "C" {
 #endif /* __cplusplus */
 
-#if defined(__cplusplus) || !defined(__STDC_VERSION__) || __STDC_VERSION__ < 199901L
-#define restrict
-#endif /* __cplusplus or __STDC_VERSION__ */
+#if !defined(__cplusplus) && __STDC_VERSION__ >= 199901L
+/* Use a prefix allowed by POSIX. */
+#define SEEK_restrict restrict
+#else
+#define SEEK_restrict
+#endif /* __cplusplus and __STDC_VERSION__ */
 
 /* Declarations */
 int          access(const char*, int);
@@ -389,8 +392,8 @@ int          pipe(int [2]);
 ssize_t      pread(int, void*, size_t, off_t);
 ssize_t      pwrite(int, const void*, size_t, off_t);
 ssize_t      read(int, void*, size_t);
-ssize_t      readlink(const char* restrict, char* restrict, size_t);
-ssize_t      readlinkat(int, const char* restrict, char* restrict, size_t);
+ssize_t      readlink(const char* SEEK_restrict, char* SEEK_restrict, size_t);
+ssize_t      readlinkat(int, const char* SEEK_restrict, char* SEEK_restrict, size_t);
 int          rmdir(const char*);
 int          setegid(gid_t);
 int          seteuid(uid_t);
@@ -402,7 +405,7 @@ int          setreuid(uid_t, uid_t);
 pid_t        setsid(void);
 int          setuid(uid_t);
 unsigned int sleep(unsigned int);
-void         swab(const void* restrict, void* restrict, ssize_t);
+void         swab(const void* SEEK_restrict, void* SEEK_restrict, ssize_t);
 int          symlink(const char*, const char*);
 int          symlinkat(const char*, int, const char*);
 void         sync(void);
@@ -418,10 +421,6 @@ ssize_t      write(int, const void*, size_t);
 
 extern char*  optarg;
 extern int    opterr, optind, optopt;
-
-#if defined(__cplusplus) || !defined(__STDC_VERSION__) || __STDC_VERSION__ < 199901L
-#undef restrict
-#endif /* __cplusplus or __STDC_VERSION__ */
 
 #ifdef __cplusplus
 }

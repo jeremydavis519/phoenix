@@ -39,9 +39,12 @@
 extern "C" {
 #endif
 
-#if defined(__cplusplus) || !defined(__STDC_VERSION__) || __STDC_VERSION__ < 199901L
-#define restrict
-#endif /* __cplusplus or __STDC_VERSION__ */
+#if !defined(__cplusplus) && __STDC_VERSION__ >= 199901L
+/* Use a prefix allowed by POSIX. */
+#define tm_restrict restrict
+#else
+#define tm_restrict
+#endif /* __cplusplus and __STDC_VERSION__ */
 
 struct sigevent;
 
@@ -76,15 +79,15 @@ int         clock_getcpuclockid(pid_t pid, clockid_t* clock_id);
 int         clock_getres(clockid_t clock_id, struct timespec* res);
 int         clock_gettime(clockid_t clock_id, struct timespec* time);
 int         clock_settime(clockid_t clock_id, struct timespec* time);
-int         timer_create(clockid_t clock_id, struct sigevent* restrict event, timer_t* restrict timer_id);
+int         timer_create(clockid_t clock_id, struct sigevent* tm_restrict event, timer_t* tm_restrict timer_id);
 int         timer_delete(timer_t timer_id);
 int         timer_getoverrun(timer_t timer_id);
 int         timer_gettime(timer_t timer_id, struct itimerspec* value);
 int         timer_settime(
-                timer_t                           timer_id,
-                int                               flags,
-                const struct itimerspec* restrict value,
-                struct itimerspec* restrict       ovalue
+                timer_t                              timer_id,
+                int                                  flags,
+                const struct itimerspec* tm_restrict value,
+                struct itimerspec* tm_restrict       ovalue
             );
 
 /* Time manipulation */
@@ -98,32 +101,28 @@ int         clock_nanosleep(clockid_t clock_id, int flags, const struct timespec
 
 /* Conversion */
 char*       asctime(const struct tm* time);
-char*       asctime_r(const struct tm* restrict time, char* restrict buf);
+char*       asctime_r(const struct tm* tm_restrict time, char* tm_restrict buf);
 char*       ctime(const time_t* time);
 char*       ctime_r(const time_t* time, char* buf);
 struct tm*  gmtime(const time_t* time);
-struct tm*  gmtime_r(const time_t* restrict time, struct tm* restrict result);
+struct tm*  gmtime_r(const time_t* tm_restrict time, struct tm* tm_restrict result);
 struct tm*  localtime(const time_t* time);
-struct tm*  localtime_r(const time_t* restrict time, struct tm* restrict result);
-size_t      strftime(char* restrict s, size_t maxsize, const char* restrict format, const struct tm* restrict time);
+struct tm*  localtime_r(const time_t* tm_restrict time, struct tm* tm_restrict result);
+size_t      strftime(char* tm_restrict s, size_t maxsize, const char* tm_restrict format, const struct tm* tm_restrict time);
 size_t      strftime_l(
-                char*            restrict s,
-                size_t           maxsize,
-                const char*      restrict format,
-                const struct tm* restrict time,
-                locale_t         locale
+                char* tm_restrict            s,
+                size_t                       maxsize,
+                const char* tm_restrict      format,
+                const struct tm* tm_restrict time,
+                locale_t                     locale
             );
-char*       strptime(const char* restrict buf, const char* restrict format, struct tm* restrict time);
+char*       strptime(const char* tm_restrict buf, const char* tm_restrict format, struct tm* tm_restrict time);
 
 /* Time zones */
 extern int      daylight;
 extern long     timezone;
 extern char*    tzname[2];
 void        tzset(void);
-
-#if defined(__cplusplus) || !defined(__STDC_VERSION__) || __STDC_VERSION__ < 199901L
-#undef restrict
-#endif /* __cplusplus or __STDC_VERSION__ */
 
 #ifdef __cplusplus
 }

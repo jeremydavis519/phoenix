@@ -25,26 +25,28 @@
 extern "C" {
 #endif
 
-#if defined(__cplusplus) || !defined(__STDC_VERSION__) || __STDC_VERSION__ < 199901L
-#define restrict
-#endif /* __cplusplus or __STDC_VERSION__ */
+#if !defined(__cplusplus) && __STDC_VERSION__ >= 199901L
+#define strrestrict restrict
+#else
+#define strrestrict
+#endif /* __cplusplus and __STDC_VERSION__ */
 
 /* Copying */
-void* memcpy(void* restrict dest, const void* restrict src, size_t count);
+void* memcpy(void* strrestrict dest, const void* strrestrict src, size_t count);
 void* memmove(void* dest, const void* src, size_t num);
-char* strcpy(char* restrict dest, const char* restrict src);
-char* strncpy(char* restrict dest, const char* restrict src, size_t count);
+char* strcpy(char* strrestrict dest, const char* strrestrict src);
+char* strncpy(char* strrestrict dest, const char* strrestrict src, size_t count);
 
 /* Concatenation */
-char* strcat(char* restrict dest, const char* restrict src);
-char* strncat(char* restrict dest, const char* restrict src, size_t count);
+char* strcat(char* strrestrict dest, const char* strrestrict src);
+char* strncat(char* strrestrict dest, const char* strrestrict src, size_t count);
 
 /* Comparison */
 int memcmp(const void* ptr1, const void* ptr2, size_t count);
 int strcmp(const char* s1, const char* s2);
 int strcoll(const char* s1, const char* s2);
 int strncmp(const char* s1, const char* s2, size_t count);
-int strxfrm(char* restrict dest, const char* restrict src, size_t count);
+int strxfrm(char* strrestrict dest, const char* strrestrict src, size_t count);
 
 /* Searching */
 void* memchr(const void* ptr, int value, size_t count);
@@ -54,7 +56,7 @@ char* strpbrk(const char* s1, const char* s2);
 char* strrchr(const char* s, int c);
 size_t strspn(const char* s1, const char* s2);
 char* strstr(const char* s1, const char* s2);
-char* strtok(char* restrict s, const char* restrict delimiters);
+char* strtok(char* strrestrict s, const char* strrestrict delimiters);
 
 /* Other */
 void* memset(void* dest, int ch, size_t count);
@@ -62,10 +64,6 @@ char* strerror(int errnum);
 char* strerror_l(int errnum, locale_t locale);
 int strerror_r(int errnum, char* strerrbuf, size_t buflen);
 size_t strlen(const char* s);
-
-#if defined(__cplusplus) || !defined(__STDC_VERSION__) || __STDC_VERSION__ < 199901L
-#undef restrict
-#endif /* __cplusplus or __STDC_VERSION__ */
 
 #ifdef __cplusplus
 }
