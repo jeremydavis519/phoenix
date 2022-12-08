@@ -19,4 +19,5 @@
 //! This module defines all the standard methods of inter-process communication (IPC) that Phoenix
 //! supports.
 
+pub mod pipe;
 pub mod sharing;

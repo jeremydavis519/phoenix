@@ -29,6 +29,7 @@
 #![feature(lang_items)]
 #![feature(layout_for_ptr)]
 #![feature(panic_info_message)]
+#![feature(ptr_sub_ptr)]
 #![feature(slice_as_chunks)]
 #![feature(slice_ptr_get)]
 #![feature(strict_provenance)]

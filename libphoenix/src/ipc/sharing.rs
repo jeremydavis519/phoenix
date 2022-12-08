@@ -58,6 +58,11 @@ impl SharedMemory {
 
         Ok(Self { bytes })
     }
+
+    /// Returns the shared memory as a raw byte slice.
+    pub fn as_raw_slice(&mut self) -> *mut [AtomicU8] {
+        self.bytes
+    }
 }
 
 impl Deref for SharedMemory {
