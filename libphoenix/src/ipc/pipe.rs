@@ -33,7 +33,7 @@ use {
         fmt,
         hint,
         mem::{self, MaybeUninit},
-        ptr::{self, addr_of, addr_of_mut},
+        ptr::{addr_of, addr_of_mut},
         sync::atomic::{AtomicU32, AtomicUsize, Ordering},
     },
     crate::{
@@ -57,22 +57,47 @@ static MIN_PIPE_SIZE: usize = PIPE_BUF * 2;
 mod ffi {
     use super::*;
 
-    /// Allocates a new pipe and returns a pointer to it, or null on error.
+    /// Allocates a new pipe and produces a reader and a writer for it.
     ///
-    /// The pipe must be freed by a call to `pipe_free`.
+    /// The pipe will be freed when all its readers and writers have been freed by
+    /// `pipe_free_reader` and `pipe_free_writer`.
+    ///
+    /// # Returns
+    /// 0 on success, or -1 if there was insufficient memory to allocate the pipe.
     #[no_mangle]
-    extern "C" fn pipe_new() -> *mut Pipe {
-        match Pipe::try_new() {
-            Ok(pipe) => Box::into_raw(Box::new(pipe)),
-            Err(AllocError) => ptr::null_mut(),
+    extern "C" fn pipe_new(reader: *mut *mut PipeReader, writer: *mut *mut PipeWriter) -> i8 {
+        let Ok(pipe) = Pipe::try_new() else {
+            return -1;
+        };
+        let Ok(pipe) = Arc::try_new(pipe) else {
+            return -1;
+        };
+        let Ok(boxed_reader) = Box::try_new(PipeReader { pipe: pipe.clone() }) else {
+            return -1;
+        };
+        let Ok(boxed_writer) = Box::try_new(PipeWriter { pipe }) else {
+            return -1;
+        };
+        unsafe {
+            *reader = Box::into_raw(boxed_reader);
+            *writer = Box::into_raw(boxed_writer);
+        }
+        0
+    }
+
+    /// Frees the given pipe reader.
+    #[no_mangle]
+    extern "C" fn pipe_free_reader(reader: *mut PipeReader) {
+        if !reader.is_null() {
+            unsafe { drop(Box::from_raw(reader)); }
         }
     }
 
-    /// Frees the given pipe.
+    /// Frees the given pipe writer.
     #[no_mangle]
-    extern "C" fn pipe_free(pipe: *mut Pipe) {
-        if !pipe.is_null() {
-            unsafe { drop(Box::from_raw(pipe)); }
+    extern "C" fn pipe_free_writer(writer: *mut PipeWriter) {
+        if !writer.is_null() {
+            unsafe { drop(Box::from_raw(writer)); }
         }
     }
 }
@@ -80,7 +105,7 @@ mod ffi {
 /// A pipe that can send serialized data from one process to another.
 #[derive(Debug)]
 pub struct Pipe {
-    buffer: SharedMemory,
+    buffer:             SharedMemory,
 }
 
 impl Pipe {
@@ -305,11 +330,14 @@ impl Drop for PipeReader {
 
 #[repr(C)]
 struct PipeBuffer {
-    readers_count: AtomicU32,
-    writers_count: AtomicU32,
-    reader_index:  AtomicUsize,
-    writer_index:  RwLock<usize>,
-    bytes:         UnsafeCell<[u8; 0]>,
+    readers_count:       AtomicU32,
+    writers_count:       AtomicU32,
+    reader_index:        AtomicUsize,
+    writer_index:        RwLock<usize>,
+    _access_time:        u64,
+    _modification_time:  u64,
+    _status_change_time: u64,
+    bytes:               UnsafeCell<[u8; 0]>,
 }
 
 impl PipeBuffer {
@@ -332,6 +360,12 @@ impl PipeBuffer {
         addr_of_mut!((*buffer).writers_count).write(AtomicU32::new(0));
         addr_of_mut!((*buffer).reader_index).write(AtomicUsize::new(0));
         addr_of_mut!((*buffer).writer_index).write(RwLock::new(0));
+
+        let timestamp = syscall::time_now_unix_nanos();
+        addr_of_mut!((*buffer)._access_time).write(timestamp);
+        addr_of_mut!((*buffer)._modification_time).write(timestamp);
+        addr_of_mut!((*buffer)._status_change_time).write(timestamp);
+
         // `bytes` can be left uninitialized.
     }
 

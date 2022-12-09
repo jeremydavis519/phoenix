@@ -39,7 +39,7 @@
 /* TODO: #define LOGIN_NAME_MAX                 {>= _POSIX_LOGIN_NAME_MAX} */
 /* TODO: #define MQ_OPEN_MAX                    {>= _POSIX_MQ_OPEN_MAX} */
 /* TODO: #define MQ_PRIO_MAX                    {>= _POSIX_MQ_PRIO_MAX} */
-/* TODO: #define OPEN_MAX                       {>= _POSIX_OPEN_MAX} */
+#define OPEN_MAX                                32
 /* #define PAGESIZE                             indeterminate */
 #ifdef PAGESIZE
 #define PAGE_SIZE                               PAGESIZE
@@ -71,7 +71,7 @@
 /* TODO: #define MAX_INPUT                      {>= _POSIX_MAX_INPUT} */
 /* TODO: #define NAME_MAX                       {>= _POSIX_NAME_MAX and >= _XOPEN_NAME_MAX} */
 /* TODO: #define PATH_MAX                       {>= _POSIX_PATH_MAX and >= _XOPEN_PATH_MAX} */
-/* TODO: #define PIPE_BUF                       {>= _POSIX_PIPE_BUF} */
+#define PIPE_BUF                                1024
 /* TODO: #define POSIX_ALLOC_SIZE_MIN           {no minimum acceptable value} */
 /* TODO: #define POSIX_REC_INCR_XFER_SIZE       {no minimum acceptable value} */
 /* TODO: #define POSIX_REC_MAX_XFER_SIZE        {no minimum acceptable value} */

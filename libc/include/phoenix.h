@@ -49,6 +49,12 @@ size_t          memory_page_size(void);
 uint64_t        time_now_unix(void);
 uint64_t        time_now_unix_nanos(void);
 
+typedef struct PipeReader PipeReader;
+typedef struct PipeWriter PipeWriter;
+int8_t          pipe_new(PipeReader** reader, PipeWriter** writer);
+void            pipe_free_reader(PipeReader* reader);
+void            pipe_free_writer(PipeWriter* writer);
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */

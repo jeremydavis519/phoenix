@@ -19,16 +19,108 @@
 /* Miscellaneous constants, types, and functions defined by POSIX
    https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/unistd.h.html */
 
+#include <errno.h>
+#include <limits.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <stdnoreturn.h>
 #include <unistd.h>
+#include <phoenix.h>
+
+#define FAIL(value) do { result = (value); goto fail; } while (0)
+#define EFAIL(errnum) do { errno = (errnum); goto fail; } while (0)
+
+typedef enum {
+    FDT_NONE        = 0,
+    FDT_PIPE_READER = 1,
+    FDT_PIPE_WRITER = 2
+} FDType;
+
+typedef struct {
+    _Atomic(FDType) type; /* Must be FDT_PIPE_READER */
+    PipeReader*     reader;
+    int             file_descriptor_flags;
+    int             file_status_flags;
+} FDPipeReader;
+
+typedef struct {
+    _Atomic(FDType) type; /* Must be FDT_PIPE_WRITER */
+    PipeWriter*     writer;
+    int             file_descriptor_flags;
+    int             file_status_flags;
+} FDPipeWriter;
+
+typedef union {
+    _Atomic(FDType) type; /* Doubles as a flag for allocating a file descriptor */
+    FDPipeReader    pipe_reader;
+    FDPipeWriter    pipe_writer;
+} FileDescription;
+
+static FileDescription file_descriptions[OPEN_MAX] = {0};
+
+/* Allocates a file descriptor and returns its index. Return -1 on failure. */
+static int allocate_file_descriptor(FDType type) {
+    for (int i = 0; i < OPEN_MAX; ++i) {
+        FDType none = FDT_NONE;
+        if (atomic_compare_exchange_strong_explicit(&file_descriptions[i].type, &none, type, memory_order_acq_rel, memory_order_acquire)) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/* Frees the given file descriptor if it passes a bounds check. */
+static void free_file_descriptor(int fildes) {
+    if (fildes < 0 || fildes >= OPEN_MAX) return;
+    atomic_store_explicit(&file_descriptions[fildes].type, FDT_NONE, memory_order_release);
+}
 
 /* TODO
 int          access(const char*, int);
 unsigned int alarm(unsigned int);
 int          chdir(const char*);
-int          chown(const char*, uid_t, gid_t);
-int          close(int);
+int          chown(const char*, uid_t, gid_t); */
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/close.html */
+int close(int fildes) {
+    if (fildes < 0 || fildes >= OPEN_MAX) EFAIL(EBADF);
+
+    FileDescription* file_description = &file_descriptions[fildes];
+
+    FDPipeReader* pr;
+    FDPipeWriter* pw;
+
+    /* FIXME: "If close() is interrupted by a signal that is to be caught, it shall return -1 with errno set to [EINTR]
+     *        and the state of fildes is unspecified." (Can we just finish closing the file descriptor anyway?) */
+    /* FIXME: "If an I/O error occurred while reading from or writing to the file system during close(), it may return -1
+     *        with errno set to [EIO]; if this error is returned, the state of fildes is unspecified." */
+
+    switch (atomic_exchange_explicit(&file_description->type, FDT_NONE, memory_order_acq_rel)) {
+    case FDT_NONE:
+        EFAIL(EBADF);
+
+    case FDT_PIPE_READER:
+        pr = &file_description->pipe_reader;
+        pipe_free_reader(pr->reader);
+        break;
+
+    case FDT_PIPE_WRITER:
+        pw = &file_description->pipe_writer;
+        pipe_free_writer(pw->writer);
+        break;
+
+    default:
+        /* Unrecognized file descriptor type. This is almost certainly a bug in libc. */
+        EFAIL(EINTERNAL);
+    }
+
+    return 0;
+
+fail:
+    return -1;
+}
+
+/* TODO
 size_t       confstr(int, char*, size_t);
 char*        crypt(const char*, const char*);
 int          dup(int);
@@ -82,8 +174,44 @@ int          lockf(int, int, off_t);
 off_t        lseek(int, off_t, int);
 int          nice(int);
 long         pathconf(const char*, int);
-int          pause(void);
-int          pipe(int [2]);
+int          pause(void); */
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/pipe.html */
+int pipe(int fildes[2]) {
+    int reader = -1, writer = -1;
+    PipeReader* pipe_reader = NULL;
+    PipeWriter* pipe_writer = NULL;
+
+    if (!pipe_new(&pipe_reader, &pipe_writer)) EFAIL(ENOMEM);
+
+    if ((reader = allocate_file_descriptor(FDT_PIPE_READER)) < 0) EFAIL(EMFILE);
+    if ((writer = allocate_file_descriptor(FDT_PIPE_WRITER)) < 0) EFAIL(EMFILE);
+
+    file_descriptions[reader].pipe_reader.reader = pipe_reader;
+    file_descriptions[reader].pipe_reader.file_descriptor_flags = 0;
+    file_descriptions[reader].pipe_reader.file_status_flags = 0;
+
+    file_descriptions[writer].pipe_writer.writer = pipe_writer;
+    file_descriptions[writer].pipe_writer.file_descriptor_flags = 0;
+    file_descriptions[writer].pipe_writer.file_status_flags = 0;
+
+    /* FIXME: "The pipe's user ID shall be set to the effective user ID of the calling process." */
+    /* FIXME: "The pipe's group ID shall be set to the effective group ID of the calling process." */
+
+    fildes[0] = reader;
+    fildes[1] = writer;
+
+    return 0;
+
+fail:
+    free_file_descriptor(reader);
+    free_file_descriptor(writer);
+    pipe_free_reader(pipe_reader);
+    pipe_free_writer(pipe_writer);
+    return -1;
+}
+
+/* TODO
 ssize_t      pread(int, void*, size_t, off_t);
 ssize_t      pwrite(int, const void*, size_t, off_t);
 ssize_t      read(int, void*, size_t);

@@ -111,4 +111,6 @@ int errno;
 #define EWOULDBLOCK     80
 #define EXDEV           81
 
+#define EINTERNAL       -1 /* Indicates an internal error in a system library. Ideally, client code should never see this. */
+
 #endif /* __PHOENIX_ERRNO_H */

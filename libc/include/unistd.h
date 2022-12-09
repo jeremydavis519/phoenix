@@ -388,7 +388,7 @@ off_t        lseek(int, off_t, int);
 int          nice(int);
 long         pathconf(const char*, int);
 int          pause(void);
-int          pipe(int [2]);
+int          pipe(int fildes[2]);
 ssize_t      pread(int, void*, size_t, off_t);
 ssize_t      pwrite(int, const void*, size_t, off_t);
 ssize_t      read(int, void*, size_t);
