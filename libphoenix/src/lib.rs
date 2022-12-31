@@ -34,8 +34,6 @@
 #![feature(slice_ptr_get)]
 #![feature(strict_provenance)]
 
-#![cfg_attr(feature = "global-allocator", feature(default_alloc_error_handler))]
-
 extern crate alloc;
 
 // FIXME: This is only here to allow compiling on an x86-64 host.
