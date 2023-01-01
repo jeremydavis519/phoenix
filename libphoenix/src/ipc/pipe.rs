@@ -105,7 +105,7 @@ mod ffi {
 /// A pipe that can send serialized data from one process to another.
 #[derive(Debug)]
 pub struct Pipe {
-    buffer:             SharedMemory,
+    buffer: SharedMemory,
 }
 
 impl Pipe {
