@@ -25,6 +25,7 @@
 #![feature(allocator_api)]
 #![feature(coerce_unsized, unsize)]
 #![feature(const_type_name)]
+#![feature(error_in_core)]
 #![feature(inline_const)]
 #![feature(lang_items)]
 #![feature(layout_for_ptr)]
@@ -32,6 +33,7 @@
 #![feature(ptr_sub_ptr)]
 #![feature(slice_as_chunks)]
 #![feature(slice_ptr_get)]
+#![feature(slice_ptr_len)]
 #![feature(strict_provenance)]
 
 extern crate alloc;
@@ -43,6 +45,8 @@ pub mod allocator;
 pub mod ipc;
 #[cfg(not(feature = "kernelspace"))]
 pub mod lock;
+#[cfg(not(feature = "kernelspace"))]
+pub mod serde;
 // FIXME: This is only here to allow compiling on an x86-64 host.
 #[cfg(all(target_arch = "aarch64", not(feature = "kernelspace")))]
 mod panic;
