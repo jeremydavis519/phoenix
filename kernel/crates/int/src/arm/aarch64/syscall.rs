@@ -302,6 +302,13 @@ fn memory_alloc(
     userspace_addr.write(match maybe_block {
         Some(ref block) => {
             if let Some(size) = NonZeroUsize::new(block.size()) {
+                // Scrub the pages.
+                // FIXME: This doesn't run in constant time. Insert pre-emption points in
+                // this loop.
+                for i in 0 .. block.size() {
+                    unsafe { block.index(i).write(MaybeUninit::new(0)); }
+                }
+
                 match root_page_table.map(
                     block.base().as_addr_phys(),
                     None,
@@ -361,6 +368,13 @@ fn memory_alloc_phys(
     userspace_and_phys_addrs.write(match maybe_block {
         Some(ref block) => {
             if let Some(size) = NonZeroUsize::new(block.size()) {
+                // Scrub the pages.
+                // FIXME: This doesn't run in constant time. Insert pre-emption points in
+                // this loop.
+                for i in 0 .. block.size() {
+                    unsafe { block.index(i).write(MaybeUninit::new(0)); }
+                }
+
                 let phys_addr = block.base().as_addr_phys();
                 match root_page_table.map(
                     phys_addr,
@@ -420,6 +434,14 @@ fn memory_alloc_shared(
     let virt_addr = match maybe_block {
         Some(block) => {
             if let Some(size) = NonZeroUsize::new(block.size()) {
+                // Scrub the pages.
+                // FIXME: This doesn't run in constant time. Insert pre-emption points in
+                // this loop.
+                for i in 0 .. block.size() {
+                    unsafe { block.index(i).write(MaybeUninit::new(0)); }
+                }
+                let block = block.assume_init();
+
                 match root_page_table.map(
                     block.base().as_addr_phys(),
                     None,
@@ -427,14 +449,6 @@ fn memory_alloc_shared(
                     memory::phys::RegionType::Ram,
                 ) {
                     Ok(addr) => {
-                        // Scrub the pages.
-                        // FIXME: This doesn't run in constant time. Insert pre-emption points in
-                        // this loop.
-                        for i in 0 .. block.size() {
-                            unsafe { block.index(i).write(MaybeUninit::new(0)); }
-                        }
-                        let block = block.assume_init();
-
                         match thread.process.shared_memory.insert_head(Box::new(Arc::new(SharedMemory::new(block, addr)))) {
                             Ok(()) => {},
                             Err(_shared_mem_record) => {
