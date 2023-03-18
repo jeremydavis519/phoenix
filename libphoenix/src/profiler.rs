@@ -1,4 +1,4 @@
-/* Copyright (c) 2021-2022 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2021-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -222,7 +222,7 @@ macro_rules! profiler_probe {
 macro_rules! profiler_probe {
     ($($prev_probe:expr)? $(=> $name:ident)?) => {
         $($prev_probe;)?
-        $(let $name = $crate::profiler::ProbeHandle { probe: &$crate::profiler::Probe };)?
+        $(static $name = $crate::profiler::ProbeHandle { probe: &$crate::profiler::Probe };)?
     };
 }
 
