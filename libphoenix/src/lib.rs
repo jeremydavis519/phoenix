@@ -65,7 +65,8 @@ pub mod thread;
 fn lang_start<T: 'static+ProcessReturnValue>(
     main: fn() -> T,
     _argc: isize,
-    _argv: *const *const u8
+    _argv: *const *const u8,
+    _sigpipe: u8,
 ) -> isize {
     let retval = main().retval();
     syscall::process_exit(retval)
