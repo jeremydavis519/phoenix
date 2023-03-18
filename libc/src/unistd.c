@@ -182,7 +182,7 @@ int pipe(int fildes[2]) {
     PipeReader* pipe_reader = NULL;
     PipeWriter* pipe_writer = NULL;
 
-    if (!pipe_new(&pipe_reader, &pipe_writer)) EFAIL(ENOMEM);
+    if (pipe_new(&pipe_reader, &pipe_writer)) EFAIL(ENOMEM);
 
     if ((reader = allocate_file_descriptor(FDT_PIPE_READER)) < 0) EFAIL(EMFILE);
     if ((writer = allocate_file_descriptor(FDT_PIPE_WRITER)) < 0) EFAIL(EMFILE);
