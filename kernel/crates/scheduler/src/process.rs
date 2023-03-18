@@ -1,4 +1,4 @@
-/* Copyright (c) 2022 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2022-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -21,7 +21,10 @@
 //! The main type in this module is `Process`, and everything else attaches to it.
 
 use {
-    alloc::sync::Arc,
+    alloc::{
+        sync::{Arc, Weak},
+        vec::Vec,
+    },
     collections::atomic::AtomicLinkedList,
     exec::ExecImage,
     io::{Read, Seek},
@@ -40,39 +43,45 @@ pub struct Process<T: Read+Seek> {
     pub exec_image: ExecImage<T>,
 
     /// A record of all the memory this process might be sharing with another.
-    pub shared_memory: Semaphore<AtomicLinkedList<SharedMemory>>,
+    pub shared_memory: Semaphore<AtomicLinkedList<Arc<SharedMemory>>>,
+
+    /// A collection of all shared memory this process can access from other processes.
+    pub sharable_memory: Vec<Weak<SharedMemory>>,
 }
 
 impl<T: Read+Seek> Process<T> {
     /// Creates a new process.
     ///
     /// The new process won't have any threads. Call `Thread::new` to make one.
-    pub fn new(exec_image: ExecImage<T>) -> Self {
-        Self { exec_image, shared_memory: AtomicLinkedList::new() }
+    pub fn new(exec_image: ExecImage<T>, sharable_memory: Vec<Weak<SharedMemory>>) -> Self {
+        Self {
+            exec_image,
+            shared_memory: AtomicLinkedList::new(),
+            sharable_memory,
+        }
     }
 }
 
 /// A record of a block of memory being shared.
-///
-/// When this object is cloned or dropped, a reference count to the shared memory is updated, and
-/// when the last one is dropped, the shared memory is deallocated.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct SharedMemory {
-    _block:    Arc<BlockMut<u8>>,
-    virt_addr: usize,
+    /// The block of memory.
+    pub block:     BlockMut<u8>,
+
+    /// The original virtual address of the block.
+    ///
+    /// This corresponds to the virtual address in the address space of the process that allocated
+    /// the block in the first place, not necessarily in the address space of the process that
+    /// holds this record.
+    pub virt_addr: usize,
 }
 
 impl SharedMemory {
     /// Creates a new record of shared memory from the given block and virtual address.
     pub fn new(block: BlockMut<u8>, virt_addr: usize) -> Self {
         Self {
-            _block: Arc::new(block),
+            block,
             virt_addr,
         }
-    }
-
-    /// Returns the virtual address of the shared memory in the appropriate address space.
-    pub fn virt_addr(&self) -> usize {
-        self.virt_addr
     }
 }

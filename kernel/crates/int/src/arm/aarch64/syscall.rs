@@ -1,4 +1,4 @@
-/* Copyright (c) 2021-2022 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2021-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -22,6 +22,7 @@ use {
     alloc::{
         alloc::AllocError,
         boxed::Box,
+        sync::Arc,
     },
     core::{
         convert::{TryFrom, TryInto},
@@ -64,7 +65,7 @@ extern {
 
 profiler_setup!();
 
-pub(crate) fn handle_system_call(
+pub(super) fn handle_system_call(
         thread: Option<&mut Thread<File>>,
         syscall: u16,
         args: &[usize; 4],
@@ -84,6 +85,7 @@ pub(crate) fn handle_system_call(
         Ok(SystemCall::Memory_Alloc) => memory_alloc(thread, args[0], args[1], result1),
         Ok(SystemCall::Memory_AllocPhys) => memory_alloc_phys(thread, args[0], args[1], args[2], result),
         Ok(SystemCall::Memory_AllocShared) => memory_alloc_shared(thread, args[0], result1),
+        Ok(SystemCall::Memory_AccessShared) => memory_access_shared(thread, args[0], args[1], result1),
         Ok(SystemCall::Memory_PageSize) => memory_page_size(result1),
 
         Ok(SystemCall::Time_NowUnix) => time_now_unix(thread, args[0], args[1], result1),
@@ -120,6 +122,7 @@ ffi_enum! {
         Memory_Alloc            = 0x0301,
         Memory_AllocPhys        = 0x0302,
         Memory_AllocShared      = 0x0303,
+        Memory_AccessShared     = 0x0304,
         Memory_PageSize         = 0x0380,
 
         Time_NowUnix            = 0x0400,
@@ -230,6 +233,7 @@ fn device_claim(
         Some(path) => path,
         None => return Response::leave_userspace(ThreadStatus::Terminated) // Part of the argument is unmapped.
     };
+    // FIXME: This doesn't run in constant time. Insert pre-emption points in `DEVICES.claim_device`.
     userspace_addr.write(DEVICES.claim_device(dev_path, thread.process.exec_image.page_table()).unwrap_or(0));
 
     profiler_probe!(ENTRANCE);
@@ -238,26 +242,41 @@ fn device_claim(
 
 
 // Frees a block of memory starting at the given address that was allocated by a system call. Kills
-// the thread if the address doesn't refer to such a block.
+// the process if the address doesn't refer to such a block.
+//
+// If the address refers to a block of shared memory, the block is not actually freed until every
+// process that has gained access to it has also called `memory_free` on it.
 fn memory_free(
     thread: Option<&mut Thread<File>>,
-    _userspace_addr: usize,
+    userspace_addr: usize,
 ) -> Response {
     profiler_probe!(=> ENTRANCE);
-    let _thread = thread.expect("kernel thread attempted to free memory with a system call");
+    let thread = thread.expect("kernel thread attempted to free memory with a system call");
 
-    // TODO: Locate the block with the given address that is owned by this thread's process. If this can't
-    //       be done in constant time, do it asynchronously.
-    // TODO: If the block isn't shared memory, drop it.
-    // TODO: If the block is shared memory, find the `SharedMemory` object in `thread.process.shared_memory`
-    //       and drop that. (Major security flaw if we don't check for shared memory here!)
+    // Handle shared memory.
+    let Ok(shared_memory) = thread.process.shared_memory.try_access_weak() else {
+        profiler_probe!(ENTRANCE);
+        return Response::retry_syscall();
+    };
+    for mem in shared_memory.iter() {
+        if mem.virt_addr == userspace_addr {
+            // FIXME: Remove `mem` from the list.
+            profiler_probe!(ENTRANCE);
+            return Response::eret();
+        }
+    }
+
+    // TODO: Locate the block with the given address that is owned by this thread's process and
+    // drop it.
+
+    // TODO: If the block wasn't found anywhere, kill the process.
 
     profiler_probe!(ENTRANCE);
     Response::eret()
 }
 
-// Asynchronously allocates a block of memory containing at least `size` bytes with at least the
-// given alignment. Returns the userspace address of the block, or null to indicate failure.
+// Allocates a block of memory containing at least `size` bytes with at least the given alignment.
+// Returns the userspace address of the block, or null to indicate failure.
 fn memory_alloc(
     thread: Option<&mut Thread<File>>,
     size: usize,
@@ -309,10 +328,9 @@ fn memory_alloc(
     Response::eret()
 }
 
-// Asynchronously allocates a physically contiguous block of memory containing at least `size` bytes
-// with at least the given alignment. Returns both the physical and the virtual address of the
-// block. This memory is guaranteed to stay resident until it is freed. On failure, both addresses
-// are null.
+// Allocates a physically contiguous block of memory containing at least `size` bytes with at least
+// the given alignment. Returns both the physical and the virtual address of the block. This memory
+// is guaranteed to stay resident until it is freed. On failure, both addresses are null.
 //
 // The physical address of every byte in the allocated block is guaranteed not to overflow an
 // unsigned binary number of length `max_bits`.
@@ -370,6 +388,14 @@ fn memory_alloc_phys(
     Response::eret()
 }
 
+// Allocates a block of memory containing `size` bytes with at least the given alignment. Returns
+// the virtual address of the block, or null on failure.
+//
+// Using this virtual address and the same `size`, a child process spawned after this system call
+// returns can gain access to the same block of memory by calling `memory_access_shared`.
+//
+// Freeing the memory is done in the usual way, by calling `memory_free`. The memory will remain
+// allocated until every process that has access to it has also freed it.
 fn memory_alloc_shared(
     thread: Option<&mut Thread<File>>,
     size: usize,
@@ -394,7 +420,6 @@ fn memory_alloc_shared(
     let virt_addr = match maybe_block {
         Some(block) => {
             if let Some(size) = NonZeroUsize::new(block.size()) {
-                // FIXME: Mark the page as shared.
                 match root_page_table.map(
                     block.base().as_addr_phys(),
                     None,
@@ -402,13 +427,15 @@ fn memory_alloc_shared(
                     memory::phys::RegionType::Ram,
                 ) {
                     Ok(addr) => {
-                        // Scrub the page.
+                        // Scrub the pages.
+                        // FIXME: This doesn't run in constant time. Insert pre-emption points in
+                        // this loop.
                         for i in 0 .. block.size() {
                             unsafe { block.index(i).write(MaybeUninit::new(0)); }
                         }
                         let block = block.assume_init();
 
-                        match thread.process.shared_memory.insert_head(Box::new(SharedMemory::new(block, addr))) {
+                        match thread.process.shared_memory.insert_head(Box::new(Arc::new(SharedMemory::new(block, addr)))) {
                             Ok(()) => {},
                             Err(_shared_mem_record) => {
                                 // TODO
@@ -431,7 +458,63 @@ fn memory_alloc_shared(
     Response::eret()
 }
 
-// Returns the size of a page.
+// Grants read-write access to a block of memory previously allocated via the `memory_alloc_shared`
+// system call. Returns the virtual address of the block, or null on failure.
+//
+// `addr` must be the value returned from `memory_alloc_shared`, and `size` must be the same size
+// that was provided to that system call. The address returned from `memory_access_shared` is not
+// guaranteed to be the same as the value of `addr`, since each process is in its own virtual
+// address space.
+//
+// The intent is for a parent process to call `memory_alloc_shared`, then spawn a child process,
+// which will then call `memory_access_shared` to open a communication channel with the parent.
+//
+// After gaining access to the memory, the process is responsible for eventually calling
+// `memory_free` on it, just as if it had allocated the memory itself. The memory will remain
+// allocated until every process that has access to it has also freed it.
+fn memory_access_shared(
+    thread: Option<&mut Thread<File>>,
+    addr: usize,
+    size: usize,
+    mut userspace_addr: Volatile<&mut usize, WriteOnly>,
+) -> Response {
+    profiler_probe!(=> ENTRANCE);
+    let thread = thread.expect("kernel thread attempted to allocate memory with a system call");
+
+    let root_page_table = thread.process.exec_image.page_table();
+
+    userspace_addr.write(0); // In case the shared memory isn't found.
+
+    for mem in thread.process.sharable_memory.iter() {
+        let Some(mem) = mem.upgrade() else { continue };
+
+        if mem.virt_addr != addr || mem.block.size() != size { continue }
+
+        let Some(size) = NonZeroUsize::new(mem.block.size()) else { break };
+        let Ok(addr) = root_page_table.map(
+            mem.block.base().as_addr_phys(),
+            None,
+            size,
+            memory::phys::RegionType::Ram,
+        ) else { break };
+
+        match thread.process.shared_memory.insert_head(Box::new(mem.clone())) {
+            Ok(()) => {},
+            Err(_shared_mem_record) => {
+                // TODO
+                todo!("prepare to retry without reallocating anything and return RetrySyscall");
+            },
+        };
+
+        userspace_addr.write(addr);
+        break
+    }
+
+    profiler_probe!(ENTRANCE);
+    Response::eret()
+}
+
+// Returns the size of a page, measured in bytes.
 fn memory_page_size(
     mut result: Volatile<&mut usize, WriteOnly>,
 ) -> Response {

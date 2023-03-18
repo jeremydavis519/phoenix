@@ -1,4 +1,4 @@
-/* Copyright (c) 2017-2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2017-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -297,7 +297,7 @@ fn shell() {
                                 match exec::read_exe(file) {
                                     Ok(image) => {
                                         let entry_point = image.entry_point;
-                                        let process = Arc::new(Process::new(image));
+                                        let process = Arc::new(Process::new(image, Vec::new()));
                                         match Thread::new(process, entry_point, 0, 0x0001_0000, 10) {
                                             Ok(thread) => scheduler::run(vec![thread]),
                                             Err(e) => println!("Error creating the thread: {}", e)
