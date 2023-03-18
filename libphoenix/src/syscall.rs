@@ -1,4 +1,4 @@
-/* Copyright (c) 2021-2022 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2021-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -198,7 +198,7 @@ pub unsafe extern "C" fn memory_free(ptr: *mut MaybeUninit<u8>) {
 /// through that allocator.
 ///
 /// # Returns
-/// The address of the allocated block, or `0` if the allocation failed.
+/// A pointer to the allocated block, or null if the allocation failed.
 #[no_mangle]
 pub extern "C" fn memory_alloc(size: usize, align: usize) -> *mut MaybeUninit<u8> {
     let addr: *mut MaybeUninit<u8>;
@@ -223,8 +223,8 @@ pub extern "C" fn memory_alloc(size: usize, align: usize) -> *mut MaybeUninit<u8
 /// buffer to its device.
 ///
 /// # Returns
-/// A struct containing the virtual and physical addresses of the allocated block. If allocation
-/// fails, both addresses are `0`. Otherwise, neither is `0`.
+/// A struct containing the virtual pointer to and physical address of the allocated block. They
+/// are null and 0 if and only if allocation fails.
 ///
 /// # Example
 /// ```
@@ -261,17 +261,16 @@ pub extern "C" fn memory_alloc_phys(size: usize, align: usize, max_bits: usize) 
 /// This is a low-level primitive for inter-process communication and should probably not be used
 /// directly. Instead, use one of the abstractions in the [`ipc` module].
 ///
-/// The memory is always aligned to a page boundary, and the given size is rounded up to a multiple
-/// of the page size (see [`memory_page_size`]).
+/// The memory will not be shared with any existing processes, but any child process created after
+/// the memory is allocated can call [`memory_access_shared`] to get read-write access to it.
 ///
-/// The memory will not be immediately shared, but it will be shared automatically with any child
-/// processes that are created after it is allocated.
+/// Freeing the memory is done via [`memory_free`]. The memory will not actually be freed until
+/// every process that has gained access has also called `memory_free`.
 ///
 /// # Returns
-/// The address of the allocated block, or `0` if the allocation failed.
+/// A pointer to the allocated block, or null if the allocation failed.
 ///
-/// [`ipc` module]: ../ipc/index.html
-/// [`memory_page_size`]: fn.memory_page_size.html
+/// [`ipc` module]: super::ipc
 #[no_mangle]
 pub extern "C" fn memory_alloc_shared(size: usize) -> *mut MaybeUninit<u8> {
     let addr: *mut MaybeUninit<u8>;
@@ -279,6 +278,40 @@ pub extern "C" fn memory_alloc_shared(size: usize) -> *mut MaybeUninit<u8> {
         asm!(
             "svc 0x0303",
             in("x2") size,
+            lateout("x0") addr,
+            options(nomem, nostack, preserves_flags),
+        );
+    }
+    addr
+}
+
+/// Requests access to a block of shared virtual memory.
+///
+/// This is a low-level primitive for inter-process communication and should probably not be used
+/// directly. Instead, use one of the abstractions in the [`ipc` module].
+///
+/// `orig_addr` and `size` must be the address and size of a block of shared memory as returned by
+/// [`memory_alloc_shared`]. Note that `orig_addr` is the address of the block in the _original_
+/// process's address space, hence the name. The pointer returned by this system call is not
+/// guaranteed to have the same address.
+///
+/// Any process that gains access to shared memory is responsible for eventually calling
+/// [`memory_free`]. The memory will not actually be freed until every process that has gained
+/// access has also called `memory_free`.
+///
+/// # Returns
+/// A pointer to the block of shared memory, or null if the block can't be accessed (e.g. if it has
+/// already been freed).
+///
+/// [`ipc` module]: super::ipc
+#[no_mangle]
+pub extern "C" fn memory_access_shared(orig_addr: usize, size: usize) -> *mut MaybeUninit<u8> {
+    let addr: *mut MaybeUninit<u8>;
+    unsafe {
+        asm!(
+            "svc 0x0304",
+            in("x2") orig_addr,
+            in("x3") size,
             lateout("x0") addr,
             options(nomem, nostack, preserves_flags),
         );

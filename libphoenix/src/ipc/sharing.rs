@@ -125,13 +125,12 @@ impl Deserialize for SharedMemory {
         let addr = usize::try_from(addr).map_err(|_| DeserializeError)?;
         let len = usize::try_from(len).map_err(|_| DeserializeError)?;
 
-        let Some(ptr) = syscall::memory_get_shared(addr, len) else { return Err(DeserializeError) };
+        let ptr = syscall::memory_access_shared(addr, len);
+
+        let len = if ptr.is_null() { 0 } else { len };
 
         Ok(Self {
-            bytes: ptr::slice_from_raw_parts_mut(
-                ptr.as_mut_ptr().cast::<AtomicU8>(),
-                ptr.len(),
-            ),
+            bytes: ptr::slice_from_raw_parts_mut(ptr.cast::<AtomicU8>(), len)
         })
     }
 }
