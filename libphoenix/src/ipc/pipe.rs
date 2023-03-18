@@ -67,18 +67,10 @@ mod ffi {
     /// 0 on success, or -1 if there was insufficient memory to allocate the pipe.
     #[no_mangle]
     extern "C" fn pipe_new(reader: *mut *mut PipeReader, writer: *mut *mut PipeWriter) -> i8 {
-        let Ok(pipe) = Pipe::try_new() else {
-            return -1;
-        };
-        let Ok(pipe) = Arc::try_new(pipe) else {
-            return -1;
-        };
-        let Ok(boxed_reader) = Box::try_new(PipeReader { pipe: pipe.clone() }) else {
-            return -1;
-        };
-        let Ok(boxed_writer) = Box::try_new(PipeWriter { pipe }) else {
-            return -1;
-        };
+        let Ok(pipe) = Pipe::try_new() else { return -1 };
+        let Ok(pipe) = Arc::try_new(pipe) else { return -1 };
+        let Ok(boxed_reader) = Box::try_new(PipeReader { pipe: pipe.clone() }) else { return -1 };
+        let Ok(boxed_writer) = Box::try_new(PipeWriter { pipe }) else { return -1 };
         unsafe {
             *reader = Box::into_raw(boxed_reader);
             *writer = Box::into_raw(boxed_writer);
