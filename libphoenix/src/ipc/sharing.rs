@@ -1,4 +1,4 @@
-/* Copyright (c) 2022 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2022-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -25,11 +25,15 @@
 use {
     alloc::alloc::AllocError,
     core::{
+        convert::TryFrom,
         ops::Deref,
         ptr,
         sync::atomic::AtomicU8,
     },
-    crate::syscall,
+    crate::{
+        serde::{Serialize, Deserialize, Serializer, Deserializer, SerializeError, DeserializeError, serialize_object},
+        syscall,
+    },
 };
 
 /// An RAII-enabled representation of a shared memory block.
@@ -76,5 +80,58 @@ impl Deref for SharedMemory {
 impl Drop for SharedMemory {
     fn drop(&mut self) {
         unsafe { syscall::memory_free(self.bytes.as_mut_ptr().cast()); }
+    }
+}
+
+impl Serialize for SharedMemory {
+    fn serialize<S: Serializer + ?Sized>(&self, s: &mut S) -> Result<(), SerializeError> {
+        let addr = u64::try_from(self.bytes.cast::<AtomicU8>().addr())
+            .map_err(|_| SerializeError)?;
+        let len = u64::try_from(self.bytes.len())
+            .map_err(|_| SerializeError)?;
+
+        serialize_object!(s, {
+            "addr" => |s| s.u64(addr),
+            "len"  => |s| s.u64(len),
+        })
+    }
+}
+
+impl Deserialize for SharedMemory {
+    fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<Self, DeserializeError> {
+        let mut addr = None;
+        let mut len = None;
+
+        d.object(|field_name, mut deserializer| {
+            match field_name {
+                "addr" => {
+                    if addr.is_some() { return Err(DeserializeError); }
+                    let val = deserializer.u64()?;
+                    addr = Some(val);
+                },
+                "len" => {
+                    if len.is_some() { return Err(DeserializeError); }
+                    let val = deserializer.u64()?;
+                    len = Some(val);
+                },
+                _ => return Err(DeserializeError),
+            };
+            Ok(())
+        })?;
+
+        let Some(addr) = addr else { return Err(DeserializeError) };
+        let Some(len) = len else { return Err(DeserializeError) };
+
+        let addr = usize::try_from(addr).map_err(|_| DeserializeError)?;
+        let len = usize::try_from(len).map_err(|_| DeserializeError)?;
+
+        let Some(ptr) = syscall::memory_get_shared(addr, len) else { return Err(DeserializeError) };
+
+        Ok(Self {
+            bytes: ptr::slice_from_raw_parts_mut(
+                ptr.as_mut_ptr().cast::<AtomicU8>(),
+                ptr.len(),
+            ),
+        })
     }
 }

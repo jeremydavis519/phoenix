@@ -1,4 +1,4 @@
-/* Copyright (c) 2022 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2022-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -39,6 +39,7 @@ use {
     crate::{
         ipc::sharing::SharedMemory,
         lock::{RwLock, TryLockError},
+        serde::{Serialize, Deserialize, Serializer, Deserializer, SerializeError, DeserializeError, serialize_object},
         syscall,
     },
 };
@@ -140,6 +141,18 @@ impl Pipe {
     }
 }
 
+impl Serialize for Pipe {
+    fn serialize<S: Serializer + ?Sized>(&self, s: &mut S) -> Result<(), SerializeError> {
+        self.buffer.serialize(s)
+    }
+}
+
+impl Deserialize for Pipe {
+    fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<Self, DeserializeError> {
+        Ok(Pipe { buffer: d.deserialize::<SharedMemory>()? })
+    }
+}
+
 /// An object that can push data into a pipe.
 #[derive(Debug)]
 pub struct PipeWriter {
@@ -153,6 +166,8 @@ pub struct PipeReader {
 }
 
 impl PipeWriter {
+    const SERIALIZED_TYPE: &str = "pipe-writer";
+
     /// Writes bytes from the given buffer to the pipe.
     ///
     /// This works similarly to POSIX's rules for when `O_NONBLOCK` is set
@@ -232,6 +247,8 @@ impl PipeWriter {
 }
 
 impl PipeReader {
+    const SERIALIZED_TYPE: &str = "pipe-reader";
+
     /// Reads bytes from the pipe into the given buffer.
     ///
     /// This works similarly to POSIX's rules for when `O_NONBLOCK` is set, but with a few
@@ -269,6 +286,84 @@ impl PipeReader {
             syscall::thread_sleep(0);
         }
         Ok(())
+    }
+}
+
+impl Serialize for PipeWriter {
+    fn serialize<S: Serializer + ?Sized>(&self, s: &mut S) -> Result<(), SerializeError> {
+        serialize_object!(s, {
+            "type" => |s| s.string(Self::SERIALIZED_TYPE),
+            "pipe" => |s| s.serialize(&self.pipe),
+        })
+    }
+}
+
+impl Deserialize for PipeWriter {
+    fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<Self, DeserializeError> {
+        let mut ty = None;
+        let mut pipe = None;
+
+        d.object(|field_name, mut deserializer| {
+            match field_name {
+                "type" => {
+                    if ty.is_some() { return Err(DeserializeError); }
+                    let val = deserializer.string()?;
+                    if val != Self::SERIALIZED_TYPE { return Err(DeserializeError); }
+                    ty = Some(val);
+                },
+                "pipe" => {
+                    if pipe.is_some() { return Err(DeserializeError); }
+                    let val = deserializer.deserialize::<Arc<Pipe>>()?;
+                    pipe = Some(val);
+                },
+                _ => return Err(DeserializeError),
+            };
+            Ok(())
+        })?;
+
+        let Some(_) = ty else { return Err(DeserializeError) };
+        let Some(pipe) = pipe else { return Err(DeserializeError) };
+
+        Ok(Self { pipe })
+    }
+}
+
+impl Serialize for PipeReader {
+    fn serialize<S: Serializer + ?Sized>(&self, s: &mut S) -> Result<(), SerializeError> {
+        serialize_object!(s, {
+            "type" => |s| s.string(Self::SERIALIZED_TYPE),
+            "pipe" => |s| s.serialize(&self.pipe),
+        })
+    }
+}
+
+impl Deserialize for PipeReader {
+    fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<Self, DeserializeError> {
+        let mut ty = None;
+        let mut pipe = None;
+
+        d.object(|field_name, mut deserializer| {
+            match field_name {
+                "type" => {
+                    if ty.is_some() { return Err(DeserializeError); }
+                    let val = deserializer.string()?;
+                    if val != Self::SERIALIZED_TYPE { return Err(DeserializeError); }
+                    ty = Some(val);
+                },
+                "pipe" => {
+                    if pipe.is_some() { return Err(DeserializeError); }
+                    let val = deserializer.deserialize::<Arc::<Pipe>>()?;
+                    pipe = Some(val);
+                },
+                _ => return Err(DeserializeError),
+            };
+            Ok(())
+        })?;
+
+        let Some(_) = ty else { return Err(DeserializeError) };
+        let Some(pipe) = pipe else { return Err(DeserializeError) };
+
+        Ok(Self { pipe })
     }
 }
 

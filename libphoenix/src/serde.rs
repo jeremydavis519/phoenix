@@ -125,7 +125,7 @@ pub trait Serializer {
 /// This macro smooths over the rough edges that can be found in that API. It can be used like
 /// this:
 /// ```
-/// fn foo<S: Serializer>(s: Serializer) -> Result<(), SerializeError> {
+/// fn foo<S: Serializer>(s: &mut Serializer) -> Result<(), SerializeError> {
 ///     serialize_object!(s {
 ///         "bar" => |s| s.u32(42),
 ///         "baz" => |s| s.string("value"),
@@ -141,7 +141,7 @@ macro_rules! __serde_serialize_object__ {
         }
     ) => {
         $crate::serde::Serializer::object(
-            &mut $s,
+            $s,
             ::core::iter::empty()$(.chain(::core::iter::once($name)))*,
             |serializers| {
                 let mut serializers = serializers.into_iter();
@@ -150,7 +150,7 @@ macro_rules! __serde_serialize_object__ {
                         // A little convoluted, but Rust's type inference can't handle real
                         // closures in this context.
                         let $serializer$(: $t)? = s;
-                        $serialize
+                        $serialize?;
                     },
                     None => {
                         // Not enough serializers were provided.
@@ -397,7 +397,7 @@ impl<T: Serialize> Serialize for Rc<T> {
 impl<T: Deserialize> Deserialize for Rc<T> where Rc<T>: Any {
     fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<Self, DeserializeError> {
         let index = d.u32()?;
-        d.deserialize_once(index, |deserializer| {
+        d.deserialize_once(index, |mut deserializer| {
             let val = deserializer.deserialize::<T>()?;
             Rc::try_new(val)
                 // FIXME: Make allocation errors distinguishable from parsing errors.
@@ -416,7 +416,7 @@ impl<T: Serialize> Serialize for Arc<T> {
 impl<T: Deserialize> Deserialize for Arc<T> where Arc<T>: Any {
     fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<Self, DeserializeError> {
         let index = d.u32()?;
-        d.deserialize_once(index, |deserializer| {
+        d.deserialize_once(index, |mut deserializer| {
             let val = deserializer.deserialize::<T>()?;
             Arc::try_new(val)
                 // FIXME: Make allocation errors distinguishable from parsing errors.
