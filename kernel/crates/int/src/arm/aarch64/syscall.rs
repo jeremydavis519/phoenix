@@ -213,6 +213,8 @@ fn process_exit(thread: Option<&mut Thread<File>>, status: usize) -> Response {
 //
 // If the device doesn't exist, or the process lacks the necessary permission (and the user doesn't
 // grant it that permission), this returns a null pointer.
+// FIXME: Change every non-constant-time system call into an async fn to allow pre-empting the
+// thread.
 fn device_claim(
         thread: Option<&mut Thread<File>>,
         dev_name_userspace_addr: usize,
@@ -246,6 +248,8 @@ fn device_claim(
 //
 // If the address refers to a block of shared memory, the block is not actually freed until every
 // process that has gained access to it has also called `memory_free` on it.
+// FIXME: Change every non-constant-time system call into an async fn to allow pre-empting the
+// thread.
 fn memory_free(
     thread: Option<&mut Thread<File>>,
     userspace_addr: usize,
@@ -277,6 +281,8 @@ fn memory_free(
 
 // Allocates a block of memory containing at least `size` bytes with at least the given alignment.
 // Returns the userspace address of the block, or null to indicate failure.
+// FIXME: Change every non-constant-time system call into an async fn to allow pre-empting the
+// thread.
 fn memory_alloc(
     thread: Option<&mut Thread<File>>,
     size: usize,
@@ -341,6 +347,8 @@ fn memory_alloc(
 //
 // The physical address of every byte in the allocated block is guaranteed not to overflow an
 // unsigned binary number of length `max_bits`.
+// FIXME: Change every non-constant-time system call into an async fn to allow pre-empting the
+// thread.
 fn memory_alloc_phys(
     thread: Option<&mut Thread<File>>,
     size: usize,
@@ -410,6 +418,8 @@ fn memory_alloc_phys(
 //
 // Freeing the memory is done in the usual way, by calling `memory_free`. The memory will remain
 // allocated until every process that has access to it has also freed it.
+// FIXME: Change every non-constant-time system call into an async fn to allow pre-empting the
+// thread.
 fn memory_alloc_shared(
     thread: Option<&mut Thread<File>>,
     size: usize,
@@ -486,6 +496,8 @@ fn memory_alloc_shared(
 // After gaining access to the memory, the process is responsible for eventually calling
 // `memory_free` on it, just as if it had allocated the memory itself. The memory will remain
 // allocated until every process that has access to it has also freed it.
+// FIXME: Change every non-constant-time system call into an async fn to allow pre-empting the
+// thread.
 fn memory_access_shared(
     thread: Option<&mut Thread<File>>,
     addr: usize,
@@ -549,7 +561,11 @@ fn time_now_unix(
     profiler_probe!(=> ENTRANCE);
     let thread = thread.expect("kernel thread attempted to read the time with a system call");
 
-    let time_selector = TimeSelector::try_from(time_selector).unwrap_or(TimeSelector::Now);
+    let Ok(time_selector) = TimeSelector::try_from(time_selector) else {
+        result.write(0);
+        profiler_probe!(ENTRANCE);
+        return Response::eret()
+    };
     match time_selector {
         TimeSelector::Now => thread.saved_time = time::SystemTime::now(),
         TimeSelector::Saved => {}
@@ -577,7 +593,11 @@ fn time_now_unix_nanos(
     profiler_probe!(=> ENTRANCE);
     let thread = thread.expect("kernel thread attempted to read the time with a system call");
 
-    let time_selector = TimeSelector::try_from(time_selector).unwrap_or(TimeSelector::Now);
+    let Ok(time_selector) = TimeSelector::try_from(time_selector) else {
+        result.write(0);
+        profiler_probe!(ENTRANCE);
+        return Response::eret()
+    };
     match time_selector {
         TimeSelector::Now => thread.saved_time = time::SystemTime::now(),
         TimeSelector::Saved => {}
