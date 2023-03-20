@@ -1,4 +1,4 @@
-/* Copyright (c) 2022 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2022-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -22,41 +22,42 @@
 // NOTE: Many of the parser rules in this file are rearranged from those in the standard. Since we
 //       don't bother with a preliminary tokenization step, this is necessary to actually follow the
 //       standard. The generic terminal symbols like `identifier` are required not to eclipse any
-//       specific tokens specified in the non-terminal rules (matched in here by `keyword`, `token`,
-//       and `tag`).
+//       specific tokens specified in the non-terminal rules (matched in here by `token` and `tag`).
 
 // NOTE: This parser does not fully validate the given IDL, but (except as outlined in the
 //       documentation for the crate's root module) it does accept all IDL fragments that are valid.
 //       It just fails to reject some invalid ones.
 
 use {
-    std::{
-        cell::RefCell,
-        collections::{HashMap, HashSet},
-        iter,
-        str::FromStr
-    },
-    proc_macro::{
-        TokenStream,
-        TokenTree,
-        Ident,
-        Literal,
-        Span,
-        quote
-    },
+    std::str::FromStr,
     nom::{
-        branch::alt,
+        IResult,
+        branch::*,
         bytes::complete::*,
         character::complete::*,
         combinator::*,
-        error::{Error, ErrorKind},
         multi::*,
         sequence::*,
-        IResult
-    }
+    },
+    crate::ast::*,
 };
 
+pub fn parse(input: &str) -> Result<Definitions, nom::Err<nom::error::Error<&str>>> {
+    let (_, ast) = all_consuming(
+        terminated(definitions, ws_and_comments)
+    )(&input)?;
+
+    Ok(ast)
+}
+
 // https://webidl.spec.whatwg.org/#index-prod-Definitions
+fn definitions(input: &str) -> IResult<&str, Definitions> {
+    map(
+        many0(pair(extended_attribute_list, definition)),
+        |defs| Definitions { defs }
+    )(input)
+}
+/* FIXME: Remove this.
 pub fn parse_definitions(idl: &str) -> TokenStream {
     // This line does some lifetime-based magic that somehow convinces the borrow checker that everything's okay.
     // It seems to break if an attempt is made to use named lifetimes, and I don't understand why.
@@ -88,10 +89,12 @@ pub fn parse_definitions(idl: &str) -> TokenStream {
     }
 
     tts
-}
+}*/
 
-type ParseResult<'a, T> = IResult<&'a str, T>;
+/* FIXME: Remove this.
+type ParseResult<'a, T> = IResult<&'a str, T>;*/
 
+/* FIXME: Remove this.
 struct Parser<'a> {
     current_type:                RefCell<TokenStream>,
     mod_ident:                   RefCell<TokenStream>,
@@ -150,44 +153,57 @@ impl<'a> Parser<'a> {
                 })
         );
         union_types
-    }
+    }*/
 
-    // https://webidl.spec.whatwg.org/#index-prod-Definition
-    fn definition(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            alt((
-                self.callback_or_interface_or_mixin(),
-                self.namespace(),
-                self.partial(),
-                self.dictionary(),
-                self.idl_enum(),
-                self.typedef(),
-                self.includes_statement()
-            ))(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-Definition
+fn definition(input: &str) -> IResult<&str, Definition> {
+    alt((
+        callback_or_interface_or_mixin,
+        map(namespace, |ns| Definition::Namespace(ns)),
+        // Note: We don't support partial definitions.
+        map(dictionary, |d| Definition::Dictionary(d)),
+        map(enum_, |e| Definition::Enum(e)),
+        map(typedef, |td| Definition::Typedef(td)),
+        // Note: We don't support includes statements.
+    ))(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-CallbackOrInterfaceOrMixin
-    fn callback_or_interface_or_mixin(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            alt((
-                preceded(self.keyword("callback"), self.callback_rest_or_interface()),
-                preceded(self.keyword("interface"), self.interface_or_mixin())
-            ))(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-CallbackOrInterfaceOrMixin
+fn callback_or_interface_or_mixin(input: &str) -> IResult<&str, Definition> {
+    preceded(
+        ws_and_comments,
+        alt((
+            preceded(tag("callback"), callback_rest_or_interface),
+            map(
+                preceded(tag("interface"), interface_or_mixin),
+                |i| Definition::Interface(i),
+            ),
+        )),
+    )(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-InterfaceOrMixin
-    fn interface_or_mixin(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            alt((
-                self.mixin_rest(),
-                self.interface_rest()
-            ))(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-InterfaceOrMixin
+fn interface_or_mixin(input: &str) -> IResult<&str, Interface> {
+    interface_rest(input)
+    // Note: We don't support mixins.
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-InterfaceRest
+// https://webidl.spec.whatwg.org/#index-prod-InterfaceRest
+fn interface_rest(input: &str) -> IResult<&str, Interface> {
+    map(
+        tuple((
+            identifier,
+            inheritance,
+            delimited(token("{"), interface_members, pair(token("}"), token(";")))
+        )),
+        |(ident, inheritance, members)| Interface {
+            ident,
+            inheritance,
+            members,
+        },
+    )(input)
+}
+/* FIXME: Remove this.
     fn interface_rest(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
         |input| {
             map(
@@ -267,215 +283,69 @@ impl<'a> Parser<'a> {
                 }
             )(input)
         }
-    }
+    }*/
 
-    // https://webidl.spec.whatwg.org/#index-prod-Partial
-    fn partial(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            preceded(self.keyword("partial"), self.partial_definition())(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-InterfaceMembers
+fn interface_members(input: &str) -> IResult<&str, Vec<(ExtendedAttributes, InterfaceMember)>> {
+    many0(pair(extended_attribute_list, interface_member))(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-PartialDefinition
-    fn partial_definition(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            alt((
-                preceded(self.keyword("interface"), self.partial_interface_or_partial_mixin()),
-                self.partial_dictionary(),
-                self.namespace()
-            ))(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-InterfaceMember
+fn interface_member(input: &str) -> IResult<&str, InterfaceMember> {
+    alt((
+        map(constructor, |op| InterfaceMember::Constructor(op)),
+        partial_interface_member,
+    ))(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-PartialInterfaceOrPartialMixin
-    fn partial_interface_or_partial_mixin(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            alt((
-                self.mixin_rest(),
-                self.partial_interface_rest()
-            ))(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-PartialInterfaceMember
+fn partial_interface_member(input: &str) -> IResult<&str, InterfaceMember> {
+    alt((
+        map(const_, |c| InterfaceMember::Const(c)),
+        map(operation, |o| InterfaceMember::Operation(ExtendedAttributes::new(), o)),
+        map(stringifier, |s| InterfaceMember::Stringifier(s)),
+        map(static_member, |m| InterfaceMember::StaticMember(m)),
+        map(iterable, |i| InterfaceMember::Iterable(i)),
+        map(async_iterable, |i| InterfaceMember::Iterable(i)),
+        read_only_member,
+        map(read_write_attribute, |a| InterfaceMember::Attribute(a)),
+        map(read_write_maplike, |m| InterfaceMember::Maplike(m)),
+        map(read_write_setlike, |s| InterfaceMember::Setlike(s)),
+        map(inherit_attribute, |a| InterfaceMember::Attribute(a)),
+    ))(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-PartialInterfaceRest
-    fn partial_interface_rest(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            map(
+// https://webidl.spec.whatwg.org/#index-prod-Inheritance
+fn inheritance(input: &str) -> IResult<&str, Option<Identifier>> {
+    opt(identifier)(input)
+}
+
+// https://webidl.spec.whatwg.org/#index-prod-CallbackRestOrInterface
+fn callback_rest_or_interface(input: &str) -> IResult<&str, Definition> {
+    alt((
+        map(callback_rest, |cb| Definition::CallbackFunction(cb)),
+        map(
+            preceded(
+                token("interface"),
                 pair(
-                    self.identifier(),
+                    identifier,
                     delimited(
-                        self.token('{'),
-                        self.partial_interface_members(),
-                        pair(self.token('}'), self.token(';'))
-                    )
-                ),
-                |(ident, members)| quote!(pub trait $ident { $members })
-            )(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-InterfaceMembers
-    fn interface_members(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            fold_many0(
-                preceded(self.extended_attribute_list(&self.member_attrs), self.interface_member()),
-                TokenStream::new,
-                |tts, member| {
-                    assert!(self.member_attrs.borrow().is_empty(), "didn't use the extended attributes");
-                    quote!($tts $member)
-                }
-            )(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-InterfaceMember
-    fn interface_member(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            alt((
-                self.constructor(),
-                self.partial_interface_member()
-            ))(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-PartialInterfaceMembers
-    fn partial_interface_members(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            fold_many0(
-                preceded(self.extended_attribute_list(&self.member_attrs), self.partial_interface_member()),
-                TokenStream::new,
-                |tts, member| {
-                    assert!(self.member_attrs.borrow().is_empty(), "didn't use the extended attributes");
-                    quote!($tts $member)
-                }
-            )(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-PartialInterfaceMember
-    fn partial_interface_member(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            alt((
-                map(
-                    self.idl_const(),
-                    |tts| {
-                        // For object safety, a trait's constants can't be copied inline.
-                        self.interface_consts.borrow_mut().extend(tts);
-                        TokenStream::new()
-                    }
-                ),
-                self.stringifier(),
-                self.static_member(),
-                self.iterable(),
-                self.async_iterable(),
-                self.read_only_member(),
-                self.read_write_attribute(),
-                self.read_write_maplike(),
-                self.read_write_setlike(),
-                self.inherit_attribute(),
-                self.operation()
-            ))(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-Inheritance
-    fn inheritance(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, Option<TokenStream>> {
-        |input| {
-            map(
-                opt(preceded(self.token(':'), self.identifier())),
-                |opt_ident| {
-                    match opt_ident {
-                        Some(ref ident) => self.interface_parent_ident.replace(ident.clone()),
-                        None => self.interface_parent_ident.replace(TokenStream::new())
-                    };
-                    opt_ident
-                }
-            )(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-MixinRest
-    fn mixin_rest(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            map(
-                preceded(
-                    self.keyword("mixin"),
-                    pair(
-                        self.identifier(),
-                        delimited(
-                            self.token('{'),
-                            self.mixin_members(),
-                            pair(self.token('}'), self.token(';'))
-                        )
-                    )
-                ),
-                |(ident, members)| {
-                    let tts = todo!("mixin_rest");
-
-                    for attr in self.definition_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ExtendedAttribute::Ident("Exposed", _) |
-                            ExtendedAttribute::IdentList("Exposed", _) |
-                            ExtendedAttribute::Wildcard("Exposed") => {},
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                }
-            )(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-MixinMembers
-    fn mixin_members(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            fold_many0(
-                preceded(self.extended_attribute_list(&self.member_attrs), self.mixin_member()),
-                TokenStream::new,
-                |tts, member| {
-                    assert!(self.member_attrs.borrow().is_empty(), "didn't use the extended attributes");
-                    quote!($tts $member)
-                }
-            )(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-MixinMember
-    fn mixin_member(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            alt((
-                self.idl_const(),
-                self.stringifier(),
-                map(
-                    pair(self.optional_read_only(), self.attribute_rest()),
-                    |(ro, attr)| todo!("mixin_member")
-                ),
-                self.regular_operation()
-            ))(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-IncludesStatement
-    fn includes_statement(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            map(
-                terminated(
-                    separated_pair(
-                        self.identifier(),
-                        self.keyword("includes"),
-                        self.identifier()
+                        token("{"),
+                        callback_interface_members,
+                        pair(token("}"), token(";"))
                     ),
-                    self.token(';')
                 ),
-                |(ident1, ident2)| todo!("includes_statement")
-            )(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-CallbackRestOrInterface
+            ),
+            |(ident, members)| Definition::CallbackInterface(
+                CallbackInterface {
+                    ident,
+                    members,
+                }
+            ),
+        ),
+    ))(input)
+}
+/* FIXME: Remove this.
     fn callback_rest_or_interface(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
         |input| {
             alt((
@@ -540,315 +410,179 @@ impl<'a> Parser<'a> {
                 )
             ))(input)
         }
-    }
+    }*/
 
-    // https://webidl.spec.whatwg.org/#index-prod-CallbackInterfaceMembers
-    fn callback_interface_members(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            fold_many0(
-                preceded(self.extended_attribute_list(&self.member_attrs), self.callback_interface_member()),
-                TokenStream::new,
-                |members, member| quote!($members $member)
-            )(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-CallbackInterfaceMembers
+fn callback_interface_members(input: &str) -> IResult<&str, Vec<(ExtendedAttributes, CallbackInterfaceMember)>> {
+    many0(pair(extended_attribute_list, callback_interface_member))(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-CallbackInterfaceMember
-    fn callback_interface_member(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            alt((
-                map(
-                    self.idl_const(),
-                    |tts| {
-                        // For object safety, a trait's constants can't be copied inline.
-                        self.interface_consts.borrow_mut().extend(tts);
-                        TokenStream::new()
-                    }
-                ),
-                self.regular_operation()
-            ))(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-CallbackInterfaceMember
+fn callback_interface_member(input: &str) -> IResult<&str, CallbackInterfaceMember> {
+    alt((
+        map(const_, |c| CallbackInterfaceMember::Const(c)),
+        map(regular_operation, |op| CallbackInterfaceMember::Operation(op)),
+    ))(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-Const
-    fn idl_const(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            map(
-                delimited(
-                    self.keyword("const"),
-                    tuple((
-                        self.const_type(),
-                        self.identifier(),
-                        preceded(self.token('='), self.const_value())
-                    )),
-                    self.token(';')
-                ),
-                |(ty, ident, val)| {
-                    let mut tts = quote!(pub const $ident: $ty = $val;);
+// https://webidl.spec.whatwg.org/#index-prod-Const
+fn const_(input: &str) -> IResult<&str, Const> {
+    map(
+        delimited(
+            token("const"),
+            tuple((
+                const_type,
+                identifier,
+                preceded(token("="), const_value),
+            )),
+            token(";"),
+        ),
+        |(ty, ident, value)| Const { ty, ident, value },
+    )(input)
+}
 
-                    for attr in self.member_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ExtendedAttribute::Ident("Exposed", _) |
-                            ExtendedAttribute::IdentList("Exposed", _) |
-                            ExtendedAttribute::Wildcard("Exposed") => {},
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
+// https://webidl.spec.whatwg.org/#index-prod-ConstValue
+fn const_value(input: &str) -> IResult<&str, ConstValue> {
+    alt((
+        map(boolean_literal, |b| ConstValue::Bool(b)),
+        map(float_literal, |f| ConstValue::Float(f)),
+        map(integer, |i| ConstValue::Int(i)),
+    ))(input)
+}
+
+// https://webidl.spec.whatwg.org/#index-prod-BooleanLiteral
+fn boolean_literal(input: &str) -> IResult<&str, bool> {
+    alt((
+        value(true, token("true")),
+        value(false, token("false")),
+    ))(input)
+}
+
+// https://webidl.spec.whatwg.org/#index-prod-FloatLiteral
+fn float_literal(input: &str) -> IResult<&str, f64> {
+    alt((
+        value(f64::NEG_INFINITY, token("-Infinity")),
+        value(f64::INFINITY, token("Infinity")),
+        value(f64::NAN, token("NaN")),
+        decimal,
+    ))(input)
+}
+
+// https://webidl.spec.whatwg.org/#index-prod-ConstType
+fn const_type(input: &str) -> IResult<&str, SimpleNonnullableType> {
+    alt((
+        primitive_type,
+        map(
+            identifier,
+            |ident| SimpleNonnullableType::Identifier(ident),
+        ),
+    ))(input)
+}
+
+// https://webidl.spec.whatwg.org/#index-prod-ReadOnlyMember
+fn read_only_member(input: &str) -> IResult<&str, InterfaceMember> {
+    preceded(token("readonly"), read_only_member_rest)(input)
+}
+
+// https://webidl.spec.whatwg.org/#index-prod-ReadOnlyMemberRest
+fn read_only_member_rest(input: &str) -> IResult<&str, InterfaceMember> {
+    alt((
+        map(
+            attribute_rest,
+            |rest| InterfaceMember::Attribute(
+                Attribute::new(AttributeTag::ReadOnly, rest)
+            ),
+        ),
+        map(
+            maplike_rest,
+            |(from, to)| InterfaceMember::Maplike(
+                Maplike {
+                    readonly: true,
+                    from,
+                    to,
                 }
-            )(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-ConstValue
-    fn const_value(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            alt((
-                self.boolean_literal(),
-                self.float_literal(),
-                self.integer()
-            ))(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-BooleanLiteral
-    fn boolean_literal(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            alt((
-                map(self.keyword("true"), |_| quote!(true)),
-                map(self.keyword("false"), |_| quote!(false))
-            ))(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-FloatLiteral
-    fn float_literal(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            alt((
-                // NOTE: `-Infinity`, `Infinity`, and `NaN` are undefined when using restricted
-                //       floating-point types. But we don't need to check for that, since the
-                //       generated code (e.g. `Restricted<f64>::INFINITY`) will lead to
-                //       a compiler error.
-                map(self.keyword("-Infinity"), |_| {
-                    let ty = self.current_type.borrow().clone();
-                    quote!($ty::NEG_INFINITY)
-                }),
-                map(self.keyword("Infinity"), |_| {
-                    let ty = self.current_type.borrow().clone();
-                    quote!($ty::INFINITY)
-                }),
-                map(self.keyword("NaN"), |_| {
-                    let ty = self.current_type.borrow().clone();
-                    quote!($ty::NAN)
-                }),
-                self.decimal()
-            ))(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-ConstType
-    fn const_type(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            alt((
-                map(self.primitive_type(), |ty| {
-                    self.current_type.replace(ty.clone());
-                    ty
-                }),
-                map(self.identifier(), |ty| {
-                    self.current_type.replace(ty.clone());
-                    ty
-                })
-            ))(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-ReadOnlyMember
-    fn read_only_member(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            preceded(self.keyword("readonly"), self.read_only_member_rest())(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-ReadOnlyMemberRest
-    fn read_only_member_rest(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            alt((
-                map(
-                    self.attribute_rest(),
-                    |(ty, ident_str)| {
-                        let getter_ident = TokenTree::Ident(Ident::new_raw(&ident_str, Span::call_site()));
-
-                        let mut tts = quote!(fn $getter_ident(&self) -> $ty;);
-
-                        for attr in self.member_attrs.borrow_mut().drain( .. ) {
-                            match attr {
-                                ExtendedAttribute::Ident("Exposed", _) |
-                                ExtendedAttribute::IdentList("Exposed", _) |
-                                ExtendedAttribute::Wildcard("Exposed") => {},
-                                ExtendedAttribute::NoArgs("SameObject") => {
-                                    // The only effect should be to generate `fn _(&self)` instead of `fn _(&mut self)`,
-                                    // but we do that already anyway.
-                                },
-                                ExtendedAttribute::NoArgs("Unscopable") => {},
-                                ExtendedAttribute::NoArgs("LegacyUnforgeable") => {},
-                                ref attr => {
-                                    let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                    tts = quote!($macro_ident ! ($attr $tts););
-                                }
-                            };
-                        }
-                        tts
-                    }
-                ),
-                self.maplike_rest(),
-                self.setlike_rest()
-            ))(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-ReadWriteAttribute
-    fn read_write_attribute(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            map(
-                self.attribute_rest(),
-                |(ty, ident_str)| {
-                    let getter_ident = TokenTree::Ident(Ident::new_raw(&ident_str, Span::call_site()));
-                    let setter_ident = TokenTree::Ident(Ident::new_raw(
-                        (String::from("_set_") + &ident_str).as_str(), Span::call_site()
-                    ));
-
-                    let mut tts = quote!(
-                        fn $getter_ident(&self) -> $ty;
-                        fn $setter_ident(&mut self, value: $ty);
-                    );
-
-                    for attr in self.member_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ExtendedAttribute::Ident("Exposed", _) |
-                            ExtendedAttribute::IdentList("Exposed", _) |
-                            ExtendedAttribute::Wildcard("Exposed") => {},
-                            ExtendedAttribute::NoArgs("Unscopable") => {},
-                            ExtendedAttribute::NoArgs("LegacyUnforgeable") => {},
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
+            ),
+        ),
+        map(
+            setlike_rest,
+            |ty| InterfaceMember::Setlike(
+                Setlike {
+                    readonly: true,
+                    ty,
                 }
-            )(input)
-        }
-    }
+            ),
+        ),
+    ))(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-InheritAttribute
-    fn inherit_attribute(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            map(
-                preceded(self.keyword("inherit"), self.attribute_rest()),
-                |(ty, ident_str)| {
-                    let super_ident = self.interface_parent_ident.borrow().clone();
-                    let getter_ident = TokenTree::Ident(Ident::new_raw(&ident_str, Span::call_site()));
-                    let setter_ident = TokenTree::Ident(Ident::new_raw(
-                        (String::from("_set_") + &ident_str).as_str(), Span::call_site()
-                    ));
+// https://webidl.spec.whatwg.org/#index-prod-ReadWriteAttribute
+fn read_write_attribute(input: &str) -> IResult<&str, Attribute> {
+    map(
+        attribute_rest,
+        |rest| Attribute::new(AttributeTag::None, rest),
+    )(input)
+}
 
-                    let mut tts = quote!(
-                        fn $getter_ident(&self) -> $ty {
-                            (self as $super_ident).$getter_ident()
-                        }
-                        // NOTE: `inherit` only means an attribute inherits its getter, not its setter.
-                        fn $setter_ident(&mut self, value: $ty);
-                    );
+// https://webidl.spec.whatwg.org/#index-prod-InheritAttribute
+fn inherit_attribute(input: &str) -> IResult<&str, Attribute> {
+    map(
+        preceded(token("inherit"), attribute_rest),
+        |rest| Attribute::new(AttributeTag::Inherit, rest),
+    )(input)
+}
 
-                    for attr in self.member_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ExtendedAttribute::Ident("Exposed", _) |
-                            ExtendedAttribute::IdentList("Exposed", _) |
-                            ExtendedAttribute::Wildcard("Exposed") => {},
-                            ExtendedAttribute::NoArgs("Unscopable") => {},
-                            ExtendedAttribute::NoArgs("LegacyUnforgeable") => {},
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        }
-                    }
-                    tts
-                }
-            )(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-AttributeRest
+fn attribute_rest(input: &str) -> IResult<&str, AttributeRest> {
+    map(
+        delimited(
+            token("attribute"),
+            pair(type_with_extended_attributes, attribute_name),
+            token(";"),
+        ),
+        |((attrs, ty), name)| AttributeRest {
+            ty: (attrs, Type::Simple(ty)),
+            name
+        },
+    )(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-AttributeRest
-    // Returns the attribute's type and identifier separately.
-    fn attribute_rest(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, (TokenStream, String)> {
-        |input| {
-            delimited(
-                self.keyword("attribute"),
-                pair(self.type_with_extended_attributes(), self.attribute_name()),
-                self.token(';')
-            )(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-AttributeName
+// https://webidl.spec.whatwg.org/#index-prod-AttributeNameKeyword
+fn attribute_name(input: &str) -> IResult<&str, Identifier> {
+    // Note: We don't have special cases for keywords here because the `identifier` function covers them.
+    identifier(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-AttributeName
-    // https://webidl.spec.whatwg.org/#index-prod-AttributeNameKeyword
-    fn attribute_name(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, String> {
-        |input| {
-            map(
-                self.identifier_str(),
-                |ident_str| self.rustify_ident(ident_str)
-            )(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-OptionalReadOnly
+fn optional_read_only(input: &str) -> IResult<&str, bool> {
+    map(opt(token("readonly")), |o| o.is_some())(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-OptionalReadOnly
-    fn optional_read_only(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, bool> {
-        |input| {
-            map(
-                opt(self.keyword("readonly")),
-                |x| x.is_some()
-            )(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-DefaultValue
+fn default_value(input: &str) -> IResult<&str, DefaultValue> {
+    alt((
+        value(DefaultValue::EmptySequence, pair(token("["), token("]"))),
+        value(DefaultValue::EmptyDictionary, pair(token("{"), token("}"))),
+        value(DefaultValue::Null, token("null")),
+        value(DefaultValue::Undefined, token("undefined")),
+        map(string, |s| DefaultValue::String(s)),
+        map(const_value, |c| DefaultValue::Const(c)),
+    ))(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-DefaultValue
-    fn default_value(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            alt((
-                map(
-                    pair(self.token('['), self.token(']')),
-                    |_| quote!(::core::convert::Into::into([]))
-                ),
-                map(
-                    pair(self.token('{'), self.token('}')),
-                    |_| quote!(::core::convert::Into::into(::core::default::Default::default()))
-                ),
-                map(
-                    self.keyword("null"),
-                    |_| quote!(::core::convert::Into::into(::core::option::Option::None))
-                ),
-                self.string(),
-                self.const_value()
-            ))(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-Operation
+fn operation(input: &str) -> IResult<&str, Operation> {
+    alt((regular_operation, special_operation))(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-Operation
-    fn operation(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            alt((
-                self.special_operation(),
-                self.regular_operation()
-            ))(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-RegularOperation
+// https://webidl.spec.whatwg.org/#index-prod-RegularOperation
+fn regular_operation(input: &str) -> IResult<&str, Operation> {
+    map(
+        pair(type_, operation_rest),
+        |(ty, rest)| Operation::new(ty, rest)
+    )(input)
+}
+/* FIXME: Remove this.
     fn regular_operation(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
         |input| {
             map(
@@ -880,50 +614,38 @@ impl<'a> Parser<'a> {
                 }
             )(input)
         }
-    }
+    }*/
 
-    // https://webidl.spec.whatwg.org/#index-prod-SpecialOperation
-    fn special_operation(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            preceded(
-                self.special(),
-                self.regular_operation()
-            )(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-SpecialOperation
+fn special_operation(input: &str) -> IResult<&str, Operation> {
+    preceded(special, regular_operation)(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-Special
-    fn special(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, ()> {
-        |input| {
-            map(
-                alt((
-                self.keyword("getter"),
-                self.keyword("setter"),
-                self.keyword("deleter")
-                )),
-                |_| ()
-            )(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-Special
+fn special(input: &str) -> IResult<&str, ()> {
+    alt((token("getter"), token("setter"), token("deleter")))(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-OperationRest
-    fn operation_rest(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, Option<TokenStream>> {
-        |input| {
-            map(
-                pair(
-                    self.optional_operation_name(),
-                    delimited(
-                        self.token('('),
-                        self.argument_list(),
-                        pair(self.token(')'), self.token(';'))
-                    )
-                ),
-                |(opt_name, (args, _))| opt_name.map(|name| quote!(fn $name(&mut self, $args)))
-            )(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-OperationRest
+fn operation_rest(input: &str) -> IResult<&str, OperationRest> {
+    map(
+        pair(
+            optional_operation_name,
+            delimited(
+                token("("),
+                argument_list,
+                pair(token(")"), token(";"))
+            ),
+        ),
+        |(ident, params)| OperationRest { ident, params }
+    )(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-OptionalOperationName
+// https://webidl.spec.whatwg.org/#index-prod-OptionalOperationName
+fn optional_operation_name(input: &str) -> IResult<&str, Option<Identifier>> {
+    opt(operation_name)(input)
+}
+/* FIXME: Remove this. It implements overload name mangling.
     fn optional_operation_name(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, Option<TokenStream>> {
         |input| {
             map(
@@ -943,228 +665,131 @@ impl<'a> Parser<'a> {
                 })
             )(input)
         }
-    }
+    }*/
 
-    // https://webidl.spec.whatwg.org/#index-prod-OperationName
-    // https://webidl.spec.whatwg.org/#index-prod-OperationNameKeyword
-    fn operation_name(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, String> {
-        |input| {
-            map(
-                self.identifier_str(),
-                |ident_str| self.rustify_ident(ident_str)
-            )(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-OperationName
+// https://webidl.spec.whatwg.org/#index-prod-OperationNameKeyword
+fn operation_name(input: &str) -> IResult<&str, Identifier> {
+    // Note: We don't have a special case for the keyword `includes` because the `identifier` function covers it.
+    identifier(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-ArgumentList
-    // Returns a list of arguments with types and a list of types alone.
-    fn argument_list(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, (TokenStream, TokenStream)> {
-        |input| {
-            map(
-                opt(pair(self.arguments(), self.argument())),
-                |x| match x {
-                    Some(((args, arg_types), (arg, arg_type))) => (quote!($args $arg), quote!($arg_types $arg_type)),
-                    None => (TokenStream::new(), TokenStream::new())
-                }
-            )(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-ArgumentList
+// https://webidl.spec.whatwg.org/#index-prod-Arguments
+fn argument_list(input: &str) -> IResult<&str, Vec<(ExtendedAttributes, Argument)>> {
+    separated_list0(token(","), argument)(input)
+}
 
-    // Same as `argument_list` but returning the matched strings.
-    fn argument_list_str(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, Vec<&'a str>> {
-        |input| {
-            map(
-                opt(pair(self.arguments_str(), recognize(self.argument()))),
-                |x| match x {
-                    Some((mut args, arg)) => {
-                        args.push(arg);
-                        args
-                    },
-                    None => Vec::new()
-                }
-            )(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-Argument
+fn argument(input: &str) -> IResult<&str, (ExtendedAttributes, Argument)> {
+    pair(extended_attribute_list, argument_rest)(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-Arguments
-    // Returns a list of arguments with types and a list of types alone.
-    fn arguments(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, (TokenStream, TokenStream)> {
-        |input| {
-            fold_many0(
-                terminated(self.argument(), self.token(',')),
-                || (TokenStream::new(), TokenStream::new()),
-                |(args, arg_types), (arg, arg_type)| (quote!($args $arg,), quote!($arg_types $arg_type,))
-            )(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-ArgumentRest
+fn argument_rest(input: &str) -> IResult<&str, Argument> {
+    alt((
+        map(
+            preceded(
+                token("optional"),
+                tuple((type_with_extended_attributes, argument_name, default)),
+            ),
+            |((attrs, ty), ident, default)| Argument {
+                ty: (attrs, Type::Simple(ty)),
+                ident,
+                default,
+            },
+        ),
+        map(
+            tuple((type_, ellipsis, argument_name)),
+            |(ty, ellipsis, ident)| Argument {
+                ty: (ExtendedAttributes::new(), if ellipsis { Type::Variadic(ty) } else { Type::Simple(ty) }),
+                ident,
+                default: None,
+            },
+        ),
+    ))(input)
+}
 
-    // Same as `arguments` but returning the matched strings.
-    fn arguments_str(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, Vec<&'a str>> {
-        |input| {
-            fold_many0(
-                terminated(recognize(self.argument()), self.token(',')),
-                Vec::new,
-                |mut args, arg| {
-                    args.push(arg);
-                    args
-                }
-            )(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-ArgumentName
+// https://webidl.spec.whatwg.org/#index-prod-ArgumentNameKeyword
+fn argument_name(input: &str) -> IResult<&str, Identifier> {
+    identifier(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-Argument
-    // Returns the argument with its type and also its type alone.
-    fn argument(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, (TokenStream, TokenStream)> {
-        |input| {
-            map(
-                preceded(self.extended_attribute_list(&self.type_attrs), self.argument_rest()),
-                |(arg, arg_type)| {
-                    assert!(self.type_attrs.borrow().is_empty(), "didn't use the extended attributes");
-                    (arg, arg_type)
-                }
-            )(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-Ellipsis
+fn ellipsis(input: &str) -> IResult<&str, bool> {
+    map(opt(token("...")), |o| o.is_some())(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-ArgumentRest
-    // Returns the argument with its type and also its type alone.
-    fn argument_rest(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, (TokenStream, TokenStream)> {
-        |input| {
-            alt((
-                map(
-                    delimited(
-                        self.keyword("optional"),
-                        pair(self.type_with_extended_attributes(), self.argument_name()),
-                        self.default() // We ignore default values for arguments.
-                    ),
-                    |(ty, arg)| (quote!($arg: $ty), ty)
-                ),
-                map(
-                    tuple((self.idl_type(), self.ellipsis(), self.argument_name())),
-                    |(ty, ellipsis, arg)| {
-                        let ty = if ellipsis { quote!(&[$ty]) } else { ty };
-                        (quote!($arg: $ty), ty)
-                    }
+// https://webidl.spec.whatwg.org/#index-prod-Constructor
+fn constructor(input: &str) -> IResult<&str, Vec<(ExtendedAttributes, Argument)>> {
+    delimited(
+        pair(token("constructor"), token("(")),
+        argument_list,
+        pair(token(")"), token(";")),
+    )(input)
+}
+
+// https://webidl.spec.whatwg.org/#index-prod-Stringifier
+fn stringifier(input: &str) -> IResult<&str, Stringifier> {
+    preceded(token("stringifier"), stringifier_rest)(input)
+}
+
+// https://webidl.spec.whatwg.org/#index-prod-StringifierRest
+fn stringifier_rest(input: &str) -> IResult<&str, Stringifier> {
+    alt((
+        map(
+            pair(optional_read_only, attribute_rest),
+            |(readonly, rest)| Stringifier::Attribute(
+                Attribute::new(
+                    if readonly { AttributeTag::ReadOnly } else { AttributeTag::None },
+                    rest
                 )
-            ))(input)
-        }
-    }
+            ),
+        ),
+        value(Stringifier::Simple, token(";")),
+    ))(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-ArgumentName
-    // https://webidl.spec.whatwg.org/#index-prod-ArgumentNameKeyword
-    fn argument_name(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        // NOTE: We don't check the special cases in ArgumentNameKeyword at all, since they don't
-        //       actually matter. That rule seems to be in the grammar only to assure people that
-        //       almost all keywords are valid identifiers for arguments.
-        self.identifier()
-    }
+// https://webidl.spec.whatwg.org/#index-prod-StaticMember
+fn static_member(input: &str) -> IResult<&str, StaticMember> {
+    preceded(token("static"), static_member_rest)(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-Ellipsis
-    fn ellipsis(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, bool> {
-        |input| {
-            map(opt(terminated(tag("..."), self.eat_wsc())), |x| x.is_some())(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-StaticMemberRest
+fn static_member_rest(input: &str) -> IResult<&str, StaticMember> {
+    alt((
+        map(
+            pair(optional_read_only, attribute_rest),
+            |(readonly, rest)| StaticMember::Attribute(
+                Attribute::new(
+                    if readonly { AttributeTag::ReadOnly } else { AttributeTag::None },
+                    rest,
+                )
+            ),
+        ),
+        map(
+            regular_operation,
+            |op| StaticMember::Operation(op)
+        ),
+    ))(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-Constructor
-    fn constructor(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            map(
-                delimited(
-                    pair(self.keyword("constructor"), self.token('(')),
-                    self.argument_list(),
-                    pair(self.token(')'), self.token(';'))
-                ),
-                |(args, _)| {
-                    let ident = TokenTree::Ident(Ident::new_raw("constructor", Span::call_site()));
-                    let mut tts = quote!(fn $ident(&mut self, $args););
-
-                    for attr in self.member_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                }
-            )(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-Stringifier
-    fn stringifier(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            preceded(self.keyword("stringifier"), self.stringifier_rest())(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-StringifierRest
-    fn stringifier_rest(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            alt((
-                map(
-                    pair(self.optional_read_only(), self.attribute_rest()),
-                    |(ro, attr)| todo!("stringifier_rest (attribute)"),
-                ),
-                map(self.token(';'), |_| {
-                    let ident = TokenTree::Ident(Ident::new_raw("toString", Span::call_site()));
-                    let mut tts = quote!(fn $ident(&mut self););
-
-                    for attr in self.member_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ExtendedAttribute::Ident("Exposed", _) |
-                            ExtendedAttribute::IdentList("Exposed", _) |
-                            ExtendedAttribute::Wildcard("Exposed") => {},
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                })
-            ))(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-StaticMember
-    fn static_member(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            preceded(self.keyword("static"), self.static_member_rest())(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-StaticMemberRest
-    fn static_member_rest(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            alt((
-                map(
-                    pair(self.optional_read_only(), self.attribute_rest()),
-                    |(ro, attr)| {
-                        let mut tts = todo!("static_member_rest");
-
-                        for attr in self.member_attrs.borrow_mut().drain( .. ) {
-                            match attr {
-                                ExtendedAttribute::Ident("Exposed", _) |
-                                ExtendedAttribute::IdentList("Exposed", _) |
-                                ExtendedAttribute::Wildcard("Exposed") => {},
-                                ref attr => {
-                                    let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                    tts = quote!($macro_ident ! ($attr $tts););
-                                }
-                            };
-                        }
-                        tts
-                    }
-                ),
-                self.regular_operation()
-            ))(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-Iterable
+// https://webidl.spec.whatwg.org/#index-prod-Iterable
+fn iterable(input: &str) -> IResult<&str, Iterable> {
+    map(
+        delimited(
+           pair(token("iterable"), token("<")),
+           pair(type_with_extended_attributes, optional_type),
+           pair(token(">"), token(";")), 
+        ),
+        |(ty1, ty2)| match  ty2 {
+            Some(ty2) => Iterable::Sync { key: Some(ty1), value: ty2 },
+            None => Iterable::Sync { key: None, value: ty1 },
+        },
+    )(input)
+}
+/* FIXME: Remove this.
     fn iterable(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
         |input| {
             map(
@@ -1212,195 +837,137 @@ impl<'a> Parser<'a> {
                 }
             )(input)
         }
-    }
+    }*/
 
-    // https://webidl.spec.whatwg.org/#index-prod-OptionalType
-    fn optional_type(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, Option<TokenStream>> {
-        |input| {
-            opt(preceded(self.token(','), self.type_with_extended_attributes()))(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-OptionalType
+fn optional_type(input: &str) -> IResult<&str, Option<(ExtendedAttributes, SimpleType)>> {
+    opt(preceded(token(","), type_with_extended_attributes))(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-AsyncIterable
-    fn async_iterable(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            map(
-                terminated(
-                    pair(
-                        delimited(
-                            tuple((self.keyword("async"), self.keyword("iterable"), self.token('<'))),
-                            pair(self.type_with_extended_attributes(), self.optional_type()),
-                            self.token('>')
-                        ),
-                        self.optional_argument_list()
-                    ),
-                    self.token(';')
-                ),
-                |((ty1, opt_ty2), opt_args)| {
-                    let mut tts = todo!("async_iterable");
-
-                    for attr in self.member_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ExtendedAttribute::Ident("Exposed", _) |
-                            ExtendedAttribute::IdentList("Exposed", _) |
-                            ExtendedAttribute::Wildcard("Exposed") => {},
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                }
-            )(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-OptionalArgumentList
-    fn optional_argument_list(&'a self)
-            -> impl FnMut(&'a str) -> ParseResult<'a, Option<TokenStream>> {
-        |input| {
-            opt(delimited(
-                self.token('('),
-                map(self.argument_list(), |(args, _)| args),
-                self.token(')')
-            ))(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-ReadWriteMaplike
-    fn read_write_maplike(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        self.maplike_rest()
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-MaplikeRest
-    fn maplike_rest(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            map(
+// https://webidl.spec.whatwg.org/#index-prod-AsyncIterable
+fn async_iterable(input: &str) -> IResult<&str, Iterable> {
+    map(
+        terminated(
+            pair(
                 delimited(
-                    pair(self.keyword("maplike"), self.token('<')),
-                    separated_pair(
-                        self.type_with_extended_attributes(),
-                        self.token(','),
-                        self.type_with_extended_attributes()
-                    ),
-                    pair(self.token('>'), self.token(';'))
+                    tuple((token("async"), token("iterable"), token("<"))),
+                    pair(type_with_extended_attributes, optional_type),
+                    token(">"),
                 ),
-                |(ty1, ty2)| {
-                    let mut tts = todo!("maplike_rest");
+                optional_argument_list,
+            ),
+            token(";"),
+        ),
+        |((ty1, ty2), args)| {
+            let args = args.unwrap_or_else(Vec::new);
+            match ty2 {
+                Some(ty2) => Iterable::Async {
+                    key: Some(ty1),
+                    value: ty2,
+                    args,
+                },
+                None => Iterable::Async {
+                    key: None,
+                    value: ty1,
+                    args,
+                },
+            }
+        },
+    )(input)
+}
 
-                    for attr in self.member_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ExtendedAttribute::Ident("Exposed", _) |
-                            ExtendedAttribute::IdentList("Exposed", _) |
-                            ExtendedAttribute::Wildcard("Exposed") => {},
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                }
-            )(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-OptionalArgumentList
+fn optional_argument_list(input: &str) -> IResult<&str, Option<Vec<(ExtendedAttributes, Argument)>>> {
+    opt(delimited(token("("), argument_list, token(")")))(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-ReadWriteSetlike
-    fn read_write_setlike(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        self.setlike_rest()
-    }
+// https://webidl.spec.whatwg.org/#index-prod-ReadWriteMaplike
+fn read_write_maplike(input: &str) -> IResult<&str, Maplike> {
+    map(maplike_rest, |(from, to)| Maplike { readonly: false, from, to })(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-SetlikeRest
-    fn setlike_rest(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            map(
-                delimited(
-                    pair(self.keyword("setlike"), self.token('<')),
-                    self.type_with_extended_attributes(),
-                    pair(self.token('>'), self.token(';'))
-                ),
-                |ty| {
-                    let mut tts = todo!("setlike_rest");
+// https://webidl.spec.whatwg.org/#index-prod-MaplikeRest
+fn maplike_rest(input: &str) -> IResult<&str, ((ExtendedAttributes, SimpleType), (ExtendedAttributes, SimpleType))> {
+    delimited(
+        pair(token("maplike"), token("<")),
+        separated_pair(type_with_extended_attributes, token(","), type_with_extended_attributes),
+        pair(token(">"), token(";")),
+    )(input)
+}
 
-                    for attr in self.member_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ExtendedAttribute::Ident("Exposed", _) |
-                            ExtendedAttribute::IdentList("Exposed", _) |
-                            ExtendedAttribute::Wildcard("Exposed") => {},
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                }
-            )(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-ReadWriteSetlike
+fn read_write_setlike(input: &str) -> IResult<&str, Setlike> {
+    map(
+        setlike_rest,
+        |ty| Setlike { readonly: false, ty },
+    )(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-Namespace
-    fn namespace(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            map(
-                pair(
-                    preceded(self.keyword("namespace"), self.identifier()),
-                    delimited(
-                        self.token('{'),
-                        self.namespace_members(),
-                        pair(self.token('}'), self.token(';'))
-                    )
-                ),
-                |(ident, members)| {
-                    let mut tts = quote!(pub mod $ident { $members });
+// https://webidl.spec.whatwg.org/#index-prod-SetlikeRest
+fn setlike_rest(input: &str) -> IResult<&str, (ExtendedAttributes, SimpleType)> {
+    delimited(
+        pair(token("setlike"), token("<")),
+        type_with_extended_attributes,
+        pair(token(">"), token(";")),
+    )(input)
+}
 
-                    for attr in self.definition_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ExtendedAttribute::Ident("Exposed", _) |
-                            ExtendedAttribute::IdentList("Exposed", _) |
-                            ExtendedAttribute::Wildcard("Exposed") => {},
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                }
-            )(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-Namespace
+fn namespace(input: &str) -> IResult<&str, Namespace> {
+    map(
+        delimited(
+            token("namespace"),
+            pair(
+                identifier,
+                delimited(token("{"), namespace_members, token("}")),
+            ),
+            token(";"),
+        ),
+        |(ident, members)| Namespace { ident, members },
+    )(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-NamespaceMembers
-    fn namespace_members(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            fold_many0(
-                preceded(self.extended_attribute_list(&self.member_attrs), self.namespace_member()),
-                TokenStream::new,
-                |tts, member| {
-                    assert!(self.member_attrs.borrow().is_empty(), "didn't use the extended attributes");
-                    quote!($tts $member)
-                }
-            )(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-NamespaceMembers
+fn namespace_members(input: &str) -> IResult<&str, Vec<(ExtendedAttributes, NamespaceMember)>> {
+    many0(pair(extended_attribute_list, namespace_member))(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-NamespaceMember
-    fn namespace_member(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            alt((
-                map(
-                    preceded(self.keyword("readonly"), self.attribute_rest()),
-                    |(ty, ident)| todo!("namespace_member")
-                ),
-                self.idl_const(),
-                self.regular_operation()
-            ))(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-NamespaceMember
+fn namespace_member(input: &str) -> IResult<&str, NamespaceMember> {
+    alt((
+        map(
+            preceded(token("readonly"), attribute_rest),
+            |rest| NamespaceMember::Attribute(
+                Attribute::new(AttributeTag::ReadOnly, rest)
+            ),
+        ),
+        map(
+            const_,
+            |c| NamespaceMember::Const(c),
+        ),
+        map(
+            regular_operation,
+            |op| NamespaceMember::Operation(op),
+        ),
+    ))(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-Dictionary
+// https://webidl.spec.whatwg.org/#index-prod-Dictionary
+fn dictionary(input: &str) -> IResult<&str, Dictionary> {
+    map(
+        delimited(
+            token("dictionary"),
+            tuple((
+                identifier,
+                inheritance,
+                delimited(token("{"), dictionary_members, token("}")),
+            )),
+            token(";"),
+        ),
+        |(ident, inheritance, members)| Dictionary { ident, inheritance, members },
+    )(input)
+}
+/* FIXME: Remove this.
     fn dictionary(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
         |input| {
             map(
@@ -1511,36 +1078,47 @@ impl<'a> Parser<'a> {
                 }
             )(input)
         }
-    }
+    }*/
 
-    // https://webidl.spec.whatwg.org/#index-prod-DictionaryMembers
-    fn dictionary_members(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            fold_many0(
-                self.dictionary_member(),
-                TokenStream::new,
-                |members, member| quote!($members $member)
-            )(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-DictionaryMembers
+fn dictionary_members(input: &str) -> IResult<&str, Vec<(ExtendedAttributes, DictionaryMember)>> {
+    many0(dictionary_member)(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-DictionaryMember
-    fn dictionary_member(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            map(
-                preceded(
-                    self.extended_attribute_list(&self.member_attrs),
-                    self.dictionary_member_rest()
-                ),
-                |member| {
-                    assert!(self.member_attrs.borrow().is_empty(), "didn't use the extended attributes");
-                    quote!($member)
-                }
-            )(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-DictionaryMember
+fn dictionary_member(input: &str) -> IResult<&str, (ExtendedAttributes, DictionaryMember)> {
+    pair(extended_attribute_list, dictionary_member_rest)(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-DictionaryMemberRest
+// https://webidl.spec.whatwg.org/#index-prod-DictionaryMemberRest
+fn dictionary_member_rest(input: &str) -> IResult<&str, DictionaryMember> {
+    alt((
+        map(
+            delimited(
+                token("required"),
+                pair(type_with_extended_attributes, identifier),
+                token(";"),
+            ),
+            |(ty, ident)| DictionaryMember {
+                ty,
+                ident,
+                default: None,
+            },
+        ),
+        map(
+            terminated(
+                tuple((type_, identifier, default)),
+                token(";"),
+            ),
+            |(ty, ident, default)| DictionaryMember {
+                ty: (ExtendedAttributes::new(), ty),
+                ident,
+                default: Some(default.unwrap_or(DefaultValue::Undefined)),
+            },
+        ),
+    ))(input)
+}
+/* FIXME: Remove this.
     fn dictionary_member_rest(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
         |input| {
             alt((
@@ -1597,33 +1175,28 @@ impl<'a> Parser<'a> {
                 self.idl_type()
             ))(input)
         }
-    }
+    }*/
 
-    // https://webidl.spec.whatwg.org/#index-prod-PartialDictionary
-    fn partial_dictionary(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            map(
-                pair(
-                    preceded(self.keyword("dictionary"), self.identifier()),
-                    delimited(
-                        self.token('{'),
-                        self.dictionary_members(),
-                        pair(self.token('}'), self.token(';'))
-                    )
-                ),
-                |(ident, members)| quote!(pub struct $ident { $members })
-            )(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-Default
+fn default(input: &str) -> IResult<&str, Option<DefaultValue>> {
+    opt(preceded(token("="), default_value))(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-Default
-    fn default(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, Option<TokenStream>> {
-        |input| {
-            opt(preceded(self.token('='), self.default_value()))(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-Enum
+// https://webidl.spec.whatwg.org/#index-prod-Enum
+fn enum_(input: &str) -> IResult<&str, Enum> {
+    map(
+        delimited(
+            token("enum"),
+            pair(
+                identifier,
+                delimited(token("{"), enum_value_list, token("}")),
+            ),
+            token(";"),
+        ),
+        |(ident, values)| Enum { ident, values },
+    )(input)
+}
+/* FIXME: Remove this.
     fn idl_enum(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
         |input| {
             map(
@@ -1652,32 +1225,41 @@ impl<'a> Parser<'a> {
                 }
             )(input)
         }
-    }
+    }*/
 
-    // https://webidl.spec.whatwg.org/#index-prod-EnumValueList
-    // https://webidl.spec.whatwg.org/#index-prod-EnumValueListComma
-    // https://webidl.spec.whatwg.org/#index-prod-EnumValueListString
-    // Returns the token stream and the number of strings inside it.
-    fn enum_value_list(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, (TokenStream, usize)> {
-        |input| {
-            map(
-                terminated(
-                    pair(
-                        fold_many0(
-                            terminated(self.string(), self.token(',')),
-                            || (TokenStream::new(), 0),
-                            |(tts, len), s| (quote!($tts $s,), len + 1)
-                        ),
-                        self.string()
-                    ),
-                    opt(self.token(','))
-                ),
-                |((tts, len), s)| (quote!($tts $s), len + 1)
-            )(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-EnumValueList
+// https://webidl.spec.whatwg.org/#index-prod-EnumValueListComma
+// https://webidl.spec.whatwg.org/#index-prod-EnumValueListString
+fn enum_value_list(input: &str) -> IResult<&str, Vec<&str>> {
+    terminated(
+        separated_list1(token(","), string),
+        opt(token(",")),
+    )(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-CallbackRest
+// https://webidl.spec.whatwg.org/#index-prod-CallbackRest
+fn callback_rest(input: &str) -> IResult<&str, CallbackFunction> {
+    map(
+        separated_pair(
+            identifier,
+            token("="),
+            pair(
+                type_,
+                delimited(
+                    token("("),
+                    argument_list,
+                    pair(token(")"), token(";")),
+                )
+            ),
+        ),
+        |(ident, (ty, params))| CallbackFunction {
+            ident,
+            ty,
+            params,
+        },
+    )(input)
+}
+/* FIXME: Remove this.
     fn callback_rest(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
         |input| {
             map(
@@ -1715,9 +1297,20 @@ impl<'a> Parser<'a> {
                 }
             )(input)
         }
-    }
+    }*/
 
-    // https://webidl.spec.whatwg.org/#index-prod-Typedef
+// https://webidl.spec.whatwg.org/#index-prod-Typedef
+fn typedef(input: &str) -> IResult<&str, Typedef> {
+    map(
+        delimited(
+            token("typedef"),
+            pair(type_with_extended_attributes, identifier),
+            token(";"),
+        ),
+        |(ty, ident)| Typedef { ty, ident },
+    )(input)
+}
+/* FIXME: Remove this.
     fn typedef(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
         |input| {
             map(
@@ -1750,68 +1343,52 @@ impl<'a> Parser<'a> {
                 }
             )(input)
         }
-    }
+    }*/
 
-    // https://webidl.spec.whatwg.org/#index-prod-Type
-    fn idl_type(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            map(
-                alt((
-                    map(
-                        pair(self.union_type(), self.null()),
-                        |((_, ty), null)| if null { quote!(::core::option::Option::<$ty>) } else { ty }
-                    ),
-                    self.single_type()
-                )),
-                |ty| {
-                    self.current_type.replace(ty.clone());
-                    ty
-                }
-            )(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-Type
+fn type_(input: &str) -> IResult<&str, SimpleType> {
+    alt((
+        single_type,
+        map(
+            pair(union_type, null),
+            |(ty, nullable)| SimpleType { nullable, ..ty },
+        )
+    ))(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-TypeWithExtendedAttributes
-    fn type_with_extended_attributes(&'a self)
-            -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            map(
-                preceded(
-                    self.extended_attribute_list(&self.type_attrs),
-                    self.idl_type()
-                ),
-                |ty| {
-                    assert!(self.type_attrs.borrow().is_empty(), "didn't use the extended attributes");
-                    ty
-                }
-            )(input)
-        }
-    }
+// https://webidl.spec.whatwg.org/#index-prod-TypeWithExtendedAttributes
+fn type_with_extended_attributes(input: &str) -> IResult<&str, (ExtendedAttributes, SimpleType)> {
+    pair(extended_attribute_list, type_)(input)
+}
 
-    // https://webidl.spec.whatwg.org/#index-prod-SingleType
-    fn single_type(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            alt((
-                map(self.keyword("any"), |_| {
-                    let mut tts = quote!(::alloc::rc::Rc<dyn ::core::any::Any>);
+// https://webidl.spec.whatwg.org/#index-prod-SingleType
+fn single_type(input: &str) -> IResult<&str, SimpleType> {
+    alt((
+        value(SimpleType { ty: SimpleNonnullableType::Any, nullable: false, }, token("any")),
+        map(promise_type, |ty| SimpleType { ty, nullable: false }),
+        distinguishable_type,
+    ))(input)
+}
 
-                    for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                }),
-                self.promise_type(),
-                self.distinguishable_type()
-            ))(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-UnionType
+// https://webidl.spec.whatwg.org/#index-prod-UnionType
+// https://webidl.spec.whatwg.org/#index-prod-UnionMemberTypes
+fn union_type(input: &str) -> IResult<&str, SimpleType> {
+    map(
+        delimited(
+            token("("),
+            verify(
+                separated_list1(token("or"), union_member_type),
+                |types: &Vec<_>| types.len() > 1,
+            ),
+            token(")"),
+        ),
+        |types| SimpleType {
+            ty: SimpleNonnullableType::Union(types),
+            nullable: false,
+        },
+    )(input)
+}
+/* FIXME: Remove this.
     // Returns the type's name and the tokens needed to refer to it.
     fn union_type(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, (String, TokenStream)> {
         |input| {
@@ -1850,9 +1427,19 @@ impl<'a> Parser<'a> {
                 self.token(')')
             )(input)
         }
-    }
+    }*/
 
-    // https://webidl.spec.whatwg.org/#index-prod-UnionMemberType
+// https://webidl.spec.whatwg.org/#index-prod-UnionMemberType
+fn union_member_type(input: &str) -> IResult<&str, (ExtendedAttributes, SimpleType)> {
+    alt((
+        pair(extended_attribute_list, distinguishable_type),
+        map(
+            pair(union_type, null),
+            |(ty, nullable)| (ExtendedAttributes::new(), SimpleType { nullable, ..ty }),
+        ),
+    ))(input)
+}
+/* FIXME: Remove this.
     // Returns the type name in IDL and the type tokens in Rust.
     fn union_member_type(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, (String, TokenStream)> {
         |input| {
@@ -1885,1190 +1472,553 @@ impl<'a> Parser<'a> {
             self.type_attrs.replace(outer_type_attrs);
             result
         }
-    }
+    }*/
 
-    // https://webidl.spec.whatwg.org/#index-prod-UnionMemberTypes
-    // Modified to use `fold_many1` instead of `fold_many0`
-    fn union_member_types(&'a self)
-            -> impl FnMut(&'a str) -> ParseResult<'a, Vec<(String, TokenStream)>> {
-        |input| {
-            fold_many1(
-                preceded(self.keyword("or"), self.union_member_type()),
-                Vec::new,
-                |mut names_tys, (name, ty)| {
-                    names_tys.push((name, ty));
-                    names_tys
-                }
-            )(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-DistinguishableType
-    fn distinguishable_type(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            alt((
-                map(
-                    pair(self.primitive_type(), self.null()),
-                    |(ty, null)| if null { quote!(::core::option::Option::<$ty>) } else { ty }
-                ),
-                map(
-                    pair(self.string_type(), self.null()),
-                    |(ty, null)| if null { quote!(::core::option::Option::<$ty>) } else { ty }
-                ),
-                map(
-                    pair(
-                        preceded(
-                            self.keyword("sequence"),
-                            delimited(
-                                self.token('<'),
-                                self.type_with_extended_attributes(),
-                                self.token('>')
-                            )
-                        ),
-                        self.null()
-                    ),
-                    |(ty, null)| {
-                        let ty = if null { quote!(::core::option::Option::<$ty>) } else { ty };
-                        let mut tts = quote!(::alloc::vec::Vec::<$ty>);
-
-                        for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                            match attr {
-                                ref attr => {
-                                    let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                    tts = quote!($macro_ident ! ($attr $tts););
-                                }
-                            };
-                        }
-                        tts
-                    }
-                ),
-                map(
-                    preceded(self.keyword("object"), self.null()),
-                    |null| {
-                        let object_type = TokenTree::Ident(Ident::new_raw("Object", Span::call_site()));
-                        let mut tts = if null {
-                            quote!(::core::option::Option::<::alloc::rc::Rc<$object_type>>)
-                        } else {
-                            quote!(::alloc::rc::Rc<$object_type>)
-                        };
-
-                        for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                            match attr {
-                                ref attr => {
-                                    let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                    tts = quote!($macro_ident ! ($attr $tts););
-                                }
-                            };
-                        }
-                        tts
-                    }
-                ),
-                map(
-                    preceded(self.keyword("symbol"), self.null()),
-                    |null| {
-                        let mut tts = todo!("distinguishable_type (symbol)");
-
-                        for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                            match attr {
-                                ref attr => {
-                                    let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                    tts = quote!($macro_ident ! ($attr $tts););
-                                }
-                            };
-                        }
-                        tts
-                    }
-                ),
-                map(
-                    pair(self.buffer_related_type(), self.null()),
-                    |(ty, null)| if null { quote!(::core::option::Option::<$ty>) } else { ty }
-                ),
-                map(
-                    pair(
-                        preceded(
-                            self.keyword("FrozenArray"),
-                            delimited(
-                                self.token('<'),
-                                self.type_with_extended_attributes(),
-                                self.token('>')
-                            )
-                        ),
-                        self.null()
-                    ),
-                    |(ty, null)| {
-                        let ty = if null { quote!(::core::option::Option::<$ty>) } else { ty };
-                        let mut tts = quote!(&[$ty]);
-
-                        for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                            match attr {
-                                ref attr => {
-                                    let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                    tts = quote!($macro_ident ! ($attr $tts););
-                                }
-                            };
-                        }
-                        tts
-                    }
-                ),
-                map(
-                    pair(
-                        preceded(
-                            self.keyword("ObservableArray"),
-                            delimited(
-                                self.token('<'),
-                                self.type_with_extended_attributes(),
-                                self.token('>')
-                            )
-                        ),
-                        self.null()
-                    ),
-                    |(ty, null)| {
-                        let mut tts = todo!("distinguishable_type (ObservableArray)");
-
-                        for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                            match attr {
-                                ref attr => {
-                                    let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                    tts = quote!($macro_ident ! ($attr $tts););
-                                }
-                            };
-                        }
-                        tts
-                    }
-                ),
-                map(
-                    pair(self.record_type(), self.null()),
-                    |(ty, null)| if null { quote!(::core::option::Option::<$ty>) } else { ty }
-                ),
-                map(
-                    pair(self.identifier_str(), self.null()),
-                    |(s, null)| {
-                        // We prepend underscores to make dictionaries and interfaces work with
-                        // the same syntax, since Rust requires `dyn` at the beginning of a trait
-                        // object's type (and it would be a DST anyway). The type alias with
-                        // leading underscores is defined at the same time as each struct and trait.
-                        let ident_str = self.rustify_ident(s);
-                        let ty = TokenTree::Ident(
-                            Ident::new_raw((String::from("__") + &ident_str).as_str(), Span::mixed_site())
-                        );
-
-                        let mut tts = if null { quote!(::core::option::Option::<$ty>) } else { ty.into() };
-
-                        for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                            match attr {
-                                ref attr => {
-                                    let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                    tts = quote!($macro_ident ! ($attr $tts););
-                                }
-                            };
-                        }
-                        tts
-                    }
-                )
-            ))(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-PrimitiveType
-    fn primitive_type(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            alt((
-                self.unsigned_integer_type(),
-                self.unrestricted_float_type(),
-                map(self.keyword("undefined"), |_| {
-                    let mut tts = quote!(());
-                    for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                }),
-                map(self.keyword("boolean"), |_| {
-                    let mut tts = quote!(bool);
-                    for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                }),
-                map(self.keyword("byte"), |_| {
-                    let mut tts = quote!(i8);
-                    for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                }),
-                map(self.keyword("octet"), |_| {
-                    let mut tts = quote!(u8);
-                    for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                }),
-                map(self.keyword("bigint"), |_| {
-                    let big_int_type = TokenTree::Ident(Ident::new_raw("BigInt", Span::call_site()));
-                    let mut tts = quote!(::alloc::rc::Rc<$big_int_type>);
-                    for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                })
-            ))(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-UnrestrictedFloatType
-    fn unrestricted_float_type(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            alt((
-                preceded(self.keyword("unrestricted"), self.float_type()),
-                map(
-                    self.float_type(),
-                    |tts| {
-                        let restricted = TokenTree::Ident(Ident::new_raw("Restricted", Span::call_site()));
-                        quote!($restricted::<$tts>)
-                    }
-                )
-            ))(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-FloatType
-    fn float_type(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            alt((
-                map(self.keyword("float"), |_| {
-                    let mut tts = quote!(f32);
-                    for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                }),
-                map(self.keyword("double"), |_| {
-                    let mut tts = quote!(f64);
-                    for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                })
-            ))(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-UnsignedIntegerType
-    // https://webidl.spec.whatwg.org/#index-prod-IntegerType
-    // https://webidl.spec.whatwg.org/#index-prod-OptionalLong
-    fn unsigned_integer_type(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            alt((
-                map(preceded(self.keyword("unsigned"), pair(self.keyword("long"), self.keyword("long"))), |_| {
-                    let mut tts = quote!(u64);
-                    for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ExtendedAttribute::NoArgs("Clamp") => {},
-                            ExtendedAttribute::NoArgs("EnforceRange") => {},
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                }),
-                map(preceded(self.keyword("unsigned"), self.keyword("long")), |_| {
-                    let mut tts = quote!(u32);
-                    for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ExtendedAttribute::NoArgs("Clamp") => {},
-                            ExtendedAttribute::NoArgs("EnforceRange") => {},
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                }),
-                map(preceded(self.keyword("unsigned"), self.keyword("short")), |_| {
-                    let mut tts = quote!(u16);
-                    for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ExtendedAttribute::NoArgs("Clamp") => {},
-                            ExtendedAttribute::NoArgs("EnforceRange") => {},
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                }),
-                map(pair(self.keyword("long"), self.keyword("long")), |_| {
-                    let mut tts = quote!(i64);
-                    for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ExtendedAttribute::NoArgs("Clamp") => {},
-                            ExtendedAttribute::NoArgs("EnforceRange") => {},
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                }),
-                map(self.keyword("long"), |_| {
-                    let mut tts = quote!(i32);
-                    for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ExtendedAttribute::NoArgs("Clamp") => {},
-                            ExtendedAttribute::NoArgs("EnforceRange") => {},
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                }),
-                map(self.keyword("short"), |_| {
-                    let mut tts = quote!(i16);
-                    for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ExtendedAttribute::NoArgs("Clamp") => {},
-                            ExtendedAttribute::NoArgs("EnforceRange") => {},
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                })
-            ))(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-StringType
-    fn string_type(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            alt((
-                map(self.keyword("ByteString"), |_| {
-                    let byte_str_type = TokenTree::Ident(Ident::new_raw("ByteString", Span::call_site()));
-                    let mut tts = quote!(::alloc::rc::Rc<$byte_str_type>);
-                    for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                }),
-                map(self.keyword("DOMString"), |_| {
-                    let dom_str_type = TokenTree::Ident(Ident::new_raw("DomString", Span::call_site()));
-                    let mut tts = quote!(::alloc::rc::Rc<$dom_str_type>);
-                    for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ExtendedAttribute::NoArgs("LegacyNullToEmptyString") => {},
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                }),
-                map(self.keyword("USVString"), |_| {
-                    let mut tts = quote!(::alloc::rc::Rc<::alloc::string::String>);
-                    for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ExtendedAttribute::NoArgs("LegacyNullToEmptyString") => {},
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                })
-            ))(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-PromiseType
-    fn promise_type(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            map(
-                preceded(
-                    self.keyword("Promise"),
-                    delimited(
-                        self.token('<'),
-                        self.idl_type(),
-                        self.token('>')
-                    )
-                ),
-                |ty| quote!(impl ::core::future::Future<$ty>)
-            )(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-RecordType
-    fn record_type(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            // A record type can be an annotated type that contains an annotated type. Make sure the
-            // two sets of extended attributes don't interfere with each other.
-            let mut outer_type_attrs = self.type_attrs.replace(Vec::new());
-            let inner_type_attrs = &self.type_attrs; // This is only needed to satisfy the borrow checker.
-
-            map(
-                preceded(
-                    self.keyword("record"),
-                    delimited(
-                        self.token('<'),
-                        separated_pair(
-                            self.string_type(),
-                            self.token(','),
-                            self.type_with_extended_attributes()
-                        ),
-                        self.token('>')
-                    )
-                ),
-                move |(s_type, attr_type)| {
-                    assert!(inner_type_attrs.borrow().is_empty(), "didn't use the inner type's extended attributes");
-                    let mut tts = todo!("record_type");
-                    for attr in outer_type_attrs.drain( .. ) {
-                        match attr {
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                }
-            )(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-Null
-    fn null(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, bool> {
-        |input| {
-            map(
-                opt(self.token('?')),
-                |x| x.is_some()
-            )(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-BufferRelatedType
-    fn buffer_related_type(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            alt((
-                map(self.keyword("ArrayBuffer"), |_| {
-                    let mut tts = todo!("buffer_related_type (ArrayBuffer)");
-                    for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                }),
-                map(self.keyword("DataView"), |_| {
-                    let mut tts = todo!("buffer_related_type (DataView)");
-                    for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                }),
-                map(self.keyword("Int8Array"), |_| {
-                    let mut tts = quote!(::alloc::rc::Rc<::alloc::vec::Vec<i8>>);
-                    for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                }),
-                map(self.keyword("Int16Array"), |_| {
-                    let mut tts = quote!(::alloc::rc::Rc<::alloc::vec::Vec<i16>>);
-                    for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                }),
-                map(self.keyword("Int32Array"), |_| {
-                    let mut tts = quote!(::alloc::rc::Rc<::alloc::vec::Vec<i32>>);
-                    for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                }),
-                map(self.keyword("Uint8Array"), |_| {
-                    let mut tts = quote!(::alloc::rc::Rc<::alloc::vec::Vec<u8>>);
-                    for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                }),
-                map(self.keyword("Uint16Array"), |_| {
-                    let mut tts = quote!(::alloc::rc::Rc<::alloc::vec::Vec<u16>>);
-                    for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                }),
-                map(self.keyword("Uint32Array"), |_| {
-                    let mut tts = quote!(::alloc::rc::Rc<::alloc::vec::Vec<u32>>);
-                    for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                }),
-                map(self.keyword("Uint8ClampedArray"), |_| {
-                    let mut tts = todo!("buffer_related_type (Uint8ClampedArray)");
-                    for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                }),
-                map(self.keyword("BigInt64Array"), |_| {
-                    let mut tts = quote!(::alloc::rc::Rc<::alloc::vec::Vec<i64>>);
-                    for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                }),
-                map(self.keyword("BigUint64Array"), |_| {
-                    let mut tts = quote!(::alloc::rc::Rc<::alloc::vec::Vec<u64>>);
-                    for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                }),
-                map(self.keyword("Float32Array"), |_| {
-                    let mut tts = quote!(::alloc::rc::Rc<::alloc::vec::Vec<f32>>);
-                    for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                }),
-                map(self.keyword("Float64Array"), |_| {
-                    let mut tts = quote!(::alloc::rc::Rc<::alloc::vec::Vec<f64>>);
-                    for attr in self.type_attrs.borrow_mut().drain( .. ) {
-                        match attr {
-                            ref attr => {
-                                let macro_ident = Self::custom_extended_attribute_macro_ident(attr);
-                                tts = quote!($macro_ident ! ($attr $tts););
-                            }
-                        };
-                    }
-                    tts
-                })
-            ))(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-ExtendedAttributeList
-    fn extended_attribute_list(&'a self, dest: &'a RefCell<Vec<ExtendedAttribute<'a>>>)
-            -> impl FnMut(&'a str) -> ParseResult<'a, ()> + 'a {
-        |input| {
-            map(
-                opt(delimited(
-                    self.token('['),
-                    pair(self.extended_attributes(), self.extended_attribute()),
-                    self.token(']')
-                )),
-                |x| match x {
-                    Some((mut attrs, attr)) => {
-                        if let Some(attr) = attr {
-                            attrs.push(attr);
-                        }
-                        dest.replace(attrs);
-                    },
-                    None => dest.borrow_mut().clear()
-                }
-            )(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-ExtendedAttributes
-    fn extended_attributes(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, Vec<ExtendedAttribute<'a>>> {
-        |input| {
-            fold_many0(
-                terminated(self.extended_attribute(), self.token(',')),
-                Vec::new,
-                |mut attrs, attr| {
-                    if let Some(attr) = attr {
-                        attrs.push(attr);
-                    }
-                    attrs
-                }
-            )(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-ExtendedAttribute
-    // https://webidl.spec.whatwg.org/#index-prod-ExtendedAttributeRest
-    fn extended_attribute(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, Option<ExtendedAttribute<'a>>> {
-        |input| {
-            map(
-                recognize(fold_many0(
-                    alt((
-                        delimited(self.token('('), self.extended_attribute_inner(), self.token(')')),
-                        delimited(self.token('['), self.extended_attribute_inner(), self.token(']')),
-                        delimited(self.token('{'), self.extended_attribute_inner(), self.token('}')),
-                        self.other()
-                    )),
-                    || (),
-                    |(), _| ()
-                )),
-                |s| match alt((
-                        terminated(self.extended_attribute_no_args(), eof),
-                        terminated(self.extended_attribute_arg_list(), eof),
-                        terminated(self.extended_attribute_ident(), eof),
-                        terminated(self.extended_attribute_wildcard(), eof),
-                        terminated(self.extended_attribute_ident_list(), eof),
-                        terminated(self.extended_attribute_named_arg_list(), eof)
-                    ))(s) {
-                    Ok((_, attr)) => Some(attr),
-                    Err(_) => {
-                        eprintln!("\x1b[93mwarning\x1b[0m: unrecognized extended attribute [{}]", s);
-                        None
-                    }
-                }
-            )(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-ExtendedAttributeInner
-    fn extended_attribute_inner(&'a self) -> impl FnMut(&'a str) -> ParseResult<&'a str> {
-        |input| {
-            // Because of Rust's lack of true support for curried functions and because of the need to keep
-            // `self` around to keep track of state, a recursive solution won't work here. The iterative
-            // solution isn't as pretty, but it works.
-
-            let mut rest = input;
-            let mut len = 0;
-            let mut closing_delimiters_stack = Vec::new();
-
-            loop {
-                if let Ok((r, (s, c))) = consumed(alt((self.token('('), self.token('['), self.token('{'))))(rest) {
-                    closing_delimiters_stack.push(match c {
-                        '(' => ')',
-                        '[' => ']',
-                        '{' => '}',
-                        _ => unreachable!()
-                    });
-                    rest = r;
-                    len += s.len();
-                    continue;
-                }
-                if let Some(&delim) = closing_delimiters_stack.last() {
-                    if let Ok((r, s)) = recognize(self.token(delim))(rest) {
-                        closing_delimiters_stack.pop();
-                        rest = r;
-                        len += s.len();
-                        continue;
-                    }
-                }
-                if let Ok((r, s)) = recognize(self.other_or_comma())(rest) {
-                    rest = r;
-                    len += s.len();
-                    continue;
-                }
-                break;
-            }
-
-            if closing_delimiters_stack.is_empty() {
-                let (val, remainder) = input.split_at(len);
-                assert_eq!(rest as *const _, remainder as *const _);
-                Ok((rest, val))
-            } else {
-                Err(nom::Err::Error(Error::new(input, ErrorKind::Char)))
-            }
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#prod-ExtendedAttributeNoArgs
-    fn extended_attribute_no_args(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, ExtendedAttribute<'a>> {
-        |input| {
-            map(self.identifier_str(), |ident| ExtendedAttribute::NoArgs(ident))(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#prod-ExtendedAttributeArgList
-    fn extended_attribute_arg_list(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, ExtendedAttribute<'a>> {
-        |input| {
-            map(
+// https://webidl.spec.whatwg.org/#index-prod-DistinguishableType
+fn distinguishable_type(input: &str) -> IResult<&str, SimpleType> {
+    alt((
+        map(
+            preceded(
+                token("sequence"),
                 pair(
-                    self.identifier_str(),
-                    delimited(
-                        self.token('('),
-                        self.argument_list_str(),
-                        self.token(')')
-                    )
+                    delimited(token("<"), type_with_extended_attributes, token(">")),
+                    null,
                 ),
-                |(ident, args)| ExtendedAttribute::ArgList(ident, args)
-            )(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#prod-ExtendedAttributeIdent
-    fn extended_attribute_ident(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, ExtendedAttribute<'a>> {
-        |input| {
-            map(
-                separated_pair(
-                    self.identifier_str(),
-                    self.token('='),
-                    self.identifier_str()
+            ),
+            |((attrs, ty), nullable)| SimpleType {
+                ty: SimpleNonnullableType::Sequence(attrs, Box::new(ty)),
+                nullable,
+            },
+        ),
+        map(
+            preceded(token("object"), null),
+            |nullable| SimpleType {
+                ty: SimpleNonnullableType::Object,
+                nullable,
+            },
+        ),
+        map(
+            preceded(token("symbol"), null),
+            |nullable| SimpleType {
+                ty: SimpleNonnullableType::Symbol,
+                nullable,
+            },
+        ),
+        map(
+            preceded(
+                token("FrozenArray"),
+                pair(
+                    delimited(token("<"), type_with_extended_attributes, token(">")),
+                    null,
                 ),
-                |(lident, rident)| ExtendedAttribute::Ident(lident, rident)
-            )(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#prod-ExtendedAttributeWildcard
-    fn extended_attribute_wildcard(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, ExtendedAttribute<'a>> {
-        |input| {
-            map(
-                terminated(
-                    self.identifier_str(),
-                    pair(self.token('='), self.token('*'))
+            ),
+            |((attrs, ty), nullable)| SimpleType {
+                ty: SimpleNonnullableType::FrozenArray(attrs, Box::new(ty)),
+                nullable,
+            },
+        ),
+        map(
+            preceded(
+                token("ObservableArray"),
+                pair(
+                    delimited(token("<"), type_with_extended_attributes, token(">")),
+                    null,
                 ),
-                |ident| ExtendedAttribute::Wildcard(ident)
-            )(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#prod-ExtendedAttributeIdentList
-    fn extended_attribute_ident_list(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, ExtendedAttribute<'a>> {
-        |input| {
-            map(
-                separated_pair(
-                    self.identifier_str(),
-                    self.token('='),
-                    delimited(
-                        self.token('('),
-                        self.identifier_list(),
-                        self.token(')')
-                    )
-                ),
-                |(lident, ridents)| ExtendedAttribute::IdentList(lident, ridents)
-            )(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#prod-ExtendedAttributeNamedArgList
-    fn extended_attribute_named_arg_list(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, ExtendedAttribute<'a>> {
-        |input| {
-            map(
-                separated_pair(
-                    self.identifier_str(),
-                    self.token('='),
-                    pair(
-                        self.identifier_str(),
-                        delimited(
-                            self.token('('),
-                            self.argument_list_str(),
-                            self.token(')')
-                        )
-                    )
-                ),
-                |(lident, (rident, args))| ExtendedAttribute::NamedArgList(lident, rident, args)
-            )(input)
-        }
-    }
-
-    fn custom_extended_attribute_macro_ident(attr: &ExtendedAttribute<'a>) -> TokenTree {
-        TokenTree::Ident(Ident::new_raw(
-            (String::from("idlea_") + attr.lident()).as_str(), Span::call_site()
-        ))
-    }
-
-    // https://webidl.spec.whatwg.org/#prod-IdentifierList
-    fn identifier_list(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, Vec<&'a str>> {
-        |input| {
-            map(
-                pair(self.identifiers(), self.identifier_str()),
-                |(mut idents, ident)| {
-                    idents.push(ident);
-                    idents
-                }
-            )(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#prod-Identifiers
-    fn identifiers(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, Vec<&'a str>> {
-        |input| {
-            fold_many0(
-                terminated(self.identifier_str(), self.token(',')),
-                Vec::new,
-                |mut idents, ident| {
-                    idents.push(ident);
-                    idents
-                }
-            )(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-Other
-    fn other(&'a self) -> impl FnMut(&'a str) -> ParseResult<&'a str> {
-        // NOTE: This is significantly cut down from what the spec says, since the identities of
-        //       these tokens are completely irrelevant at this point. We could just reduce it to
-        //       finding all characters that satisfy /[^()\[\]{},]/, except that the spec's grammar
-        //       forbids matching things like `42foo` outside of a string.
-        |input| {
-            alt((
-                recognize(self.string()),
-                recognize(self.integer()),
-                recognize(self.decimal()),
-                recognize(self.identifier()),
-                recognize(self.other_terminal())
-            ))(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#index-prod-OtherOrComma
-    fn other_or_comma(&'a self) -> impl FnMut(&'a str) -> ParseResult<&'a str> {
-        |input| {
-            alt((
-                recognize(self.token(',')),
-                self.other()
-            ))(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#prod-integer
-    fn integer(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            map(
-                terminated(
-                    pair(
-                        opt(char('-')),
-                        alt((
-                            self.uint_dec(),
-                            self.uint_hex(),
-                            self.uint_oct()
-                        ))
-                    ),
-                    self.eat_wsc()
-                ),
-                |(sign, magnitude)| {
-                    let tt = TokenTree::Literal(Literal::u128_unsuffixed(magnitude));
-                    match sign {
-                        Some(_) => quote!(-$tt),
-                        None => quote!($tt)
-                    }
-                }
-            )(input)
-        }
-    }
-
-    fn uint_dec(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, u128> {
-        |input| {
-            map(
-                recognize(pair(
-                    verify(satisfy(|c| c.is_digit(10)), |c| *c != '0'),
-                    digit0
-                )),
-                |int_str| u128::from_str_radix(int_str, 10)
-                    .expect("parser error when reading decimal integer")
-            )(input)
-        }
-    }
-
-    fn uint_hex(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, u128> {
-        |input| {
-            map(
-                preceded(
-                    tag_no_case("0x"),
-                    hex_digit1
-                ),
-                |int_str| u128::from_str_radix(int_str, 16)
-                    .expect("parser error when reading hexadecimal integer")
-            )(input)
-        }
-    }
-
-    fn uint_oct(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, u128> {
-        |input| {
-            map(
-                recognize(preceded(
-                    char('0'),
-                    oct_digit0
-                )),
-                |int_str| u128::from_str_radix(int_str, 8)
-                    .expect("parser error when reading octal integer")
-            )(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#prod-decimal
-    fn decimal(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            map(
-                terminated(
-                    pair(
-                        opt(char('-')),
-                        alt((
-                            recognize(tuple((
-                                digit0,
-                                char('.'),
-                                digit1,
-                                opt(tuple((
-                                    one_of("Ee"),
-                                    opt(one_of("+-")),
-                                    digit1
-                                )))
-                            ))),
-                            recognize(tuple((
-                                digit1,
-                                opt(char('.')),
-                                digit0,
-                                one_of("Ee"),
-                                opt(one_of("+-")),
-                                digit1
-                            )))
-                        ))
-                    ),
-                    self.eat_wsc()
-                ),
-                |(sign, magnitude)| {
-                    let tt = TokenTree::Literal(Literal::f64_unsuffixed(
-                        f64::from_str(magnitude).expect("parser error when reading floating-point number")
-                    ));
-                    match sign {
-                        Some(_) => quote!(-$tt),
-                        None => quote!($tt)
-                    }
-                }
-            )(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#prod-identifier
-    fn identifier(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            map(
-                self.identifier_str(),
-                |s| TokenTree::Ident(Ident::new_raw(self.rustify_ident(s).as_str(), Span::call_site())).into()
-            )(input)
-        }
-    }
-
-    fn identifier_str(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, &str> {
-        |input| {
-            map(
-                terminated(
-                    recognize(tuple((
-                        opt(one_of("_-")),
-                        satisfy(|c| c.is_ascii_alphabetic()),
-                        many0_count(satisfy(|c| c.is_ascii_alphanumeric() || c == '_'))
-                    ))),
-                    self.eat_wsc()
-                ),
-                |ident| {
-                    // "For all of these constructs, the identifier is the value of the identifier token with any
-                    // leading U+005F LOW LINE ("_") character (underscore) removed."
-                    let mut chars = ident.chars();
-                    if let Some('_') = chars.next() {
-                        chars.as_str()
-                    } else {
-                        ident
-                    }
-                }
-            )(input)
-        }
-    }
-
-    // Converts an IDL identifier into a Rust identifier. This means converting a leading hyphen into two underscores
-    // (which is invalid for the beginning of an IDL identifier).
-    fn rustify_ident(&self, idl_ident: &str) -> String {
-        assert!(!idl_ident.is_empty());
-
-        if idl_ident.starts_with('-') {
-            String::from("___") + &idl_ident[1 .. ]
-        } else {
-            String::from(idl_ident)
-        }
-    }
-
-    // Matches the given keyword while ensuring that it's not matching just the prefix of a longer
-    // identifier. (For instance, "longWord" should never be seen as keyword "long" followed by identifier "Word".)
-    fn keyword(&'a self, word: &'a str) -> impl FnMut(&'a str) -> ParseResult<&'a str> {
-        move |input| {
-            verify(self.identifier_str(), move |s: &str| s == word)(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#prod-string
-    fn string(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, TokenStream> {
-        |input| {
-            map(
-                terminated(
-                    delimited(
-                        char('"'),
-                        take_until("\""),
-                        char('"')
-                    ),
-                    self.eat_wsc()
-                ),
-                |s| TokenTree::Literal(Literal::string(s)).into()
-            )(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#prod-whitespace
-    fn whitespace(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, ()> {
-        |input| {
-            map(multispace1, |_| ())(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#prod-comment
-    fn comment(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, ()> {
-        |input| {
-            map(
-                alt((
-                    preceded(
-                        tag("//"),
-                        not_line_ending
-                    ),
-                    delimited(
-                        tag("/*"),
-                        take_until("*/"),
-                        tag("*/")
-                    )
-                )),
-                |_| ()
-            )(input)
-        }
-    }
-
-    // A convenience function to skip past whitespace and comments
-    fn eat_wsc(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, ()> {
-        |input| {
-            fold_many0(
-                alt((self.whitespace(), self.comment())), || (), |(), ()| ()
-            )(input)
-        }
-    }
-
-    // https://webidl.spec.whatwg.org/#prod-other
-    fn other_terminal(&'a self) -> impl FnMut(&'a str) -> ParseResult<'a, char> {
-        |input| {
-            terminated(
-                satisfy(|c|
-                    // NOTE: Every symbol explicitly mentioned as a token in the grammar should really
-                    //       be excluded here, but these are the only ones that matter for our purposes.
-                    c != '\t' && c != '\n' && c != '\r' && c != ' ' && !c.is_ascii_alphanumeric()
-                        && c != '(' && c != ')' && c != '[' && c != ']' && c != '{' && c != '}' && c != ','
-                ),
-                self.eat_wsc()
-            )(input)
-        }
-    }
-
-    // Matches a given character and discards any whitespace and comments after it.
-    fn token(&'a self, c: char) -> impl FnMut(&'a str) -> ParseResult<'a, char> {
-        move |input| {
-            terminated(char(c), self.eat_wsc())(input)
-        }
-    }
+            ),
+            |((attrs, ty), nullable)| SimpleType {
+                ty: SimpleNonnullableType::ObservableArray(attrs, Box::new(ty)),
+                nullable,
+            },
+        ),
+        map(
+            preceded(token("undefined"), null),
+            |nullable| SimpleType {
+                ty: SimpleNonnullableType::Undefined,
+                nullable,
+            },
+        ),
+        map(
+            pair(primitive_type, null),
+            |(ty, nullable)| SimpleType { ty, nullable },
+        ),
+        map(
+            pair(string_type, null),
+            |(ty, nullable)| SimpleType {
+                ty: SimpleNonnullableType::String(ty),
+                nullable
+            },
+        ),
+        map(
+            pair(buffer_related_type, null),
+            |(ty, nullable)| SimpleType { ty, nullable },
+        ),
+        map(
+            pair(record_type, null),
+            |(ty, nullable)| SimpleType { ty, nullable },
+        ),
+        map(
+            pair(identifier, null),
+            |(ident, nullable)| SimpleType {
+                ty: SimpleNonnullableType::Identifier(ident),
+                nullable,
+            },
+        )
+    ))(input)
 }
 
+// https://webidl.spec.whatwg.org/#index-prod-PrimitiveType
+fn primitive_type(input: &str) -> IResult<&str, SimpleNonnullableType> {
+    alt((
+        value(SimpleNonnullableType::Boolean, token("boolean")),
+        value(
+            SimpleNonnullableType::Integer {
+                ty: IntegerType::Byte,
+                signed: true,
+            },
+            token("byte"),
+        ),
+        value(
+            SimpleNonnullableType::Integer {
+                ty: IntegerType::Byte,
+                signed: false,
+            },
+            token("octet"),
+        ),
+        value(SimpleNonnullableType::BigInt, token("bigint")),
+        unsigned_integer_type,
+        unrestricted_float_type,
+    ))(input)
+}
+
+// https://webidl.spec.whatwg.org/#index-prod-UnrestrictedFloatType
+fn unrestricted_float_type(input: &str) -> IResult<&str, SimpleNonnullableType> {
+    map(
+        pair(opt(token("unrestricted")), float_type),
+        |(unrestricted, ty)| SimpleNonnullableType::Float {
+            ty,
+            restricted: unrestricted.is_none(),
+        },
+    )(input)
+}
+
+// https://webidl.spec.whatwg.org/#index-prod-FloatType
+fn float_type(input: &str) -> IResult<&str, FloatType> {
+    alt((
+        value(FloatType::Float, token("float")),
+        value(FloatType::Double, token("double")),
+    ))(input)
+}
+
+// https://webidl.spec.whatwg.org/#index-prod-UnsignedIntegerType
+fn unsigned_integer_type(input: &str) -> IResult<&str, SimpleNonnullableType> {
+    map(
+        pair(opt(token("unsigned")), integer_type),
+        |(unsigned, ty)| SimpleNonnullableType::Integer {
+            ty,
+            signed: unsigned.is_none(),
+        },
+    )(input)
+}
+
+// https://webidl.spec.whatwg.org/#index-prod-IntegerType
+fn integer_type(input: &str) -> IResult<&str, IntegerType> {
+    alt((
+        value(IntegerType::Short, token("short")),
+        map(
+            preceded(token("long"), optional_long),
+            |longer| if longer { IntegerType::LongLong } else { IntegerType::Long },
+        ),
+    ))(input)
+}
+
+// https://webidl.spec.whatwg.org/#index-prod-OptionalLong
+fn optional_long(input: &str) -> IResult<&str, bool> {
+    map(opt(token("long")), |o| o.is_some())(input)
+}
+
+// https://webidl.spec.whatwg.org/#index-prod-StringType
+fn string_type(input: &str) -> IResult<&str, StringType> {
+    alt((
+        value(StringType::ByteString, token("ByteString")),
+        value(StringType::DomString, token("DOMString")),
+        value(StringType::UsvString, token("USVString")),
+    ))(input)
+}
+
+// https://webidl.spec.whatwg.org/#index-prod-PromiseType
+fn promise_type(input: &str) -> IResult<&str, SimpleNonnullableType> {
+    map(
+        delimited(
+            pair(token("Promise"), token("<")),
+            type_,
+            token(">"),
+        ),
+        |ty| SimpleNonnullableType::Promise(Box::new(ty)),
+    )(input)
+}
+
+// https://webidl.spec.whatwg.org/#index-prod-RecordType
+fn record_type(input: &str) -> IResult<&str, SimpleNonnullableType> {
+    map(
+        delimited(
+            pair(token("record"), token("<")),
+            separated_pair(string_type, token(","), type_with_extended_attributes),
+            token(">"),
+        ),
+        |(key, (attrs, value))| SimpleNonnullableType::Record {
+            key,
+            value: (attrs, Box::new(value)),
+        },
+    )(input)
+}
+
+// https://webidl.spec.whatwg.org/#index-prod-Null
+fn null(input: &str) -> IResult<&str, bool> {
+    map(opt(token("?")), |o| o.is_some())(input)
+}
+
+// https://webidl.spec.whatwg.org/#index-prod-BufferRelatedType
+fn buffer_related_type(input: &str) -> IResult<&str, SimpleNonnullableType> {
+    alt((
+        value(SimpleNonnullableType::ArrayBuffer, token("ArrayBuffer")),
+        value(SimpleNonnullableType::DataView, token("DataView")),
+        value(
+            SimpleNonnullableType::ArrayViewInt {
+                ty: IntegerType::Byte,
+                signed: true,
+            },
+            token("Int8Array")
+        ),
+        value(
+            SimpleNonnullableType::ArrayViewInt {
+                ty: IntegerType::Short,
+                signed: true,
+            },
+            token("Int16Array")
+        ),
+        value(
+            SimpleNonnullableType::ArrayViewInt {
+                ty: IntegerType::Long,
+                signed: true,
+            },
+            token("Int32Array")
+        ),
+        value(
+            SimpleNonnullableType::ArrayViewInt {
+                ty: IntegerType::LongLong,
+                signed: true,
+            },
+            token("BigInt64Array")
+        ),
+        value(
+            SimpleNonnullableType::ArrayViewInt {
+                ty: IntegerType::Byte,
+                signed: false,
+            },
+            token("Uint8Array")
+        ),
+        value(
+            SimpleNonnullableType::ArrayViewInt {
+                ty: IntegerType::Short,
+                signed: false,
+            },
+            token("Uint16Array")
+        ),
+        value(
+            SimpleNonnullableType::ArrayViewInt {
+                ty: IntegerType::Long,
+                signed: false,
+            },
+            token("Uint32Array")
+        ),
+        value(
+            SimpleNonnullableType::ArrayViewInt {
+                ty: IntegerType::LongLong,
+                signed: false,
+            },
+            token("BigUint64Array")
+        ),
+        value(SimpleNonnullableType::ArrayViewUint8Clamped, token("Uint8ClampedArray")),
+        value(SimpleNonnullableType::ArrayViewFloat(FloatType::Float), token("Float32Array")),
+        value(SimpleNonnullableType::ArrayViewFloat(FloatType::Double), token("Float64Array")),
+    ))(input)
+}
+
+// https://webidl.spec.whatwg.org/#index-prod-ExtendedAttributeList
+// https://webidl.spec.whatwg.org/#index-prod-ExtendedAttributes
+fn extended_attribute_list(input: &str) -> IResult<&str, ExtendedAttributes> {
+    map(
+        opt(delimited(token("["), separated_list1(token(","), extended_attribute), token("]"))),
+        |attrs| ExtendedAttributes { attrs: attrs.unwrap_or_else(Vec::new) },
+    )(input)
+}
+
+// https://webidl.spec.whatwg.org/#index-prod-ExtendedAttribute
+// https://webidl.spec.whatwg.org/#index-prod-ExtendedAttributeRest
+fn extended_attribute(input: &str) -> IResult<&str, &str> {
+    recognize(
+        many1_count(
+            alt((
+                delimited(token("("), extended_attribute_inner, token(")")),
+                delimited(token("["), extended_attribute_inner, token("]")),
+                delimited(token("{"), extended_attribute_inner, token("}")),
+                other_nonterminal,
+            )),
+        ),
+    )(input)
+}
+
+// https://webidl.spec.whatwg.org/#index-prod-ExtendedAttributeInner
+fn extended_attribute_inner(input: &str) -> IResult<&str, &str> {
+    recognize(
+        many0_count(
+            alt((
+                delimited(token("("), extended_attribute_inner, token(")")),
+                delimited(token("["), extended_attribute_inner, token("]")),
+                delimited(token("{"), extended_attribute_inner, token("}")),
+                other_or_comma,
+            )),
+        ),
+    )(input)
+}
+
+// https://webidl.spec.whatwg.org/#index-prod-Other
+fn other_nonterminal(input: &str) -> IResult<&str, &str> {
+    alt((
+        // Note: All the specific tokens are omitted from this list because, with how we generate tokens, the more general
+        //       rules already cover those cases.
+        recognize(integer),
+        recognize(decimal),
+        recognize(identifier),
+        recognize(string),
+        recognize(other),
+    ))(input)
+}
+
+// https://webidl.spec.whatwg.org/#index-prod-OtherOrComma
+fn other_or_comma(input: &str) -> IResult<&str, &str> {
+    alt((
+        recognize(token(",")),
+        other_nonterminal,
+    ))(input)
+}
+
+// https://webidl.spec.whatwg.org/#index-prod-IdentifierList
+// https://webidl.spec.whatwg.org/#index-prod-Identifiers
+fn identifier_list(input: &str) -> IResult<&str, Vec<Identifier>> {
+    separated_list1(token(","), identifier)(input)
+}
+
+// https://webidl.spec.whatwg.org/#prod-ExtendedAttributeNoArgs
+fn extended_attribute_no_args(input: &str) -> IResult<&str, ExtendedAttribute> {
+    map(identifier, |ident| ExtendedAttribute::NoArgs(ident))(input)
+}
+
+// https://webidl.spec.whatwg.org/#prod-ExtendedAttributeArgList
+fn extended_attribute_arg_list(input: &str) -> IResult<&str, ExtendedAttribute> {
+    map(
+        pair(
+            identifier,
+            delimited(token("("), argument_list, token(")")),
+        ),
+        |(ident, args)| ExtendedAttribute::ArgList(ident, args),
+    )(input)
+}
+
+// https://webidl.spec.whatwg.org/#prod-ExtendedAttributeIdent
+fn extended_attribute_ident(input: &str) -> IResult<&str, ExtendedAttribute> {
+    map(
+        separated_pair(identifier, token("="), identifier),
+        |(lhs, rhs)| ExtendedAttribute::Ident(lhs, rhs),
+    )(input)
+}
+
+// https://webidl.spec.whatwg.org/#prod-ExtendedAttributeWildcard
+fn extended_attribute_wildcard(input: &str) -> IResult<&str, ExtendedAttribute> {
+    map(
+        terminated(identifier, pair(token("="), token("*"))),
+        |ident| ExtendedAttribute::Wildcard(ident),
+    )(input)
+}
+
+// https://webidl.spec.whatwg.org/#prod-ExtendedAttributeIdentList
+fn extended_attribute_ident_list(input: &str) -> IResult<&str, ExtendedAttribute> {
+    map(
+        separated_pair(
+            identifier,
+            token("="),
+            delimited(token("("), identifier_list, token(")")),
+        ),
+        |(lhs, idents)| ExtendedAttribute::IdentList(lhs, idents),
+    )(input)
+}
+
+// https://webidl.spec.whatwg.org/#prod-ExtendedAttributeNamedArgList
+fn extended_attribute_named_arg_list(input: &str) -> IResult<&str, ExtendedAttribute> {
+    map(
+        separated_pair(
+            identifier,
+            token("="),
+            pair(
+                identifier,
+                delimited(token("("), argument_list, token(")")),
+            ),
+        ),
+        |(lhs, (rhs, args))| ExtendedAttribute::NamedArgList(lhs, rhs, args),
+    )(input)
+}
+
+fn token(s: &str) -> impl FnMut(&str) -> IResult<&str, ()> + '_ {
+    move |input| value(
+        (),
+        preceded(
+            pair(
+                ws_and_comments,
+                // Make sure this isn't just the start of an identifier.
+                // Note: This doesn't work if the identifier starts with an underscore, but that's okay because no keywords
+                //       are defined that start with underscores.
+                not(verify(identifier, |ident| ident.name.len() > s.len()))
+            ),
+            tag(s),
+        ),
+    )(input)
+}
+
+// -----------------------------------------------
+// Named terminal symbols (should always be checked last)
+// -----------------------------------------------
+
+// https://webidl.spec.whatwg.org/#prod-integer
+fn integer(input: &str) -> IResult<&str, i128> {
+    map(
+        preceded(
+            ws_and_comments,
+            pair(
+                opt(char('-')),
+                alt((
+                    map(
+                        preceded(tag_no_case("0x"), hex_digit1),
+                        |s| (s, 16),
+                    ),
+                    map(
+                        preceded(char('0'), oct_digit0),
+                        |s| (s, 8),
+                    ),
+                    map(
+                        digit1,
+                        |s| (s, 10),
+                    ),
+                )),
+            ),
+        ),
+        |(sign, (digits, radix))| {
+            let s = match sign {
+                Some(_) => format!("-{digits}"),
+                None => String::from(digits),
+            };
+            i128::from_str_radix(&s, radix)
+                .expect("internal parser error")
+        },
+    )(input)
+}
+
+// https://webidl.spec.whatwg.org/#prod-decimal
+fn decimal(input: &str) -> IResult<&str, f64> {
+    map(
+        preceded(
+            ws_and_comments,
+            recognize(pair(
+                opt(char('-')),
+                alt((
+                    recognize(pair(
+                        alt((
+                            recognize(separated_pair(
+                                digit1,
+                                char('.'),
+                                digit0,
+                            )),
+                            recognize(preceded(
+                                char('.'),
+                                digit1,
+                            )),
+                        )),
+                        opt(tuple((
+                            one_of("Ee"),
+                            opt(one_of("+-")),
+                            digit1,
+                        ))),
+                    )),
+                    recognize(tuple((
+                        digit1,
+                        one_of("Ee"),
+                        opt(one_of("+-")),
+                        digit1,
+                    ))),
+                )),
+            )),
+        ),
+        |s| f64::from_str(s)
+            .expect("internal parser error")
+    )(input)
+}
+
+// https://webidl.spec.whatwg.org/#prod-identifier
+fn identifier(input: &str) -> IResult<&str, Identifier> {
+    preceded(
+        ws_and_comments,
+        map(
+            recognize(tuple::<&str, _, _, _>((
+                opt(alt((char('_'), char('-')))),
+                satisfy(|c| c.is_ascii_alphabetic()),
+                many0_count(satisfy(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')),
+            ))),
+            |name| match name.chars().next() {
+                // https://webidl.spec.whatwg.org/#idl-names
+                // "For all of these constructs, the identifier is the value of the identifier token with any leading
+                // U+005F LOW LINE ("_") character (underscore) removed."
+                Some('_') => Identifier { name: &name[1..] },
+                _ => Identifier { name },
+            },
+        ),
+    )(input)
+}
+
+// https://webidl.spec.whatwg.org/#prod-string
+fn string(input: &str) -> IResult<&str, &str> {
+    preceded(ws_and_comments, delimited(char('"'), is_not("\""), char('"')))(input)
+}
+
+// https://webidl.spec.whatwg.org/#prod-whitespace
+fn whitespace(input: &str) -> IResult<&str, ()> {
+    value((), multispace1)(input)
+}
+
+// https://webidl.spec.whatwg.org/#prod-comment
+fn comment(input: &str) -> IResult<&str, ()> {
+    alt((
+        value((), pair(tag("//"), not_line_ending)),
+        value((), delimited(tag("/*"), take_until("*/"), tag("*/"))),
+    ))(input)
+}
+
+fn ws_and_comments(input: &str) -> IResult<&str, ()> {
+    fold_many0(alt((whitespace, comment)), || (), |(), ()| ())(input)
+}
+
+// https://webidl.spec.whatwg.org/#prod-other
+fn other(input: &str) -> IResult<&str, char> {
+    preceded(
+        ws_and_comments,
+        satisfy(|c|
+            // NOTE: Every symbol explicitly mentioned as a token in the grammar should really
+            //       be excluded here, but these are the only ones that matter for our purposes.
+            c != '\t' && c != '\n' && c != '\r' && c != ' ' && !c.is_ascii_alphanumeric()
+                && c != '(' && c != ')' && c != '[' && c != ']' && c != '{' && c != '}' && c != ','
+        ),
+    )(input)
+}
+
+/* FIXME: Remove this.
 enum ExtendedAttribute<'a> {
     NoArgs(&'a str),
     ArgList(&'a str, Vec<&'a str>),
@@ -3141,4 +2091,4 @@ impl<'a> From<&ExtendedAttribute<'a>> for TokenStream {
             }
         }
     }
-}
+}*/
