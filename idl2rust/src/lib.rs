@@ -377,7 +377,7 @@ pub fn parse_idl(tts: TokenStream) -> TokenStream {
 }
 
 #[proc_macro]
-pub fn def_idl_types(tts: TokenStream) -> TokenStream {
+pub fn define_idl_types(tts: TokenStream) -> TokenStream {
     if !tts.is_empty() {
         return quote!(::core::compile_error!("expected 0 arguments");)
     }
