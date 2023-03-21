@@ -991,6 +991,34 @@ impl ExtendedAttributes<'_> {
 impl ExtendedAttribute<'_> {
     // Applies the extended attribute to the given token stream.
     fn apply(&self, ts: &mut TokenStream) {
-        todo!("extended attribute")
+        match self {
+            Self::NoArgs(attr) => {
+                todo!("extended attribute, no args")
+            },
+            Self::ArgList(attr, args) => {
+                todo!("extended attribute, arg list")
+            },
+            Self::Ident(attr, ident) => {
+                match attr.name {
+                    "Exposed" => todo!("Exposed with an identifier"),
+                    _ => todo!("extended attribute, ident"),
+                }
+            },
+            Self::Wildcard(attr) => {
+                match attr.name {
+                    "Exposed" => return,
+                    _ => todo!("extended attribute, wildcard"),
+                }
+            },
+            Self::IdentList(attr, idents) => {
+                match attr.name {
+                    "Exposed" => todo!("Exposed with an identifier list"),
+                    _ => todo!("extended attribute, ident list"),
+                }
+            },
+            Self::NamedArgList(attr, ident, args) => {
+                todo!("extended attribute, named arg list")
+            },
+        }
     }
 }
