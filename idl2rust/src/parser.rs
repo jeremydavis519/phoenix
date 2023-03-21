@@ -1755,53 +1755,25 @@ fn extended_attribute_list(input: &str) -> IResult<&str, ExtendedAttributes> {
 
 // https://webidl.spec.whatwg.org/#index-prod-ExtendedAttribute
 // https://webidl.spec.whatwg.org/#index-prod-ExtendedAttributeRest
-fn extended_attribute(input: &str) -> IResult<&str, &str> {
-    recognize(
-        many1_count(
-            alt((
-                delimited(token("("), extended_attribute_inner, token(")")),
-                delimited(token("["), extended_attribute_inner, token("]")),
-                delimited(token("{"), extended_attribute_inner, token("}")),
-                other_nonterminal,
-            )),
-        ),
-    )(input)
-}
-
 // https://webidl.spec.whatwg.org/#index-prod-ExtendedAttributeInner
-fn extended_attribute_inner(input: &str) -> IResult<&str, &str> {
-    recognize(
-        many0_count(
-            alt((
-                delimited(token("("), extended_attribute_inner, token(")")),
-                delimited(token("["), extended_attribute_inner, token("]")),
-                delimited(token("{"), extended_attribute_inner, token("}")),
-                other_or_comma,
-            )),
-        ),
-    )(input)
+fn extended_attribute(input: &str) -> IResult<&str, ExtendedAttribute> {
+    // We don't actually follow the spec here because it's useless to match extended attributes
+    // that we can't use. Instead, we match the different types of extended attributes that are
+    // actually defined.
+    alt((
+        extended_attribute_no_args,
+        extended_attribute_arg_list,
+        extended_attribute_ident,
+        extended_attribute_wildcard,
+        extended_attribute_ident_list,
+        extended_attribute_named_arg_list,
+    ))(input)
 }
 
 // https://webidl.spec.whatwg.org/#index-prod-Other
-fn other_nonterminal(input: &str) -> IResult<&str, &str> {
-    alt((
-        // Note: All the specific tokens are omitted from this list because, with how we generate tokens, the more general
-        //       rules already cover those cases.
-        recognize(integer),
-        recognize(decimal),
-        recognize(identifier),
-        recognize(string),
-        recognize(other),
-    ))(input)
-}
-
 // https://webidl.spec.whatwg.org/#index-prod-OtherOrComma
-fn other_or_comma(input: &str) -> IResult<&str, &str> {
-    alt((
-        recognize(token(",")),
-        other_nonterminal,
-    ))(input)
-}
+// These grammar rules are used only for parsing unusable extended attributes, so we don't need
+// them.
 
 // https://webidl.spec.whatwg.org/#index-prod-IdentifierList
 // https://webidl.spec.whatwg.org/#index-prod-Identifiers
@@ -2006,17 +1978,7 @@ fn ws_and_comments(input: &str) -> IResult<&str, ()> {
 }
 
 // https://webidl.spec.whatwg.org/#prod-other
-fn other(input: &str) -> IResult<&str, char> {
-    preceded(
-        ws_and_comments,
-        satisfy(|c|
-            // NOTE: Every symbol explicitly mentioned as a token in the grammar should really
-            //       be excluded here, but these are the only ones that matter for our purposes.
-            c != '\t' && c != '\n' && c != '\r' && c != ' ' && !c.is_ascii_alphanumeric()
-                && c != '(' && c != ')' && c != '[' && c != ']' && c != '{' && c != '}' && c != ','
-        ),
-    )(input)
-}
+// This grammar rule is used only for parsing unusable extended attributes, so we don't need it.
 
 /* FIXME: Remove this.
 enum ExtendedAttribute<'a> {

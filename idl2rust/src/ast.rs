@@ -305,7 +305,7 @@ pub struct Identifier<'a> {
 
 #[derive(Debug, Clone)]
 pub struct ExtendedAttributes<'a> {
-    pub attrs: Vec<&'a str>
+    pub attrs: Vec<ExtendedAttribute<'a>>
 }
 
 impl ExtendedAttributes<'_> {
@@ -331,8 +331,9 @@ pub enum ExtendedAttribute<'a> {
 impl ToTokens for Definitions<'_> {
     fn to_tokens(&self, ts: &mut TokenStream) {
         for (attrs, def) in self.defs.iter() {
-            let def_ts = def.to_token_stream();
-            attrs.apply(def_ts, ts);
+            let mut def_ts = def.to_token_stream();
+            attrs.apply(&mut def_ts);
+            ts.append_all(def_ts);
         }
     }
 }
@@ -361,8 +362,9 @@ impl ToTokens for CallbackFunction<'_> {
             TokenStream::new(),
             |mut params, (attrs, param)| {
                 let (_, ty) = &param.ty;
-                attrs.apply(ty.into_token_stream(), &mut params);
-                params.append_all(quote!(,));
+                let mut ty_ts = ty.into_token_stream();
+                attrs.apply(&mut ty_ts);
+                params.append_all(quote!(#ty_ts,));
                 params
             }
         );
@@ -435,8 +437,9 @@ impl ToTokens for Dictionary<'_> {
         let members = self.members.iter().fold(
             TokenStream::new(),
             |mut ts, (attrs, member)| {
-                attrs.apply(member.to_token_stream(), &mut ts);
-                ts.append_all(quote!(,));
+                let mut member_ts = member.to_token_stream();
+                attrs.apply(&mut member_ts);
+                ts.append_all(quote!(#member_ts,));
                 ts
             },
         );
@@ -501,11 +504,12 @@ impl ToTokens for DictionaryMember<'_> {
         let (attrs, ty) = &self.ty;
 
         ts.append_all(quote!(#ident:));
-        let ty_ts = match self.default {
+        let mut ty_ts = match self.default {
             None => quote!(#ty), // Required
             Some(_) => quote!(::core::option::Option<#ty>), // Optional
         };
-        attrs.apply(ty_ts, ts);
+        attrs.apply(&mut ty_ts);
+        ts.append_all(ty_ts);
     }
 }
 
@@ -575,8 +579,9 @@ impl ToTokens for Interface<'_> {
         let trait_members = self.members.iter().fold(
             TokenStream::new(),
             |mut ts, (attrs, member)| {
-                let Some(member) = member.to_token_stream_in_trait() else { return ts };
-                attrs.apply(member, &mut ts);
+                let Some(mut member) = member.to_token_stream_in_trait() else { return ts };
+                attrs.apply(&mut member);
+                ts.append_all(member);
                 ts
             },
         );
@@ -584,8 +589,9 @@ impl ToTokens for Interface<'_> {
         let mod_members = self.members.iter().fold(
             TokenStream::new(),
             |mut ts, (attrs, member)| {
-                let Some(member) = member.to_token_stream_in_mod() else { return ts };
-                attrs.apply(member, &mut ts);
+                let Some(mut member) = member.to_token_stream_in_mod() else { return ts };
+                attrs.apply(&mut member);
+                ts.append_all(member);
                 ts
             }
         );
@@ -623,8 +629,8 @@ impl InterfaceMember<'_> {
                 todo!()
             },
             Self::Operation(attrs, op) => {
-                let mut ts = TokenStream::new();
-                attrs.apply(op.into_token_stream(), &mut ts);
+                let mut ts = op.into_token_stream();
+                attrs.apply(&mut ts);
                 Some(ts)
             },
             Self::Setlike(s) => {
@@ -671,8 +677,9 @@ impl ToTokens for Operation<'_> {
             |(mut args, mut params), (attrs, param)| {
                 let ident = param.ident;
                 args.append_all(quote!(#ident,));
-                attrs.apply(param.into_token_stream(), &mut params);
-                params.append_all(quote!(,));
+                let mut param_ts = param.into_token_stream();
+                attrs.apply(&mut param_ts);
+                params.append_all(quote!(#param_ts,));
                 (args, params)
             }
         );
@@ -688,8 +695,9 @@ impl ToTokens for Argument<'_> {
     fn to_tokens(&self, ts: &mut TokenStream) {
         let ident = self.ident;
         let (attr, ty) = &self.ty;
-        ts.append_all(quote!(#ident:));
-        attr.apply(ty.into_token_stream(), ts);
+        let mut ty_ts = ty.into_token_stream();
+        attr.apply(&mut ty_ts);
+        ts.append_all(quote!(#ident: #ty_ts));
     }
 }
 
@@ -700,7 +708,9 @@ impl ToTokens for Namespace<'_> {
         let members = self.members.iter().fold(
             TokenStream::new(),
             |mut ts, (attr, member)| {
-                attr.apply(member.into_token_stream(&impl_ident), &mut ts);
+                let mut member_ts = member.into_token_stream(&impl_ident);
+                attr.apply(&mut member_ts);
+                ts.append_all(member_ts);
                 ts
             }
         );
@@ -733,7 +743,9 @@ impl NamespaceMember<'_> {
                     (TokenStream::new(), TokenStream::new()),
                     |(mut args, mut params), (attrs, param)| {
                         param.ident.to_tokens(&mut args);
-                        attrs.apply(param.into_token_stream(), &mut params);
+                        let mut param_ts = param.into_token_stream();
+                        attrs.apply(&mut param_ts);
+                        params.append_all(param_ts);
                         (args, params)
                     }
                 );
@@ -753,8 +765,8 @@ impl ToTokens for Typedef<'_> {
         let ident = self.ident;
         let (attrs, ty) = &self.ty;
 
-        let mut ty_ts = TokenStream::new();
-        attrs.apply(ty.into_token_stream(), &mut ty_ts);
+        let mut ty_ts = ty.into_token_stream();
+        attrs.apply(&mut ty_ts);
 
         ts.append_all(quote!(pub type #ident = #ty_ts;));
     }
@@ -830,8 +842,8 @@ impl ToTokens for SimpleNonnullableType<'_> {
                 todo!()
             },
             Self::Sequence(attrs, ty) => {
-                let mut ty_ts = TokenStream::new();
-                attrs.apply(ty.into_token_stream(), &mut ty_ts);
+                let mut ty_ts = ty.into_token_stream();
+                attrs.apply(&mut ty_ts);
                 ts.append_all(quote!(::alloc::rc::Rc<::alloc::vec::Vec<#ty_ts>>));
             },
             Self::String(ty) => ty.to_tokens(ts),
@@ -950,8 +962,17 @@ impl Identifier<'_> {
 }
 
 impl ExtendedAttributes<'_> {
-    // Modifies `ts` to apply the extended attributes on `inner`.
-    fn apply(&self, inner: TokenStream, ts: &mut TokenStream) {
-        todo!()
+    // Applies the extended attributes to the given token stream.
+    fn apply(&self, ts: &mut TokenStream) {
+        for attr in self.attrs.iter() {
+            attr.apply(ts);
+        }
+    }
+}
+
+impl ExtendedAttribute<'_> {
+    // Applies the extended attribute to the given token stream.
+    fn apply(&self, ts: &mut TokenStream) {
+        todo!("extended attribute")
     }
 }
