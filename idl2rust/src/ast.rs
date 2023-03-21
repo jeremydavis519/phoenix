@@ -447,7 +447,7 @@ impl ToTokens for Dictionary<'_> {
         let ident = self.ident;
         let alias_ident = ident.as_type_ident();
 
-        let inheritance = match self.inheritance {
+        let _super = match self.inheritance {
             Some(ref inheritance) => quote!(_super: #inheritance,),
             None => TokenStream::new(),
         };
@@ -463,6 +463,10 @@ impl ToTokens for Dictionary<'_> {
         );
 
         let default_impl = if self.defaultable() {
+            let where_super_default = match self.inheritance {
+                Some(ref inheritance) => quote!(where #inheritance: ::core::default::Default),
+                None => TokenStream::new(),
+            };
             let super_default = match self.inheritance {
                 Some(_) => quote!(_super: ::core::default::Default::default(),),
                 None => TokenStream::new(),
@@ -477,7 +481,7 @@ impl ToTokens for Dictionary<'_> {
                 }
             );
             quote!(
-                impl ::core::default::Default for #ident where #inheritance: ::core::default::Default {
+                impl ::core::default::Default for #ident #where_super_default {
                     fn default() -> Self {
                         Self {
                             #super_default
@@ -499,7 +503,7 @@ impl ToTokens for Dictionary<'_> {
             #[allow(non_snake_case)]
             #derive
             pub struct #ident {
-                #inheritance
+                #_super
                 #members
             }
 
@@ -523,8 +527,8 @@ impl ToTokens for DictionaryMember<'_> {
 
         ts.append_all(quote!(#ident:));
         let mut ty_ts = match self.default {
-            None => quote!(#ty), // Required
-            Some(_) => quote!(::core::option::Option<#ty>), // Optional
+            Some(DefaultValue::Undefined) => quote!(::core::option::Option<#ty>), // Optional with no default value
+            _ => quote!(#ty), // Either required or optional with a default value
         };
         attrs.apply(&mut ty_ts);
         ts.append_all(ty_ts);
