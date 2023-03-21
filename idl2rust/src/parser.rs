@@ -1761,12 +1761,12 @@ fn extended_attribute(input: &str) -> IResult<&str, ExtendedAttribute> {
     // that we can't use. Instead, we match the different types of extended attributes that are
     // actually defined.
     alt((
-        extended_attribute_no_args,
-        extended_attribute_arg_list,
+        extended_attribute_named_arg_list,
+        extended_attribute_ident_list,
         extended_attribute_ident,
         extended_attribute_wildcard,
-        extended_attribute_ident_list,
-        extended_attribute_named_arg_list,
+        extended_attribute_arg_list,
+        extended_attribute_no_args,
     ))(input)
 }
 
