@@ -332,11 +332,11 @@
 //! documentation for how to declare target traits.
 
 #![feature(proc_macro_expand)]
-#![feature(proc_macro_quote)]
 
 use {
-    proc_macro::{Ident, Span, TokenStream, TokenTree, quote},
-    quote::ToTokens,
+    proc_macro::TokenStream,
+    proc_macro2::{Ident, Span, TokenTree},
+    quote::{ToTokens, quote},
 };
 
 mod ast;
@@ -344,22 +344,23 @@ mod float;
 mod parser;
 
 #[proc_macro]
-pub fn include_idl(tts: TokenStream) -> TokenStream {
-    parse_idl(quote!(::core::include_str!($tts)))
+pub fn include_idl(ts: TokenStream) -> TokenStream {
+    let ts = proc_macro2::TokenStream::from(ts);
+    parse_idl(quote!(::core::include_str!(#ts)).into())
 }
 
 #[proc_macro]
-pub fn parse_idl(tts: TokenStream) -> TokenStream {
-    let Ok(tts) = tts.expand_expr() else {
-        return quote!(::core::compile_error!("expected a string literal");)
+pub fn parse_idl(ts: TokenStream) -> TokenStream {
+    let Ok(ts) = ts.expand_expr() else {
+        return quote!(::core::compile_error!("expected a string literal");).into()
     };
 
-    let mut tts = tts.into_iter();
-    let Some(expr) = tts.next() else {
-        return quote!(::core::compile_error!("expected a string literal");)
+    let mut ts = ts.into_iter();
+    let Some(expr) = ts.next() else {
+        return quote!(::core::compile_error!("expected a string literal");).into()
     };
-    if !tts.next().is_none() {
-        return quote!(::core::compile_error!("expected only one argument");)
+    if !ts.next().is_none() {
+        return quote!(::core::compile_error!("expected only one argument");).into()
     }
 
     let input = match litrs::StringLit::try_from(expr) {
@@ -371,21 +372,21 @@ pub fn parse_idl(tts: TokenStream) -> TokenStream {
         Ok(ast) => ast.into_token_stream().into(),
         Err(e) => {
             let s = String::from("IDL syntax error: ") + &e.to_string();
-            quote!(::core::compile_error!(#s);)
+            quote!(::core::compile_error!(#s);).into()
         },
     }
 }
 
 #[proc_macro]
-pub fn define_idl_types(tts: TokenStream) -> TokenStream {
-    if !tts.is_empty() {
-        return quote!(::core::compile_error!("expected 0 arguments");)
+pub fn define_idl_types(ts: TokenStream) -> TokenStream {
+    if !ts.is_empty() {
+        return quote!(::core::compile_error!("expected 0 arguments");).into()
     }
 
-    let mut tts = float::restricted_float();
+    let mut ts = float::restricted_float();
     let byte_str_type = TokenTree::Ident(Ident::new_raw("ByteString", Span::call_site()));
-    tts.extend(quote!(pub type $byte_str_type = ::alloc::vec::Vec<u8>;));
+    ts.extend(quote!(pub type #byte_str_type = ::alloc::vec::Vec<u8>;));
     let dom_str_type = TokenTree::Ident(Ident::new_raw("DomString", Span::call_site()));
-    tts.extend(quote!(pub type $dom_str_type = ::alloc::vec::Vec<u16>;));
-    tts
+    ts.extend(quote!(pub type #dom_str_type = ::alloc::vec::Vec<u16>;));
+    ts.into()
 }
