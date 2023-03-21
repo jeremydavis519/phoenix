@@ -446,7 +446,7 @@ impl ToTokens for Dictionary<'_> {
 
         let default_impl = if self.defaultable() {
             let super_default = match self.inheritance {
-                Some(_) => quote!(_super: ::std::default::Default::default(),),
+                Some(_) => quote!(_super: ::core::default::Default::default(),),
                 None => TokenStream::new(),
             };
             let members_default = self.members.iter().fold(
@@ -459,7 +459,7 @@ impl ToTokens for Dictionary<'_> {
                 }
             );
             quote!(
-                impl ::std::default::Default for #ident where #inheritance: ::std::default::Default {
+                impl ::core::default::Default for #ident where #inheritance: ::core::default::Default {
                     fn default() -> Self {
                         Self {
                             #super_default
