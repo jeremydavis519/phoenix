@@ -30,10 +30,12 @@ use {
     },
 };
 
+#[derive(Debug)]
 pub struct Definitions<'a> {
     pub defs: Vec<(ExtendedAttributes<'a>, Definition<'a>)>
 }
 
+#[derive(Debug)]
 pub enum Definition<'a> {
     CallbackFunction(CallbackFunction<'a>),
     CallbackInterface(CallbackInterface<'a>),
@@ -44,12 +46,14 @@ pub enum Definition<'a> {
     Typedef(Typedef<'a>),
 }
 
+#[derive(Debug)]
 pub struct Interface<'a> {
     pub ident: Identifier<'a>,
     pub inheritance: Option<Identifier<'a>>,
     pub members: Vec<(ExtendedAttributes<'a>, InterfaceMember<'a>)>,
 }
 
+#[derive(Debug)]
 pub enum InterfaceMember<'a> {
     Attribute(Attribute<'a>),
     Const(Const<'a>),
@@ -62,55 +66,65 @@ pub enum InterfaceMember<'a> {
     Stringifier(Stringifier<'a>),
 }
 
+#[derive(Debug)]
 pub struct CallbackInterface<'a> {
     pub ident: Identifier<'a>,
     pub members: Vec<(ExtendedAttributes<'a>, CallbackInterfaceMember<'a>)>,
 }
 
+#[derive(Debug)]
 pub enum CallbackInterfaceMember<'a> {
     Const(Const<'a>),
     Operation(Operation<'a>),
 }
 
+#[derive(Debug)]
 pub struct Dictionary<'a> {
     pub ident: Identifier<'a>,
     pub inheritance: Option<Identifier<'a>>,
     pub members: Vec<(ExtendedAttributes<'a>, DictionaryMember<'a>)>,
 }
 
+#[derive(Debug)]
 pub struct DictionaryMember<'a> {
     pub ty: (ExtendedAttributes<'a>, SimpleType<'a>),
     pub ident: Identifier<'a>,
     pub default: Option<DefaultValue<'a>>, // None if required, Some(Undefined) if optional with no default
 }
 
+#[derive(Debug)]
 pub struct Namespace<'a> {
     pub ident: Identifier<'a>,
     pub members: Vec<(ExtendedAttributes<'a>, NamespaceMember<'a>)>,
 }
 
+#[derive(Debug)]
 pub enum NamespaceMember<'a> {
     Attribute(Attribute<'a>),
     Const(Const<'a>),
     Operation(Operation<'a>),
 }
 
+#[derive(Debug)]
 pub struct Enum<'a> {
     pub ident: Identifier<'a>,
     pub values: Vec<&'a str>,
 }
 
+#[derive(Debug)]
 pub struct Typedef<'a> {
     pub ty: (ExtendedAttributes<'a>, SimpleType<'a>),
     pub ident: Identifier<'a>,
 }
 
+#[derive(Debug)]
 pub struct CallbackFunction<'a> {
     pub ident: Identifier<'a>,
     pub ty: SimpleType<'a>,
     pub params: Vec<(ExtendedAttributes<'a>, Argument<'a>)>,
 }
 
+#[derive(Debug)]
 pub struct Const<'a> {
     pub ty: SimpleNonnullableType<'a>,
     pub ident: Identifier<'a>,
@@ -251,6 +265,7 @@ impl<'a> Operation<'a> {
     }
 }
 
+#[derive(Debug)]
 pub struct OperationRest<'a> {
     pub ident: Option<Identifier<'a>>,
     pub params: Vec<(ExtendedAttributes<'a>, Argument<'a>)>,
@@ -275,6 +290,7 @@ pub enum StaticMember<'a> {
     Operation(Operation<'a>),
 }
 
+#[derive(Debug)]
 pub enum Iterable<'a> {
     Sync {
         key: Option<(ExtendedAttributes<'a>, SimpleType<'a>)>,
@@ -287,12 +303,14 @@ pub enum Iterable<'a> {
     },
 }
 
+#[derive(Debug)]
 pub struct Maplike<'a> {
     pub readonly: bool,
     pub from: (ExtendedAttributes<'a>, SimpleType<'a>),
     pub to: (ExtendedAttributes<'a>, SimpleType<'a>),
 }
 
+#[derive(Debug)]
 pub struct Setlike<'a> {
     pub readonly: bool,
     pub ty: (ExtendedAttributes<'a>, SimpleType<'a>),
