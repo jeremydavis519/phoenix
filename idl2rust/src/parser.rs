@@ -1901,7 +1901,7 @@ fn integer(input: &str) -> IResult<&str, i128> {
                         |s| (s, 16),
                     ),
                     map(
-                        preceded(char('0'), oct_digit0),
+                        preceded(char('0'), oct_digit1),
                         |s| (s, 8),
                     ),
                     map(
