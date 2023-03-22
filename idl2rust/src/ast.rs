@@ -1018,7 +1018,10 @@ impl ExtendedAttribute<'_> {
     fn apply(&self, ts: &mut TokenStream) {
         match self {
             Self::NoArgs(attr) => {
-                todo!("extended attribute, no args")
+                match attr.name {
+                    "LegacyUnforgeable" => {},
+                    _ => todo!("extended attribute, no args"),
+                }
             },
             Self::ArgList(attr, args) => {
                 todo!("extended attribute, arg list")
