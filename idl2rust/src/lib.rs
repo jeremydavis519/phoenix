@@ -61,8 +61,8 @@
 //!   ```
 //!   ```
 //!   trait CanvasDrawPathExcerpt {
-//!       fn stroke(&mut self);
-//!       fn _O1_stroke(&mut self, path: Box<dyn Path2D>);
+//!       fn stroke(&self);
+//!       fn _O1_stroke(&self, path: Box<dyn Path2D>);
 //!   }
 //!   # trait Path2D {}
 //!   ```
@@ -77,9 +77,9 @@
 //! * `null`             -> `None`
 //! * `constructor(...)` -> `fn constructor(...) -> Self where Self: Sized`[^1]
 //! * `readonly`         -> `const` (where applicable, e.g. `const fn`)
-//! * `iterable<V>`      -> `fn _iter(&mut self) -> Box<dyn Iterator<Item = &mut V> + '_>`
-//! * `iterable<K, V>`   -> `fn _iter(&mut self) -> Box<dyn Iterator<Item = &mut KeyValue<'_>> + '_>`[^2]
-//! * `stringifier`      -> `fn toString(&mut self)`[^3]
+//! * `iterable<V>`      -> `fn _iter(&self) -> Box<dyn Iterator<Item = &mut V> + '_>`
+//! * `iterable<K, V>`   -> `fn _iter(&self) -> Box<dyn Iterator<Item = &mut KeyValue<'_>> + '_>`[^2]
+//! * `stringifier`      -> `fn toString(&self)`[^3]
 //! * `getter`, `setter`, and `deleter` are ignored; their operations are treated like regular
 //!   operations.
 //!
@@ -99,7 +99,7 @@
 //!
 //! ## Attributes
 //! A read-write attribute `foo` with type `T` is converted into an accessor (`fn foo(&self) -> T`)
-//! and a mutator (`fn _set_foo(&mut self, value: T)`). A read-only attribute only gets the accessor.
+//! and a mutator (`fn _set_foo(&self, value: T)`). A read-only attribute only gets the accessor.
 //!
 //! ## Types
 //! Types are mapped as follows:
@@ -272,7 +272,7 @@
 //!     fn _super(&self) -> ::alloc::rc::Rc<dyn Node> {
 //!         panic!("attempted to find the supertrait of a base trait")
 //!     }
-//!     fn parentNode(self: Rc<Self>) -> ::alloc::rc::Rc<dyn Node> {
+//!     fn parentNode(&self) -> ::alloc::rc::Rc<dyn Node> {
 //!         self._super().parentNode()
 //!     }
 //! }
@@ -320,7 +320,7 @@
 //!         [AutoImpl = genericSetAttr(qualified_name: Rc<DomString>, value: Rc<DomString>,)]
 //!         idlea_CEReactions! {
 //!             [CEReactions]
-//!             fn setAttribute(&mut self, qualifiedName: Rc<DomString>, value: Rc<DomString>) -> ();
+//!             fn setAttribute(&self, qualifiedName: Rc<DomString>, value: Rc<DomString>) -> ();
 //!         }
 //!     }
 //! }

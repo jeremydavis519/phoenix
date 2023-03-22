@@ -706,7 +706,7 @@ impl ToTokens for Operation<'_> {
             }
         );
         ts.append_all(quote!(
-            fn #ident(self: ::core::rc::Rc<Self>, #params) -> #ty {
+            fn #ident(&self, #params) -> #ty {
                 self._super().#ident(#args)
             }
         ));
