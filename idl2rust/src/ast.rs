@@ -809,10 +809,15 @@ impl ToTokens for Typedef<'_> {
         let ident = self.ident;
         let (attrs, ty) = &self.ty;
 
+        let ty_ident = ident.as_type_ident();
+
         let mut ty_ts = ty.into_token_stream();
         attrs.apply(&mut ty_ts);
 
-        ts.append_all(quote!(pub type #ident = #ty_ts;));
+        ts.append_all(quote!(
+            pub type #ident = #ty_ts;
+            pub type #ty_ident = #ty_ts;
+        ));
     }
 }
 
@@ -863,7 +868,7 @@ impl ToTokens for SimpleNonnullableType<'_> {
             },
             Self::Float { ty, restricted } => {
                 if *restricted {
-                    let todo = todo!();
+                    ts.append_all(quote!(Restricted<#ty>));
                 } else {
                     ty.to_tokens(ts);
                 }
