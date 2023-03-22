@@ -19,6 +19,7 @@
 use {
     proc_macro2::{
         Ident,
+        Literal,
         Span,
         TokenStream,
     },
@@ -954,8 +955,8 @@ impl ToTokens for ConstValue {
     fn to_tokens(&self, ts: &mut TokenStream) {
         match *self {
             Self::Bool(b) => ts.append_all(quote!(#b)),
-            Self::Float(f) => ts.append_all(quote!(#f)),
-            Self::Int(i) => ts.append_all(quote!(#i)),
+            Self::Float(f) => ts.append(Literal::f64_unsuffixed(f)),
+            Self::Int(i) => ts.append(Literal::i128_unsuffixed(i)),
         }
     }
 }
