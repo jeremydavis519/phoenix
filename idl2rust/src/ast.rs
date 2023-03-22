@@ -639,7 +639,7 @@ impl ToTokens for Interface<'_> {
 impl InterfaceMember<'_> {
     fn to_token_stream_in_trait(&self) -> Option<TokenStream> {
         match self {
-            Self::Attribute(attr) => todo!(),
+            Self::Attribute(attr) => Some(attr.into_token_stream()),
             Self::Const(c) => None,
             Self::Constructor(params) => {
                 let mut args = TokenStream::new();
@@ -669,7 +669,7 @@ impl InterfaceMember<'_> {
 
     fn to_token_stream_in_mod(&self) -> Option<TokenStream> {
         match self {
-            Self::Attribute(attr) => todo!(),
+            Self::Attribute(attr) => None,
             Self::Const(c) => Some(c.into_token_stream()),
             Self::Constructor(_) => None,
             Self::Iterable(i) => {
@@ -686,6 +686,27 @@ impl InterfaceMember<'_> {
             Self::Stringifier(s) => {
                 todo!()
             },
+        }
+    }
+}
+
+impl ToTokens for Attribute<'_> {
+    fn to_tokens(&self, ts: &mut TokenStream) {
+        let ident = self.name;
+        let (attrs, ty) = &self.ty;
+
+        let mut ty_ts = ty.into_token_stream();
+        attrs.apply(&mut ty_ts);
+
+        let setter_ident = format_ident!("_set_{}", Ident::from(ident));
+
+        let getter = quote!(fn #ident(&self) -> #ty_ts { self._super().#ident() });
+        let setter = quote!(fn #setter_ident(&self, value: #ty_ts) { self._super().#setter_ident(value) });
+
+        match self.tag {
+            AttributeTag::ReadOnly => ts.append_all(getter),
+            AttributeTag::Inherit => ts.append_all(setter),
+            AttributeTag::None => ts.append_all(quote!(#getter #setter)),
         }
     }
 }
@@ -716,9 +737,9 @@ impl ToTokens for Operation<'_> {
 impl ToTokens for Argument<'_> {
     fn to_tokens(&self, ts: &mut TokenStream) {
         let ident = self.ident;
-        let (attr, ty) = &self.ty;
+        let (attrs, ty) = &self.ty;
         let mut ty_ts = ty.into_token_stream();
-        attr.apply(&mut ty_ts);
+        attrs.apply(&mut ty_ts);
         ts.append_all(quote!(#ident: #ty_ts));
     }
 }
