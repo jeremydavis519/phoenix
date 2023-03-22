@@ -293,7 +293,7 @@ fn interface_members(input: &str) -> IResult<&str, Vec<(ExtendedAttributes, Inte
 // https://webidl.spec.whatwg.org/#index-prod-InterfaceMember
 fn interface_member(input: &str) -> IResult<&str, InterfaceMember> {
     alt((
-        map(constructor, |op| InterfaceMember::Constructor(op)),
+        map(constructor, |args| InterfaceMember::Constructor(args)),
         partial_interface_member,
     ))(input)
 }
@@ -302,7 +302,7 @@ fn interface_member(input: &str) -> IResult<&str, InterfaceMember> {
 fn partial_interface_member(input: &str) -> IResult<&str, InterfaceMember> {
     alt((
         map(const_, |c| InterfaceMember::Const(c)),
-        map(operation, |o| InterfaceMember::Operation(ExtendedAttributes::new(), o)),
+        map(operation, |o| InterfaceMember::Operation(o)),
         map(stringifier, |s| InterfaceMember::Stringifier(s)),
         map(static_member, |m| InterfaceMember::StaticMember(m)),
         map(iterable, |i| InterfaceMember::Iterable(i)),

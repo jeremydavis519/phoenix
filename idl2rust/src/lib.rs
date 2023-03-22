@@ -75,7 +75,7 @@
 //! * `enum _`           -> `static _: [&str; n]`
 //! * `typedef a b`      -> `type b = a`
 //! * `null`             -> `None`
-//! * `constructor(...)` -> `fn constructor(&mut self, ...)`[^1]
+//! * `constructor(...)` -> `fn constructor(...) -> Self where Self: Sized`[^1]
 //! * `readonly`         -> `const` (where applicable, e.g. `const fn`)
 //! * `iterable<V>`      -> `fn _iter(&mut self) -> Box<dyn Iterator<Item = &mut V> + '_>`
 //! * `iterable<K, V>`   -> `fn _iter(&mut self) -> Box<dyn Iterator<Item = &mut KeyValue<'_>> + '_>`[^2]
@@ -84,8 +84,8 @@
 //!   operations.
 //!
 //! [^1]: If interface `Foo` has a constructor, it is expected that every method `Bar::constructor`,
-//!   where `Bar: Foo`, will call `Foo::constructor(self)`. IDL uses standard OOP constructors,
-//!   but Rust requires us to do it explicitly.
+//!   where `Bar: Foo`, will call `Foo::constructor()`. IDL uses standard OOP constructors, but
+//!   Rust requires us to do it explicitly.
 //! [^2]: For an interface named `Foo`, `KeyValue` is defined in the module `_Foo` as follows:
 //!   ```
 //!   pub struct KeyValue<'a> {
@@ -320,7 +320,7 @@
 //!         [AutoImpl = genericSetAttr(qualified_name: Rc<DomString>, value: Rc<DomString>,)]
 //!         idlea_CEReactions! {
 //!             [CEReactions]
-//!             fn setAttribute(&mut self, qualifiedName: Rc<DomString>, value: Rc<DomString>);
+//!             fn setAttribute(&mut self, qualifiedName: Rc<DomString>, value: Rc<DomString>) -> ();
 //!         }
 //!     }
 //! }

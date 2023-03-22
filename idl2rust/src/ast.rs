@@ -60,7 +60,7 @@ pub enum InterfaceMember<'a> {
     Constructor(Vec<(ExtendedAttributes<'a>, Argument<'a>)>),
     Iterable(Iterable<'a>),
     Maplike(Maplike<'a>),
-    Operation(ExtendedAttributes<'a>, Operation<'a>),
+    Operation(Operation<'a>),
     Setlike(Setlike<'a>),
     StaticMember(StaticMember<'a>),
     Stringifier(Stringifier<'a>),
@@ -641,20 +641,22 @@ impl InterfaceMember<'_> {
         match self {
             Self::Attribute(attr) => todo!(),
             Self::Const(c) => None,
-            Self::Constructor(op) => {
-                todo!()
-            },
+            Self::Constructor(params) => {
+                let mut args = TokenStream::new();
+                for (attrs, arg) in params.iter() {
+                    let mut arg_ts = arg.to_token_stream();
+                    attrs.apply(&mut arg_ts);
+                    args.append_all(quote!(#arg_ts,));
+                }
+                Some(quote!(fn constructor(#args) -> Self where Self: ::core::marker::Sized;))
+            }
             Self::Iterable(i) => {
                 todo!()
             },
             Self::Maplike(m) => {
                 todo!()
             },
-            Self::Operation(attrs, op) => {
-                let mut ts = op.into_token_stream();
-                attrs.apply(&mut ts);
-                Some(ts)
-            },
+            Self::Operation(op) => Some(op.into_token_stream()),
             Self::Setlike(s) => {
                 todo!()
             },
@@ -669,16 +671,14 @@ impl InterfaceMember<'_> {
         match self {
             Self::Attribute(attr) => todo!(),
             Self::Const(c) => Some(c.into_token_stream()),
-            Self::Constructor(op) => {
-                todo!()
-            },
+            Self::Constructor(_) => None,
             Self::Iterable(i) => {
                 todo!()
             },
             Self::Maplike(m) => {
                 todo!()
             },
-            Self::Operation(attrs, op) => None,
+            Self::Operation(_) => None,
             Self::Setlike(s) => {
                 todo!()
             },
