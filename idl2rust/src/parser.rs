@@ -194,7 +194,7 @@ fn interface_rest(input: &str) -> IResult<&str, Interface> {
         tuple((
             identifier,
             inheritance,
-            delimited(token("{"), interface_members, pair(token("}"), token(";")))
+            delimited(token("{"), cut(interface_members), cut(pair(token("}"), token(";"))))
         )),
         |(ident, inheritance, members)| Interface {
             ident,
@@ -327,14 +327,14 @@ fn callback_rest_or_interface(input: &str) -> IResult<&str, Definition> {
         map(
             preceded(
                 token("interface"),
-                pair(
+                cut(pair(
                     identifier,
                     delimited(
                         token("{"),
                         callback_interface_members,
                         pair(token("}"), token(";"))
                     ),
-                ),
+                )),
             ),
             |(ident, members)| Definition::CallbackInterface(
                 CallbackInterface {
@@ -430,12 +430,12 @@ fn const_(input: &str) -> IResult<&str, Const> {
     map(
         delimited(
             token("const"),
-            tuple((
+            cut(tuple((
                 const_type,
                 identifier,
                 preceded(token("="), const_value),
-            )),
-            token(";"),
+            ))),
+            cut(token(";")),
         ),
         |(ty, ident, value)| Const { ty, ident, value },
     )(input)
@@ -481,7 +481,7 @@ fn const_type(input: &str) -> IResult<&str, SimpleNonnullableType> {
 
 // https://webidl.spec.whatwg.org/#index-prod-ReadOnlyMember
 fn read_only_member(input: &str) -> IResult<&str, InterfaceMember> {
-    preceded(token("readonly"), read_only_member_rest)(input)
+    preceded(token("readonly"), cut(read_only_member_rest))(input)
 }
 
 // https://webidl.spec.whatwg.org/#index-prod-ReadOnlyMemberRest
@@ -526,7 +526,7 @@ fn read_write_attribute(input: &str) -> IResult<&str, Attribute> {
 // https://webidl.spec.whatwg.org/#index-prod-InheritAttribute
 fn inherit_attribute(input: &str) -> IResult<&str, Attribute> {
     map(
-        preceded(token("inherit"), attribute_rest),
+        preceded(token("inherit"), cut(attribute_rest)),
         |rest| Attribute::new(AttributeTag::Inherit, rest),
     )(input)
 }
@@ -536,8 +536,8 @@ fn attribute_rest(input: &str) -> IResult<&str, AttributeRest> {
     map(
         delimited(
             token("attribute"),
-            pair(type_with_extended_attributes, attribute_name),
-            token(";"),
+            cut(pair(type_with_extended_attributes, attribute_name)),
+            cut(token(";")),
         ),
         |((attrs, ty), name)| AttributeRest {
             ty: (attrs, Type::Simple(ty)),
@@ -618,7 +618,7 @@ fn regular_operation(input: &str) -> IResult<&str, Operation> {
 
 // https://webidl.spec.whatwg.org/#index-prod-SpecialOperation
 fn special_operation(input: &str) -> IResult<&str, Operation> {
-    preceded(special, regular_operation)(input)
+    preceded(special, cut(regular_operation))(input)
 }
 
 // https://webidl.spec.whatwg.org/#index-prod-Special
@@ -633,8 +633,8 @@ fn operation_rest(input: &str) -> IResult<&str, OperationRest> {
             optional_operation_name,
             delimited(
                 token("("),
-                argument_list,
-                pair(token(")"), token(";"))
+                cut(argument_list),
+                cut(pair(token(")"), token(";")))
             ),
         ),
         |(ident, params)| OperationRest { ident, params }
@@ -691,7 +691,7 @@ fn argument_rest(input: &str) -> IResult<&str, Argument> {
         map(
             preceded(
                 token("optional"),
-                tuple((type_with_extended_attributes, argument_name, default)),
+                cut(tuple((type_with_extended_attributes, argument_name, default))),
             ),
             |((attrs, ty), ident, default)| Argument {
                 ty: (attrs, Type::Simple(ty)),
@@ -724,15 +724,15 @@ fn ellipsis(input: &str) -> IResult<&str, bool> {
 // https://webidl.spec.whatwg.org/#index-prod-Constructor
 fn constructor(input: &str) -> IResult<&str, Vec<(ExtendedAttributes, Argument)>> {
     delimited(
-        pair(token("constructor"), token("(")),
-        argument_list,
-        pair(token(")"), token(";")),
+        pair(token("constructor"), cut(token("("))),
+        cut(argument_list),
+        cut(pair(token(")"), token(";"))),
     )(input)
 }
 
 // https://webidl.spec.whatwg.org/#index-prod-Stringifier
 fn stringifier(input: &str) -> IResult<&str, Stringifier> {
-    preceded(token("stringifier"), stringifier_rest)(input)
+    preceded(token("stringifier"), cut(stringifier_rest))(input)
 }
 
 // https://webidl.spec.whatwg.org/#index-prod-StringifierRest
@@ -753,7 +753,7 @@ fn stringifier_rest(input: &str) -> IResult<&str, Stringifier> {
 
 // https://webidl.spec.whatwg.org/#index-prod-StaticMember
 fn static_member(input: &str) -> IResult<&str, StaticMember> {
-    preceded(token("static"), static_member_rest)(input)
+    preceded(token("static"), cut(static_member_rest))(input)
 }
 
 // https://webidl.spec.whatwg.org/#index-prod-StaticMemberRest
@@ -779,9 +779,9 @@ fn static_member_rest(input: &str) -> IResult<&str, StaticMember> {
 fn iterable(input: &str) -> IResult<&str, Iterable> {
     map(
         delimited(
-           pair(token("iterable"), token("<")),
-           pair(type_with_extended_attributes, optional_type),
-           pair(token(">"), token(";")), 
+           pair(token("iterable"), cut(token("<"))),
+           cut(pair(type_with_extended_attributes, optional_type)),
+           cut(pair(token(">"), token(";"))),
         ),
         |(ty1, ty2)| match  ty2 {
             Some(ty2) => Iterable::Sync { key: Some(ty1), value: ty2 },
@@ -841,7 +841,7 @@ fn iterable(input: &str) -> IResult<&str, Iterable> {
 
 // https://webidl.spec.whatwg.org/#index-prod-OptionalType
 fn optional_type(input: &str) -> IResult<&str, Option<(ExtendedAttributes, SimpleType)>> {
-    opt(preceded(token(","), type_with_extended_attributes))(input)
+    opt(preceded(token(","), cut(type_with_extended_attributes)))(input)
 }
 
 // https://webidl.spec.whatwg.org/#index-prod-AsyncIterable
@@ -850,13 +850,13 @@ fn async_iterable(input: &str) -> IResult<&str, Iterable> {
         terminated(
             pair(
                 delimited(
-                    tuple((token("async"), token("iterable"), token("<"))),
-                    pair(type_with_extended_attributes, optional_type),
-                    token(">"),
+                    tuple((token("async"), cut(token("iterable")), cut(token("<")))),
+                    cut(pair(type_with_extended_attributes, optional_type)),
+                    cut(token(">")),
                 ),
-                optional_argument_list,
+                cut(optional_argument_list),
             ),
-            token(";"),
+            cut(token(";")),
         ),
         |((ty1, ty2), args)| {
             let args = args.unwrap_or_else(Vec::new);
@@ -878,7 +878,7 @@ fn async_iterable(input: &str) -> IResult<&str, Iterable> {
 
 // https://webidl.spec.whatwg.org/#index-prod-OptionalArgumentList
 fn optional_argument_list(input: &str) -> IResult<&str, Option<Vec<(ExtendedAttributes, Argument)>>> {
-    opt(delimited(token("("), argument_list, token(")")))(input)
+    opt(delimited(token("("), cut(argument_list), cut(token(")"))))(input)
 }
 
 // https://webidl.spec.whatwg.org/#index-prod-ReadWriteMaplike
@@ -889,9 +889,9 @@ fn read_write_maplike(input: &str) -> IResult<&str, Maplike> {
 // https://webidl.spec.whatwg.org/#index-prod-MaplikeRest
 fn maplike_rest(input: &str) -> IResult<&str, ((ExtendedAttributes, SimpleType), (ExtendedAttributes, SimpleType))> {
     delimited(
-        pair(token("maplike"), token("<")),
-        separated_pair(type_with_extended_attributes, token(","), type_with_extended_attributes),
-        pair(token(">"), token(";")),
+        pair(token("maplike"), cut(token("<"))),
+        cut(separated_pair(type_with_extended_attributes, token(","), type_with_extended_attributes)),
+        cut(pair(token(">"), token(";"))),
     )(input)
 }
 
@@ -906,9 +906,9 @@ fn read_write_setlike(input: &str) -> IResult<&str, Setlike> {
 // https://webidl.spec.whatwg.org/#index-prod-SetlikeRest
 fn setlike_rest(input: &str) -> IResult<&str, (ExtendedAttributes, SimpleType)> {
     delimited(
-        pair(token("setlike"), token("<")),
-        type_with_extended_attributes,
-        pair(token(">"), token(";")),
+        pair(token("setlike"), cut(token("<"))),
+        cut(type_with_extended_attributes),
+        cut(pair(token(">"), token(";"))),
     )(input)
 }
 
@@ -917,11 +917,11 @@ fn namespace(input: &str) -> IResult<&str, Namespace> {
     map(
         delimited(
             token("namespace"),
-            pair(
+            cut(pair(
                 identifier,
                 delimited(token("{"), namespace_members, token("}")),
-            ),
-            token(";"),
+            )),
+            cut(token(";")),
         ),
         |(ident, members)| Namespace { ident, members },
     )(input)
@@ -936,7 +936,7 @@ fn namespace_members(input: &str) -> IResult<&str, Vec<(ExtendedAttributes, Name
 fn namespace_member(input: &str) -> IResult<&str, NamespaceMember> {
     alt((
         map(
-            preceded(token("readonly"), attribute_rest),
+            preceded(token("readonly"), cut(attribute_rest)),
             |rest| NamespaceMember::Attribute(
                 Attribute::new(AttributeTag::ReadOnly, rest)
             ),
@@ -957,12 +957,12 @@ fn dictionary(input: &str) -> IResult<&str, Dictionary> {
     map(
         delimited(
             token("dictionary"),
-            tuple((
+            cut(tuple((
                 identifier,
                 inheritance,
                 delimited(token("{"), dictionary_members, token("}")),
-            )),
-            token(";"),
+            ))),
+            cut(token(";")),
         ),
         |(ident, inheritance, members)| Dictionary { ident, inheritance, members },
     )(input)
@@ -1096,8 +1096,8 @@ fn dictionary_member_rest(input: &str) -> IResult<&str, DictionaryMember> {
         map(
             delimited(
                 token("required"),
-                pair(type_with_extended_attributes, identifier),
-                token(";"),
+                cut(pair(type_with_extended_attributes, identifier)),
+                cut(token(";")),
             ),
             |(ty, ident)| DictionaryMember {
                 ty,
@@ -1107,8 +1107,8 @@ fn dictionary_member_rest(input: &str) -> IResult<&str, DictionaryMember> {
         ),
         map(
             terminated(
-                tuple((type_, identifier, default)),
-                token(";"),
+                tuple((type_, cut(identifier), cut(default))),
+                cut(token(";")),
             ),
             |(ty, ident, default)| DictionaryMember {
                 ty: (ExtendedAttributes::new(), ty),
@@ -1179,7 +1179,7 @@ fn dictionary_member_rest(input: &str) -> IResult<&str, DictionaryMember> {
 
 // https://webidl.spec.whatwg.org/#index-prod-Default
 fn default(input: &str) -> IResult<&str, Option<DefaultValue>> {
-    opt(preceded(token("="), default_value))(input)
+    opt(preceded(token("="), cut(default_value)))(input)
 }
 
 // https://webidl.spec.whatwg.org/#index-prod-Enum
@@ -1187,11 +1187,11 @@ fn enum_(input: &str) -> IResult<&str, Enum> {
     map(
         delimited(
             token("enum"),
-            pair(
+            cut(pair(
                 identifier,
                 delimited(token("{"), enum_value_list, token("}")),
-            ),
-            token(";"),
+            )),
+            cut(token(";")),
         ),
         |(ident, values)| Enum { ident, values },
     )(input)
@@ -1242,15 +1242,15 @@ fn callback_rest(input: &str) -> IResult<&str, CallbackFunction> {
     map(
         separated_pair(
             identifier,
-            token("="),
-            pair(
+            cut(token("=")),
+            cut(pair(
                 type_,
                 delimited(
                     token("("),
                     argument_list,
                     pair(token(")"), token(";")),
                 )
-            ),
+            )),
         ),
         |(ident, (ty, params))| CallbackFunction {
             ident,
@@ -1304,8 +1304,8 @@ fn typedef(input: &str) -> IResult<&str, Typedef> {
     map(
         delimited(
             token("typedef"),
-            pair(type_with_extended_attributes, identifier),
-            token(";"),
+            cut(pair(type_with_extended_attributes, identifier)),
+            cut(token(";")),
         ),
         |(ty, ident)| Typedef { ty, ident },
     )(input)
@@ -1376,11 +1376,11 @@ fn union_type(input: &str) -> IResult<&str, SimpleType> {
     map(
         delimited(
             token("("),
-            verify(
+            cut(verify(
                 separated_list1(token("or"), union_member_type),
                 |types: &Vec<_>| types.len() > 1,
-            ),
-            token(")"),
+            )),
+            cut(token(")")),
         ),
         |types| SimpleType {
             ty: SimpleNonnullableType::Union(types),
@@ -1480,10 +1480,10 @@ fn distinguishable_type(input: &str) -> IResult<&str, SimpleType> {
         map(
             preceded(
                 token("sequence"),
-                pair(
+                cut(pair(
                     delimited(token("<"), type_with_extended_attributes, token(">")),
                     null,
-                ),
+                )),
             ),
             |((attrs, ty), nullable)| SimpleType {
                 ty: SimpleNonnullableType::Sequence(attrs, Box::new(ty)),
@@ -1507,10 +1507,10 @@ fn distinguishable_type(input: &str) -> IResult<&str, SimpleType> {
         map(
             preceded(
                 token("FrozenArray"),
-                pair(
+                cut(pair(
                     delimited(token("<"), type_with_extended_attributes, token(">")),
                     null,
-                ),
+                )),
             ),
             |((attrs, ty), nullable)| SimpleType {
                 ty: SimpleNonnullableType::FrozenArray(attrs, Box::new(ty)),
@@ -1520,10 +1520,10 @@ fn distinguishable_type(input: &str) -> IResult<&str, SimpleType> {
         map(
             preceded(
                 token("ObservableArray"),
-                pair(
+                cut(pair(
                     delimited(token("<"), type_with_extended_attributes, token(">")),
                     null,
-                ),
+                )),
             ),
             |((attrs, ty), nullable)| SimpleType {
                 ty: SimpleNonnullableType::ObservableArray(attrs, Box::new(ty)),
@@ -1649,9 +1649,9 @@ fn string_type(input: &str) -> IResult<&str, StringType> {
 fn promise_type(input: &str) -> IResult<&str, SimpleNonnullableType> {
     map(
         delimited(
-            pair(token("Promise"), token("<")),
-            type_,
-            token(">"),
+            pair(token("Promise"), cut(token("<"))),
+            cut(type_),
+            cut(token(">")),
         ),
         |ty| SimpleNonnullableType::Promise(Box::new(ty)),
     )(input)
@@ -1661,9 +1661,9 @@ fn promise_type(input: &str) -> IResult<&str, SimpleNonnullableType> {
 fn record_type(input: &str) -> IResult<&str, SimpleNonnullableType> {
     map(
         delimited(
-            pair(token("record"), token("<")),
-            separated_pair(string_type, token(","), type_with_extended_attributes),
-            token(">"),
+            pair(token("record"), cut(token("<"))),
+            cut(separated_pair(string_type, token(","), type_with_extended_attributes)),
+            cut(token(">")),
         ),
         |(key, (attrs, value))| SimpleNonnullableType::Record {
             key,
@@ -1748,7 +1748,7 @@ fn buffer_related_type(input: &str) -> IResult<&str, SimpleNonnullableType> {
 // https://webidl.spec.whatwg.org/#index-prod-ExtendedAttributes
 fn extended_attribute_list(input: &str) -> IResult<&str, ExtendedAttributes> {
     map(
-        opt(delimited(token("["), separated_list1(token(","), extended_attribute), token("]"))),
+        opt(delimited(token("["), cut(separated_list1(token(","), extended_attribute)), cut(token("]")))),
         |attrs| ExtendedAttributes { attrs: attrs.unwrap_or_else(Vec::new) },
     )(input)
 }
@@ -1819,7 +1819,7 @@ fn extended_attribute_ident_list(input: &str) -> IResult<&str, ExtendedAttribute
         separated_pair(
             identifier,
             token("="),
-            delimited(token("("), identifier_list, token(")")),
+            delimited(token("("), cut(identifier_list), cut(token(")"))),
         ),
         |(lhs, idents)| ExtendedAttribute::IdentList(lhs, idents),
     )(input)
@@ -1833,7 +1833,7 @@ fn extended_attribute_named_arg_list(input: &str) -> IResult<&str, ExtendedAttri
             token("="),
             pair(
                 identifier,
-                delimited(token("("), argument_list, token(")")),
+                delimited(token("("), cut(argument_list), cut(token(")"))),
             ),
         ),
         |(lhs, (rhs, args))| ExtendedAttribute::NamedArgList(lhs, rhs, args),
