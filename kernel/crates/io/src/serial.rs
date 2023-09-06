@@ -26,14 +26,7 @@ use locks::Mutex;
 #[cfg(target_machine = "qemu-virt")]
 use shared::wait_for_event;
 #[cfg(target_machine = "qemu-virt")]
-use crate::GpioRegs;
-#[cfg(target_machine = "qemu-virt")]
 use crate::std::{self, Read, Write};
-
-#[cfg(target_machine = "qemu-virt")]
-extern {
-    fn cpu_delay(iterations: u64);
-}
 
 /// Contains the writer and reader for a particular serial interface. Only one of each may exist for each serial port, since
 /// each port has only one data channel in each direction.
@@ -65,21 +58,14 @@ lazy_static! {
 #[cfg(target_machine = "qemu-virt")]
 fn init(baud: u32) {
     let uart = uart0::MMIO.try_lock().unwrap();
-    let gpio = &uart;
 
     unsafe {
         // TODO: Fully understand what's actually happening here. Some bitflags structs might be useful.
         // Disable UART0 (to reset it?).
         (*uart.index(uart0::Regs::CR as usize)).write(0x0000_0000);
 
-        // Set up pins 14 and 15 (why?).
-        (*gpio.index(GpioRegs::GPPUD as usize)).write(0x0000_0000); // Disable pull-up/down for all pins...
-        cpu_delay(150); // TODO: We should be able to initialize the timers before this. Use them instead of `cpu_delay`.
-        (*gpio.index(GpioRegs::GPPUDCLK0 as usize)).write((1 << 14) | (1 << 15)); // ...except 14 and 15?
-        cpu_delay(150);
-        (*gpio.index(GpioRegs::GPPUDCLK0 as usize)).write(0x0000_0000); // This register needs to be flushed.
-
-        (*uart.index(uart0::Regs::ICR as usize)).write(0x7ff); // Clear all pending interrupts from UART0.
+        // Clear all pending interrupts from UART0.
+        (*uart.index(uart0::Regs::ICR as usize)).write(0x7ff);
 
         // The baud rate is set using two registers, for the integer part and the fractional part of a divider.
         // Divider = uart0::CLOCK / (16 * baud)

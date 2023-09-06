@@ -72,7 +72,7 @@ lazy_static! {
     }
 }
 
-#[cfg(any(target_machine = "raspi1", target_machine = "raspi2", target_machine = "raspi3", target_machine = "qemu-virt"))]
+#[cfg(any(target_machine = "raspi1", target_machine = "raspi2", target_machine = "raspi3"))]
 #[derive(Debug, Clone, Copy)]
 enum GpioRegs {
     // Controls whether ALL of the GPIO pins can pull their signals up and down.
