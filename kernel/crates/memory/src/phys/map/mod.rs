@@ -1,4 +1,4 @@
-/* Copyright (c) 2018-2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2018-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -23,7 +23,7 @@ use {
     core::{
         cmp::{min, max, Ordering},
         ffi::c_void,
-        mem::{self, size_of, align_of},
+        mem::{size_of, align_of},
         num::NonZeroUsize
     },
     i18n::Text,
@@ -267,7 +267,6 @@ impl MemoryMap {
 
                     let region_type = region.region_type;
                     let hotpluggable = region.hotpluggable;
-                    mem::drop(region);
 
                     if let Err(()) = self.add_region(
                         part2_base,
@@ -329,15 +328,14 @@ impl MemoryMap {
             return;
         }
 
-        if let Some(ref left_region) = self.regions[start_index - 1] {
-            if let Some(ref this_region) = self.regions[start_index] {
+        let (left, right) = self.regions.split_at_mut(start_index);
+        if let Some(ref mut left_region) = left[start_index - 1] {
+            if let Some(ref this_region) = right[0] {
                 let new_base = this_region.base;
                 let new_size = this_region.size;
 
                 if !left_region.hotpluggable && left_region.base + left_region.size >= new_base {
-                    unsafe {
-                        *(&left_region.size as *const _ as *mut _) = (new_base - left_region.base) + new_size;
-                    }
+                    left_region.size = (new_base - left_region.base) + new_size;
 
                     self.remove(start_index);
                     self.combine_left(start_index - 1);
@@ -352,13 +350,12 @@ impl MemoryMap {
             return;
         }
 
-        if let Some(ref right_region) = self.regions[start_index + 1] {
-            if let Some(ref this_region) = self.regions[start_index] {
+        let (left, right) = self.regions.split_at_mut(start_index + 1);
+        if let Some(ref right_region) = right[0] {
+            if let Some(ref mut this_region) = left[start_index] {
                 if !right_region.hotpluggable &&
                         this_region.base + this_region.size >= right_region.base {
-                    unsafe {
-                        *(&this_region.size as *const _ as *mut _) = (right_region.base - this_region.base) + right_region.size;
-                    }
+                    this_region.size = (right_region.base - this_region.base) + right_region.size;
 
                     self.remove(start_index + 1);
                     self.combine_right(start_index);
