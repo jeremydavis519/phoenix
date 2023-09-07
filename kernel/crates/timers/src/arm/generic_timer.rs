@@ -1,4 +1,4 @@
-/* Copyright (c) 2017-2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2017-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -35,9 +35,9 @@ use {
 // TODO: Instead of hard-coding these values, get them from something like ACPI.
 /// The IRQ associated with the Generic Timer (specifically, the virtual timer).
 #[cfg(target_machine = "qemu-virt")]
-// Retrieved from https://github.com/qemu/qemu/blob/2c89b5af5e72ab8c9d544c6e30399528b2238827/include/hw/arm/virt.h
-// (equal to PPI(ARCH_TIMER_VIRT_IRQ))
-const IRQ: u64 = 27;
+// This comes from https://github.com/qemu/qemu/blob/2c89b5af5e72ab8c9d544c6e30399528b2238827/include/hw/arm/virt.h.
+// It is defined as `PPI(ARCH_TIMER_NS_EL1_IRQ)`.
+const IRQ: u64 = 30;
 
 bitflags! {
     /// Bit flags for the Counter-timer Kernel Control Register
@@ -127,7 +127,7 @@ impl Timer {
     }
 
     /// Causes the timer to issue an interrupt after a duration of at least `delay`, at which point
-    /// the given callback will be called.
+    /// the currently running thread will be pre-empted.
     pub fn interrupt_after(&self, delay: Duration) {
         let mut new_countdown = ((COUNTER_FREQ.0 as u128) * delay.as_millis() / 1000).try_into().unwrap_or(u32::MAX);
 
@@ -191,16 +191,16 @@ pub fn get_ticks_elapsed() -> u64 {
 }
 
 fn on_timer_irq() -> IsrResult {
-    // Make sure the virtual timer actually sent an interrupt.
-    let cntv_ctl: u32;
+    // Make sure the timer actually sent an interrupt.
+    let cntp_ctl: u32;
 
     #[cfg(target_arch = "aarch64")]
-    unsafe { asm!("mrs {:x}, CNTP_CTL_EL0", out(reg) cntv_ctl, options(nomem, nostack, preserves_flags)); }
+    unsafe { asm!("mrs {:x}, CNTP_CTL_EL0", out(reg) cntp_ctl, options(nomem, nostack, preserves_flags)); }
     #[cfg(any(target_arch = "arm", target_arch = "armv5te", target_arch = "armv7"))]
-    unsafe { asm!("mrs {}, CNTP_CTL", out(reg) cntv_ctl, options(nomem, nostack, preserves_flags)); }
+    unsafe { asm!("mrs {}, CNTP_CTL", out(reg) cntp_ctl, options(nomem, nostack, preserves_flags)); }
 
-    let cntv_ctl = CntvCtlEl0::from_bits(cntv_ctl).unwrap();
-    if cntv_ctl.contains(CntvCtlEl0::IMASK) || !cntv_ctl.contains(CntvCtlEl0::ISTATUS) {
+    let cntp_ctl = CntvCtlEl0::from_bits(cntp_ctl).unwrap();
+    if cntp_ctl.contains(CntvCtlEl0::IMASK) || !cntp_ctl.contains(CntvCtlEl0::ISTATUS) {
         return IsrResult::WrongIsr;
     }
 
