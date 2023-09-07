@@ -1,4 +1,4 @@
-/* Copyright (c) 2017-2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2017-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -895,7 +895,7 @@ impl GiccIidr {
 pub fn max_irq() -> u64 {
     // TODO: Use bitflags to enumerate the fields of GICD_TYPER.
     // TODO: Cache this value? It's probably not worth the effort. Maybe with a lazy static.
-    let calculated = 32 * (((GIC.dist_regs.read(DistMmio::TYPER) & 0x1f) + 1) - 1) as u64;
+    let calculated = 32 * ((GIC.dist_regs.read(DistMmio::TYPER) & 0x1f) + 1) as u64 - 1;
     if calculated < 1019 { calculated } else { 1019 }
 }
 
