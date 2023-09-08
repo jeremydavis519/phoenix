@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2019-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -109,7 +109,7 @@ enter_userspace:
 // All general-purpose registers except X19, X20, X30, and SP are as the thread left them.
 //
 // Output (to the caller of `enter_userspace`):
-// X0 = the `ThreadStatus` that was passed in through X30
+// X0 = the `ThreadStatus` that was passed in through X19
 leave_userspace:
     cmp x19, 255
     b.eq .Lskip_saving // Don't bother saving the registers when terminating a thread.
