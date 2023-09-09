@@ -92,6 +92,7 @@ enter_userspace:
     ldr x19, [sp], 16
 
     eret
+b leave_userspace
 
 .section .text.leave_userspace, "ax"
 
@@ -149,20 +150,18 @@ leave_userspace:
     stp x12, x13, [x0, 0x60]
     stp x14, x15, [x0, 0x70]
     stp x16, x17, [x0, 0x80]
-    ldp x9, x10, [sp], 16 // X9, X10 = the values the thread left in X19, X20
+    ldp x9, x10, [sp] // X9, X10 = the values the thread left in X19, X20
     stp x18, x9, [x0, 0x90]
     stp x10, x21, [x0, 0xa0]
     stp x22, x23, [x0, 0xb0]
     stp x24, x25, [x0, 0xc0]
     stp x26, x27, [x0, 0xd0]
     stp x28, x29, [x0, 0xe0]
-    ldr x30, [sp], 16
+    ldr x30, [sp, 16]
     mrs x9, SP_EL0 // X9 = the value the thread left in SP
     stp x30, x9, [x0, 0xf0]
-    b .Lthread_save_done
 .Lskip_saving:
     add sp, sp, 32
-.Lthread_save_done:
 
     mov x0, x19 // X0 = return value
 
