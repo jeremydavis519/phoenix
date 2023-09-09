@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2019-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -96,7 +96,6 @@ pub enum Text<'a> {
     PagesPhysBaseMisaligned(&'a usize),
     PagesSizeMisaligned(&'a usize),
     PagesVirtBaseMisaligned(&'a usize),
-    PhysBlockIndexOOB(&'a usize, &'a usize, &'a usize),
     ReadPastBuffer,
     PhoenixVersionHomepage(&'a Option<&'static str>, &'a Option<&'static str>),
     TooFewAddressableBits(&'a u8, &'a u8),
@@ -215,8 +214,6 @@ impl<'a> fmt::Display for Text<'a> {
             Text::PagesPhysBaseMisaligned(base)   => write!(f, "physical base address {:#x} is not page-aligned", base),
             Text::PagesSizeMisaligned(size)       => write!(f, "size {:#x} is not page-aligned", size),
             Text::PagesVirtBaseMisaligned(base)   => write!(f, "virtual base address {:#x} is not page-aligned", base),
-            Text::PhysBlockIndexOOB(base, size, index) =>
-                write!(f, "physical memory block index out of bounds: block = {{ base: {:p}, size: {:#x} }}, index = {:#x}", base, size, index),
             Text::ReadPastBuffer                  => write!(f, "reader reported reading past the end of the buffer"),
             Text::PhoenixVersionHomepage(version, homepage) => {
                 let result = write!(f, "Phoenix {}\n", version.unwrap_or(Text::unknown_version()))?;

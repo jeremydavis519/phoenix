@@ -1,4 +1,4 @@
-/* Copyright (c) 2017-2022 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2017-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -24,8 +24,6 @@
 
 use {
     core::mem::{self, MaybeUninit},
-
-    i18n::Text,
 
     crate::phys::{
         Allocation,
@@ -108,8 +106,8 @@ macro_rules! impl_phys_block_common {
             /// like the indexing portion of an array access: the index is given in units
             /// of the array-element size of `T`, rather than units of 1 byte.
             pub fn get_ptr_phys(&self, index: usize) -> PhysPtr<T, *mut T> {
-                assert!(index < self.size(),
-                    "{}", Text::PhysBlockIndexOOB(self.base.as_addr_phys(), self.size(), index));
+                assert!(index < self.size(), "physical memory block index out of bounds: {} {{ base: {}, size: {} }}, index = {}",
+                    stringify!($generic), self.base().as_addr_phys(), self.size(), index);
                 unsafe { self.base.add(index) }
             }
 

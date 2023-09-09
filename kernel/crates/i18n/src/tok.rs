@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2019-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -88,7 +88,6 @@ pub enum Text<'a> {
     MemoryMapNotRetrieved,
     MmioBusOutOfBounds(&'a usize, &'a usize, &'a usize, &'a usize),
     OutOfMemory(&'a usize, &'a usize),
-    PhysBlockIndexOOB(&'a usize, &'a usize, &'a usize),
     ReadPastBuffer,
     PhoenixVersionHomepage(&'a Option<&'static str>, &'a Option<&'static str>),
     Uart0CouldntReserveMmio,
@@ -249,8 +248,6 @@ impl<'a> fmt::Display for Text<'a> {
             Text::OutOfMemory(size, align)        =>
                 write!(f, "tan poki lawa li wile pali e tomo sona lon suli {:#x} lon tomo ma pona {:#x} la ona li jo ala e tomo sona lon tenpo ni",
                     size, align),
-            Text::PhysBlockIndexOOB(base, size, index) =>
-                write!(f, "ma pi tomo sona kiwen {{ open {:p}, suli {:#x} }} li jo ala nanpa ma {:#x}", base, size, index),
             Text::ReadPastBuffer                  => write!(f, "ilo pi lukin sitelen li pini a e ma sitelen"),
             Text::PhoenixVersionHomepage(version, homepage) => {
                 let result = write!(f, "poki lawa Phoenix {}\n", version.unwrap_or(Text::unknown_version()))?;

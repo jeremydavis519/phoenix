@@ -1,4 +1,4 @@
-/* Copyright (C) 2019-2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (C) 2019-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -162,7 +162,6 @@ boilerplate! {
         PagesPhysBaseMisaligned(base: usize),
         PagesSizeMisaligned(size: usize),
         PagesVirtBaseMisaligned(base: usize),
-        PhysBlockIndexOOB(base: usize, size: usize, index: usize),
         ReadPastBuffer,
         PhoenixVersionHomepage(version: Option<&'static str>, homepage: Option<&'static str>),
         TooFewAddressableBits(expected: u8, actual: u8),
