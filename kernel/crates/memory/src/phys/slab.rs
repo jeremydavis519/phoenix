@@ -1,4 +1,4 @@
-/* Copyright (c) 2022 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2022-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -40,7 +40,7 @@ use {
 pub struct SlabAllocator {
     arena:               BlockMut<u8>,
     slabs_buf:           BlockMut<AtomicUsize>,
-    slab_size:           usize,
+    slab_size:           NonZeroUsize,
     first_free_slab_idx: Mutex<usize>,
     first_used_slab_idx: AtomicUsize,
 }
@@ -65,10 +65,9 @@ impl SlabAllocator {
             slabs_buf: BlockMut<AtomicUsize>,
             slab_size: NonZeroUsize,
     ) -> Self {
-        let slab_size = slab_size.get();
         assert_eq!(
             arena.size(),
-            slab_size * slabs_buf.size(),
+            slab_size.get() * slabs_buf.size(),
             "arena of {} bytes can't be made of {} slabs of {} bytes each",
             arena.size(), slabs_buf.size(), slab_size,
         );
@@ -77,7 +76,7 @@ impl SlabAllocator {
 
         for i in 0 .. slabs_count {
             unsafe {
-                (*slabs_buf.index(i)).store(arena.base().as_addr_phys() + i * slab_size, Ordering::Release);
+                (*slabs_buf.index(i)).store(arena.base().as_addr_phys() + i * slab_size.get(), Ordering::Release);
             }
         }
 
@@ -105,7 +104,7 @@ impl SlabAllocator {
 
         Ok(BlockMut::new(
             PhysPtr::<_, *mut _>::from_addr_phys(base),
-            self.slab_size,
+            self.slab_size.get(),
             Some(super::Allocation::Slab(Allocation { allocator: self, base })),
         ))
     }
@@ -127,7 +126,7 @@ impl SlabAllocator {
     pub fn owns_slab(&self, base: usize) -> bool {
         let arena_base = self.arena.base().as_addr_phys();
         base >= arena_base && base < arena_base + self.arena.size()
-            && (base - arena_base) % self.slab_size == 0
+            && (base - arena_base) % self.slab_size.get() == 0
     }
 }
 
