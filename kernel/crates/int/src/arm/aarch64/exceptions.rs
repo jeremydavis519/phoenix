@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2019-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -209,7 +209,6 @@ extern fn aarch64_handle_synchronous_exception(
 ) -> Response {
     assert!(!result.is_null());
     let result = Volatile::new_write_only(unsafe { &mut *result });
-    let args = [arg1, arg2, arg3, arg4];
     let exc_level = ExceptionLevel::try_from(exc_level).expect("unrecognized exception level");
 
     // TODO: Finish implementing all of these.
@@ -224,12 +223,24 @@ extern fn aarch64_handle_synchronous_exception(
         Syndrome::EC_TRAP_SVE_SIMD_FP           => unimplemented!(),
         Syndrome::EC_TRAP_MRRC_COPROC_1110      => unimplemented!(),
         Syndrome::EC_ILLEGAL_EXECUTION_STATE    => unimplemented!(),
-        Syndrome::EC_SVC_AARCH32                => {
-            handle_system_call(thread, SvcIss::from_bits_truncate(syndrome.bits()).bits().try_into().unwrap(), &args, result)
-        },
-        Syndrome::EC_SVC_AARCH64                => {
-            handle_system_call(thread, SvcIss::from_bits_truncate(syndrome.bits()).bits().try_into().unwrap(), &args, result)
-        },
+        Syndrome::EC_SVC_AARCH32                => handle_system_call(
+            thread,
+            SvcIss::from_bits_truncate(syndrome.bits()).bits().try_into().unwrap(),
+            arg1,
+            arg2,
+            arg3,
+            arg4,
+            result,
+        ),
+        Syndrome::EC_SVC_AARCH64                => handle_system_call(
+            thread,
+            SvcIss::from_bits_truncate(syndrome.bits()).bits().try_into().unwrap(),
+            arg1,
+            arg2,
+            arg3,
+            arg4,
+            result,
+        ),
         Syndrome::EC_TRAP_SYS_INSTR_AARCH64     => unimplemented!(),
         Syndrome::EC_TRAP_SVE                   => unimplemented!(),
         Syndrome::EC_INSTR_ABORT_EL0            => handle_mmu_abort(thread.map(|t| &*t), syndrome, exc_level),

@@ -68,33 +68,36 @@ profiler_setup!();
 pub(super) fn handle_system_call(
         thread: Option<&mut Thread<File>>,
         syscall: u16,
-        args: &[usize; 4],
+        arg1: usize,
+        arg2: usize,
+        arg3: usize,
+        arg4: usize,
         mut result: Volatile<&mut [usize; 2], WriteOnly>,
 ) -> Response {
     let result1 = result.map_mut(|x| &mut x[0]);
     match SystemCall::try_from(syscall) {
-        Ok(SystemCall::Thread_Exit)  => thread_exit(thread, args[0]),
-        Ok(SystemCall::Thread_Sleep) => thread_sleep(thread, args[0]),
-        Ok(SystemCall::Thread_Spawn) => thread_spawn(thread, args[0], args[1], args[2] as u8, args[3], result1),
+        Ok(SystemCall::Thread_Exit)  => thread_exit(thread, arg1),
+        Ok(SystemCall::Thread_Sleep) => thread_sleep(thread, arg1),
+        Ok(SystemCall::Thread_Spawn) => thread_spawn(thread, arg1, arg2, arg3, arg4, result1),
 
-        Ok(SystemCall::Process_Exit) => process_exit(thread, args[0]),
+        Ok(SystemCall::Process_Exit) => process_exit(thread, arg1),
 
-        Ok(SystemCall::Device_Claim) => device_claim(thread, args[0], args[1], result1),
+        Ok(SystemCall::Device_Claim) => device_claim(thread, arg1, arg2, result1),
 
-        Ok(SystemCall::Memory_Free) => memory_free(thread, args[0]),
-        Ok(SystemCall::Memory_Alloc) => memory_alloc(thread, args[0], args[1], result1),
-        Ok(SystemCall::Memory_AllocPhys) => memory_alloc_phys(thread, args[0], args[1], args[2], result),
-        Ok(SystemCall::Memory_AllocShared) => memory_alloc_shared(thread, args[0], result1),
-        Ok(SystemCall::Memory_AccessShared) => memory_access_shared(thread, args[0], args[1], result1),
+        Ok(SystemCall::Memory_Free) => memory_free(thread, arg1),
+        Ok(SystemCall::Memory_Alloc) => memory_alloc(thread, arg1, arg2, result1),
+        Ok(SystemCall::Memory_AllocPhys) => memory_alloc_phys(thread, arg1, arg2, arg3, result),
+        Ok(SystemCall::Memory_AllocShared) => memory_alloc_shared(thread, arg1, result1),
+        Ok(SystemCall::Memory_AccessShared) => memory_access_shared(thread, arg1, arg2, result1),
         Ok(SystemCall::Memory_PageSize) => memory_page_size(result1),
 
-        Ok(SystemCall::Time_NowUnix) => time_now_unix(thread, args[0], args[1], result1),
-        Ok(SystemCall::Time_NowUnixNanos) => time_now_unix_nanos(thread, args[0], args[1], result1),
+        Ok(SystemCall::Time_NowUnix) => time_now_unix(thread, arg1, arg2, result1),
+        Ok(SystemCall::Time_NowUnixNanos) => time_now_unix_nanos(thread, arg1, arg2, result1),
         Ok(SystemCall::Time_ViewKernelProfile) => time_view_kernel_profile(thread, result1),
         Ok(SystemCall::Time_ResetKernelProfile) => time_reset_kernel_profile(thread, result1),
 
         // TODO: Remove all of these temporary system calls.
-        Ok(SystemCall::Temp_PutChar) => temp_putchar(args[0]),
+        Ok(SystemCall::Temp_PutChar) => temp_putchar(arg1),
         Ok(SystemCall::Temp_GetChar) => temp_getchar(result1),
 
         Err(e) => {
@@ -161,18 +164,20 @@ fn thread_sleep(thread: Option<&mut Thread<File>>, milliseconds: usize) -> Respo
 }
 
 // Spawns a new thread in the same process as the calling thread, using the given address as an
-// entry point. The entry point should be the beginning of a function that takes no arguments and
-// never returns. (Instead, it should use a system call to terminate itself.)
+// entry point. The entry point must be the beginning of a function that takes up to one
+// pointer-sized argument and never returns. (Instead, it should use a system call to terminate
+// itself.)
 fn thread_spawn(
         thread: Option<&mut Thread<File>>,
         entry_point:    usize,
         argument:       usize,
-        mut priority:   u8,
+        mut priority:   usize,
         max_stack_size: usize,
         mut handle: Volatile<&mut usize, WriteOnly>,
 ) -> Response {
     profiler_probe!(=> ENTRANCE);
     let parent_thread = thread.expect("attempted to spawn a new kernel thread");
+
     let entry_point = usize::try_from(entry_point).unwrap();
     // TODO: A priority of 0 should maybe mean real-time (i.e. cooperative scheduling only). We'll
     // need to adjust the load-balancing logic to account for that.
