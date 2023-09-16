@@ -23,12 +23,16 @@ use {
         alloc::AllocError,
         boxed::Box,
         sync::Arc,
+        vec::Vec,
     },
     core::{
         convert::{TryFrom, TryInto},
         ffi::c_void,
         mem::{self, MaybeUninit},
         num::NonZeroUsize,
+        ptr,
+        slice,
+        str,
         time::Duration,
     },
     volatile::{
@@ -37,10 +41,12 @@ use {
     },
     libphoenix::{
         profiler, profiler_probe, profiler_setup,
+        posix::errno::Errno,
         syscall::TimeSelector,
     },
     collections::atomic::AtomicLinkedListSemaphore,
     devices::DEVICES,
+    exec::read_exe,
     fs::File,
     io::{println, Read},
     memory::{
@@ -50,7 +56,7 @@ use {
     },
     scheduler::{
         process::SharedMemory,
-        Thread, ThreadStatus,
+        Process, Thread, ThreadStatus,
     },
     shared::ffi_enum,
     time::SystemTime,
@@ -64,6 +70,9 @@ extern {
 }
 
 profiler_setup!();
+
+// Corresponds to the `PATH_MAX` constant defined by POSIX in limits.h.
+const PATH_MAX: usize = 1024;
 
 pub(super) fn handle_system_call(
         thread: Option<&mut Thread<File>>,
@@ -81,6 +90,7 @@ pub(super) fn handle_system_call(
         Ok(SystemCall::Thread_Spawn) => thread_spawn(thread, arg1, arg2, arg3, arg4, result1),
 
         Ok(SystemCall::Process_Exit) => process_exit(thread, arg1),
+        Ok(SystemCall::Process_Spawn) => process_spawn(thread, arg1, arg2, arg3, arg4, result),
 
         Ok(SystemCall::Device_Claim) => device_claim(thread, arg1, arg2, result1),
 
@@ -118,6 +128,7 @@ ffi_enum! {
         Thread_Spawn            = 0x0002,
 
         Process_Exit            = 0x0100,
+        Process_Spawn           = 0x0101,
 
         Device_Claim            = 0x0200,
 
@@ -213,6 +224,275 @@ fn process_exit(thread: Option<&mut Thread<File>>, status: usize) -> Response {
     }
     // FIXME: Exit the process, not just the current thread.
     Response::leave_userspace(ThreadStatus::Terminated)
+}
+
+
+// Spawns a new process from the file at the given path and passes it the given start data.
+//
+// # Start Data
+// The start data must take the following format, with appropriate padding.
+//
+// ```
+// #[repr(C)]
+// struct StartData {
+//     max_stack_size:    usize,
+//     priority:          u8,
+//     argc:              usize,
+//     argv:              *const *const i8,
+//     argv_strings_size: usize,
+//     argv_lengths:      [usize; argc],
+//     data:              [u8],
+// }
+// ```
+//
+// Multibyte values must be stored in the kernel's native endianness.
+//
+// `argv_lengths[i]` is the length of the string pointed to by `argv[i]`, not including any null
+// terminator.
+//
+// `argv_strings_size` is the total length of all the strings as they will be stored in the new
+// process's address space, including their null terminators. To calculate it, add 1 to each
+// element of `argv_lengths` and add together all the resulting sums. This size must be accurate,
+// or else the calling thread will be terminated.
+//
+// `data` is an array of bytes that the kernel will copy into the new process's address space
+// verbatim. That process can get a pointer to the data by reading `argv[argc + 1]`.
+fn process_spawn(
+        calling_thread: Option<&mut Thread<File>>,
+        path_userspace_addr: usize,
+        path_len: usize,
+        start_data_userspace_addr: usize,
+        start_data_len: usize,
+        mut pid_and_errno: Volatile<&mut [usize; 2], WriteOnly>,
+) -> Response {
+    profiler_probe!(=> ENTRANCE);
+    let calling_thread = calling_thread.expect("kernel thread attempted to spawn a process");
+
+    // Verify arguments
+    if start_data_len < 4 * mem::size_of::<usize>() + mem::size_of::<u8>() {
+        return Response::leave_userspace(ThreadStatus::Terminated); // Invalid arguments
+    };
+
+    let Some(mut start_data_userspace) = UserspaceStr::from_raw_parts(
+        calling_thread.process.exec_image.page_table(),
+        calling_thread.process.exec_image.virt_reader(),
+        start_data_userspace_addr,
+        start_data_len,
+    ) else {
+        return Response::leave_userspace(ThreadStatus::Terminated); // Part of the argument is unmapped.
+    };
+
+    if path_len > PATH_MAX {
+        pid_and_errno.write([0, Errno::ENAMETOOLONG.into()]);
+        return Response::eret();
+    }
+
+    let Some(mut path_userspace) = UserspaceStr::from_raw_parts(
+        calling_thread.process.exec_image.page_table(),
+        calling_thread.process.exec_image.virt_reader(),
+        path_userspace_addr,
+        path_len,
+    ) else {
+        return Response::leave_userspace(ThreadStatus::Terminated); // Part of the argument is unmapped.
+    };
+
+    // Get the remaining arguments from the start data.
+    let mut bytes = [0; mem::size_of::<usize>()];
+    for i in 0 .. bytes.len() { bytes[i] = start_data_userspace.head(); start_data_userspace = start_data_userspace.tail(); }
+    let max_stack_size = usize::from_ne_bytes(bytes);
+
+    let priority = start_data_userspace.head(); start_data_userspace = start_data_userspace.tail();
+    for _ in 1 .. mem::size_of::<usize>() { start_data_userspace = start_data_userspace.tail(); } // Padding
+
+    let mut bytes = [0; mem::size_of::<usize>()];
+    for i in 0 .. bytes.len() { bytes[i] = start_data_userspace.head(); start_data_userspace = start_data_userspace.tail(); }
+    let argc = usize::from_ne_bytes(bytes);
+    let Some(argv_ptrs_size) = argc.checked_mul(mem::size_of::<*mut i8>()) else {
+        return Response::leave_userspace(ThreadStatus::Terminated); // Too many strings in argv
+    };
+
+    let mut bytes = [0; mem::size_of::<usize>()];
+    for i in 0 .. bytes.len() { bytes[i] = start_data_userspace.head(); start_data_userspace = start_data_userspace.tail(); }
+    let Some(mut argv_old) = UserspaceStr::from_raw_parts(
+        calling_thread.process.exec_image.page_table(),
+        calling_thread.process.exec_image.virt_reader(),
+        usize::from_ne_bytes(bytes),
+        argv_ptrs_size,
+    ) else {
+        return Response::leave_userspace(ThreadStatus::Terminated); // Part of the argument is unmapped.
+    };
+
+    let mut bytes = [0; mem::size_of::<usize>()];
+    for i in 0 .. bytes.len() { bytes[i] = start_data_userspace.head(); start_data_userspace = start_data_userspace.tail(); }
+    let argv_strings_size = usize::from_ne_bytes(bytes);
+
+    // Next in the start data is an array of the string lengths of the elements of argv.
+    if start_data_userspace.len() / mem::size_of::<usize>() < argc {
+        return Response::leave_userspace(ThreadStatus::Terminated); // Invalid arguments
+    }
+
+    // Open file
+    let mut path = MaybeUninit::uninit_array::<PATH_MAX>();
+    for i in 0 .. path_len {
+        path[i].write(path_userspace.head());
+        path_userspace = path_userspace.tail();
+    }
+    let path = unsafe { slice::from_raw_parts(
+        (&path as *const [MaybeUninit<u8>; PATH_MAX]).cast::<u8>(),
+        path_len,
+    ) };
+    let Ok(path) = str::from_utf8(path) else {
+        pid_and_errno.write([0, Errno::ENOENT.into()]);
+        return Response::eret();
+    };
+
+    let file = match File::open(path) {
+        Ok(file) => file,
+        Err(e) => {
+            let errno = match e.kind() {
+                io::ErrorKind::NotFound => Errno::ENOENT,
+                _                       => Errno::EACCES,
+            };
+            pid_and_errno.write([0, errno.into()]);
+            return Response::eret();
+        },
+    };
+
+    // Read executable image
+    let Ok(exec_image) = read_exe(file) else {
+        pid_and_errno.write([0, Errno::ENOEXEC.into()]);
+        return Response::eret();
+    };
+    let entry_point = exec_image.entry_point;
+
+    // Spawn process
+    let process = Arc::new(Process::new(exec_image, Vec::new()));
+    pid_and_errno.write([process.id().get().try_into().unwrap(), 0]);
+
+    // Allocate memory for argv and the start data.
+    // There needs to be enough for each pointer, including the NULL at argv[argc] and the pointer
+    // to the start data at argv[argc + 1], the argument strings, and the start data.
+    let Some(all_ptrs_size) = argv_ptrs_size.checked_add(2 * mem::size_of::<*mut i8>()) else {
+        return Response::leave_userspace(ThreadStatus::Terminated);
+    };
+    let Some(min_block_size) = all_ptrs_size.checked_add(argv_strings_size) else {
+        return Response::leave_userspace(ThreadStatus::Terminated);
+    };
+    let Some(min_block_size) = min_block_size.checked_add(start_data_userspace.len() - argc * mem::size_of::<usize>()) else {
+        return Response::leave_userspace(ThreadStatus::Terminated);
+    };
+    let page_size = paging::page_size();
+
+    // FIXME: Do this asynchronously. Memory allocation has unbounded time complexity, and we can't
+    //        pre-empt the thread during a system call.
+    let block = match AllMemAlloc.malloc::<u8>(
+        min_block_size.saturating_add(page_size - 1) / page_size * page_size,
+        NonZeroUsize::new(page_size).unwrap()
+    ) {
+        Ok(block) => block,
+        Err(AllocError) => {
+            pid_and_errno.write([0, Errno::EAGAIN.into()]);
+            return Response::eret();
+        },
+    };
+
+    let root_page_table = process.exec_image.page_table();
+
+    let argv_new = match root_page_table.map(
+        block.base().as_addr_phys(),
+        None,
+        unsafe { NonZeroUsize::new_unchecked(block.size()) },
+        memory::phys::RegionType::Ram,
+    ) {
+        Ok(addr) => addr,
+        Err(()) => {
+            pid_and_errno.write([0, Errno::ENOMEM.into()]);
+            return Response::eret();
+        },
+    };
+
+    // Copy argv and the start data to the new address space and scrub the rest of the block.
+    // FIXME: This doesn't run in constant time. Insert pre-emption points in
+    // this loop.
+    unsafe {
+        let mut i = all_ptrs_size;
+
+        // Copy all the argv strings.
+        for j in 0 .. argc {
+            // Set the next argv pointer.
+            block.index(j * mem::size_of::<*mut i8>()).cast::<MaybeUninit<usize>>().write_volatile(MaybeUninit::new(argv_new + i));
+
+            // Construct the view into the next string in the old address space.
+            let mut bytes = [0; mem::size_of::<*mut i8>()];
+            for k in 0 .. bytes.len() { bytes[k] = argv_old.head(); argv_old = argv_old.tail(); }
+            let str_base = usize::from_ne_bytes(bytes);
+
+            let mut bytes = [0; mem::size_of::<usize>()];
+            for k in 0 .. bytes.len() { bytes[k] = start_data_userspace.head(); start_data_userspace = start_data_userspace.tail(); }
+            let str_len = usize::from_ne_bytes(bytes);
+
+            let Some(mut str_userspace) = UserspaceStr::from_raw_parts(
+                calling_thread.process.exec_image.page_table(),
+                calling_thread.process.exec_image.virt_reader(),
+                str_base,
+                str_len,
+            ) else {
+                return Response::leave_userspace(ThreadStatus::Terminated); // Part of the argument is unmapped.
+            };
+
+            // Copy the string and a null terminator.
+            if i.saturating_add(str_userspace.len()) >= min_block_size {
+                return Response::leave_userspace(ThreadStatus::Terminated); // The total string length was incorrect.
+            }
+            while str_userspace.len() > 0 {
+                block.index(i).write_volatile(MaybeUninit::new(str_userspace.head()));
+                i += 1;
+                str_userspace = str_userspace.tail();
+            }
+            block.index(i).write_volatile(MaybeUninit::new(0));
+            i += 1;
+        }
+
+        // Set argv[argc] to NULL.
+        block.index(argc * mem::size_of::<*mut i8>()).cast::<MaybeUninit<*mut i8>>().write_volatile(MaybeUninit::new(ptr::null_mut()));
+
+        // Set argv[argc + 1] to the address of the start data and copy the start data to the new
+        // address space.
+        if i.saturating_add(start_data_userspace.len()) != min_block_size {
+            return Response::leave_userspace(ThreadStatus::Terminated); // The total string length was incorrect.
+        }
+        block.index((argc + 1) * mem::size_of::<*mut i8>()).cast::<MaybeUninit<usize>>().write_volatile(MaybeUninit::new(argv_new + i));
+        while start_data_userspace.len() > 0 {
+            block.index(i).write_volatile(MaybeUninit::new(start_data_userspace.head()));
+            i += 1;
+            start_data_userspace = start_data_userspace.tail();
+        }
+
+        // Scrub the rest of the block.
+        for i in i .. block.size() {
+            block.index(i).write_volatile(MaybeUninit::new(0));
+        }
+    }
+
+    // FIXME: Instead of forgetting the block, attach it to the process.
+    mem::forget(block);
+
+    // Start running the thread.
+    let Ok(new_thread) = Thread::new(
+        process,
+        entry_point,
+        argc,
+        argv_new,
+        max_stack_size,
+        priority,
+    ) else {
+        pid_and_errno.write([0, Errno::EAGAIN.into()]);
+        return Response::eret();
+    };
+    scheduler::enqueue_thread(new_thread);
+
+    profiler_probe!(ENTRANCE);
+    Response::eret()
 }
 
 
