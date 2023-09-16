@@ -1,4 +1,4 @@
-/* Copyright (c) 2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2021-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -17,6 +17,11 @@
  */
 
 //! This module defines abstractions that pertain to processes in Phoenix.
+
+use core::num::NonZeroU64;
+
+/// A unique ID for a particular process.
+pub type ProcessId = NonZeroU64;
 
 /// A code that can be returned from `main`.
 #[repr(i32)]
