@@ -317,7 +317,7 @@ fn memory_alloc(
                 // FIXME: This doesn't run in constant time. Insert pre-emption points in
                 // this loop.
                 for i in 0 .. block.size() {
-                    unsafe { block.index(i).write(MaybeUninit::new(0)); }
+                    unsafe { block.index(i).write_volatile(MaybeUninit::new(0)); }
                 }
 
                 match root_page_table.map(
@@ -385,7 +385,7 @@ fn memory_alloc_phys(
                 // FIXME: This doesn't run in constant time. Insert pre-emption points in
                 // this loop.
                 for i in 0 .. block.size() {
-                    unsafe { block.index(i).write(MaybeUninit::new(0)); }
+                    unsafe { block.index(i).write_volatile(MaybeUninit::new(0)); }
                 }
 
                 let phys_addr = block.base().as_addr_phys();
@@ -453,7 +453,7 @@ fn memory_alloc_shared(
                 // FIXME: This doesn't run in constant time. Insert pre-emption points in
                 // this loop.
                 for i in 0 .. block.size() {
-                    unsafe { block.index(i).write(MaybeUninit::new(0)); }
+                    unsafe { block.index(i).write_volatile(MaybeUninit::new(0)); }
                 }
                 let block = block.assume_init();
 
