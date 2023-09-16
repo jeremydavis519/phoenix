@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2019-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -172,19 +172,15 @@ impl File {
                     None => Err(io::ErrorKind::NotFound.into()),
                     Some(filename) => {
                         match hosted::io::File::open(filename, hosted::io::FileMode::ReadBin) {
-                            Err(errno) => Err(io::Error::new(io::ErrorKind::Other, FsError::new(format!("errno = {}", errno)))),
-                            Ok(host_file) => Ok(File {
-                                handle: FileHandle::Host(HostHandle::new(host_file))
-                            })
+                            Err(errno) => Err(io::Error::new(io::ErrorKind::Other, FsError::new(format!("host errno = {}", errno)))),
+                            Ok(host_file) => Ok(File { handle: FileHandle::Host(HostHandle::new(host_file)) }),
                         }
                     }
                 }
             },
             Root::Initrd => {
                 if let Some(initrd_file) = initrd::ROOT.find_file(stem.as_str()) {
-                    Ok(File {
-                        handle: FileHandle::Ram(RamHandle::new(initrd_file))
-                    })
+                    Ok(File { handle: FileHandle::Ram(RamHandle::new(initrd_file)) })
                 } else {
                     Err(io::ErrorKind::NotFound.into())
                 }
