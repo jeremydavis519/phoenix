@@ -1,4 +1,4 @@
-/* Copyright (c) 2018-2022 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2018-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -72,7 +72,7 @@ pub fn run(mut thread_queue: ThreadQueue<File>) -> ! {
     let cpu_index = 0;
     let cpu_count = 1;
 
-    let mut priority_sum = thread_queue.iter().fold(0, |s, thread| s + u32::from(thread.priority()));
+    let mut priority_sum: u32 = thread_queue.iter().map(|thread| u32::from(thread.priority())).sum();
 
     // This is our pseudorandom number generator for load balancing. It is _extremely_ simple, for
     // two reasons: (1) we want to spend as little time as possible between threads (and constant
