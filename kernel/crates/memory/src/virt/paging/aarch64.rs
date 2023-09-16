@@ -1,4 +1,4 @@
-/* Copyright (c) 2018-2022 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2018-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -1949,7 +1949,7 @@ extern fn init_trampoline_page_tables(max_virt_bits: u8) -> *const c_void {
 
     // Make sure everyone uses the same root table.
     let table_ptr;
-    drop(root); // We must avoid having two mutable references at once.
+    let _ = root; // We must avoid having two mutable references at once.
     let root_ptr = root_block.index(0);
     match TRAMPOLINE_PAGE_TABLE.compare_exchange(ptr::null_mut(), root_ptr, Ordering::AcqRel, Ordering::Acquire) {
         Ok(_) => {
