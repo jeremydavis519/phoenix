@@ -1,4 +1,5 @@
 /kernel/target-cache
+/kernel/crates/initrd/contents
 
 build/
 lib/
