@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2022 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2019-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -23,10 +23,12 @@
     stp x23, x24, [sp, -16]!
     stp x25, x26, [sp, -16]!
     stp x27, x28, [sp, -16]!
+    str x29, [sp, -16]!
 .endm
 
 // Pops the registers that the callee is required to preserve.
 .macro popcallee
+    ldr x29, [sp], 16
     ldp x27, x28, [sp], 16
     ldp x25, x26, [sp], 16
     ldp x23, x24, [sp], 16
@@ -45,14 +47,12 @@
     stp x12, x13, [sp, -16]!
     stp x14, x15, [sp, -16]!
     stp x16, x17, [sp, -16]!
-    stp x18, x29, [sp, -16]!
-    str x30, [sp, -16]!
+    stp x18, x30, [sp, -16]!
 .endm
 
 // Pops the registers that the callee is not required to preserve.
 .macro poptemp
-    ldr x30, [sp], 16
-    ldp x18, x29, [sp], 16
+    ldp x18, x30, [sp], 16
     ldp x16, x17, [sp], 16
     ldp x14, x15, [sp], 16
     ldp x12, x13, [sp], 16
