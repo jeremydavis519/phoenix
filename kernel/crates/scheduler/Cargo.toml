@@ -8,6 +8,8 @@ edition = "2018"
 name = "scheduler"
 
 [dependencies]
+libphoenix = { path = "../../../libphoenix", default-features = false }
+
 phoenix-kernel-collections = { path = "../collections" }
 phoenix-kernel-exec = { path = "../exec" }
 phoenix-kernel-fs = { path = "../fs" }

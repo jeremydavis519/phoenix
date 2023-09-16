@@ -25,6 +25,8 @@ use {
         sync::{Arc, Weak},
         vec::Vec,
     },
+    core::convert::TryInto,
+    libphoenix::process::ProcessId,
     collections::atomic::AtomicLinkedList,
     exec::ExecImage,
     io::{Read, Seek},
@@ -59,6 +61,11 @@ impl<T: Read+Seek> Process<T> {
             shared_memory: AtomicLinkedList::new(),
             sharable_memory,
         }
+    }
+
+    /// Returns the process ID required by POSIX.
+    pub fn id(&self) -> ProcessId {
+        unsafe { ProcessId::new_unchecked((self as *const Self).expose_addr().try_into().unwrap()) }
     }
 }
 
