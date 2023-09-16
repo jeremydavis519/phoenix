@@ -152,7 +152,8 @@ impl<T: Read+Seek> Thread<T> {
     pub fn new(
             process:            Arc<Process<T>>,
             entry_point:        usize,
-            argument:           usize,
+            arg1:               usize,
+            arg2:               usize,
             mut max_stack_size: usize,
             priority:           u8,
     ) -> Result<Box<Thread<T>>, ThreadCreationError> {
@@ -177,7 +178,7 @@ impl<T: Read+Seek> Thread<T> {
             priority,
             spsr: 0, // TODO: This might not be 0 for a new Aarch32 thread.
             elr: entry_point,
-            register_store: Self::initial_register_store(argument, stack_empty_ptr),
+            register_store: Self::initial_register_store(arg1, arg2, stack_empty_ptr),
             saved_time: SystemTime::now()
         })
             .map_err(|AllocError| ThreadCreationError::OutOfMemory)
@@ -197,8 +198,8 @@ impl<T: Read+Seek> Thread<T> {
         }
     }
 
-    fn initial_register_store(x0: usize, stack_ptr: usize) -> [u64; 32] {
-        [u64::try_from(x0).unwrap(), 0, 0, 0, 0, 0, 0, 0,
+    fn initial_register_store(x0: usize, x1: usize, stack_ptr: usize) -> [u64; 32] {
+        [u64::try_from(x0).unwrap(), u64::try_from(x1).unwrap(), 0, 0, 0, 0, 0, 0,
          0, 0, 0, 0, 0, 0, 0, 0,
          0, 0, 0, 0, 0, 0, 0, 0,
          0, 0, 0, 0, 0, 0, 0, u64::try_from(stack_ptr).unwrap()]

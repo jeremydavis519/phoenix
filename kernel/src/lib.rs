@@ -298,7 +298,7 @@ fn shell() {
                                     Ok(image) => {
                                         let entry_point = image.entry_point;
                                         let process = Arc::new(Process::new(image, Vec::new()));
-                                        match Thread::new(process, entry_point, 0, 0x0001_0000, 10) {
+                                        match Thread::new(process, entry_point, 0, 0, 0x0001_0000, 10) {
                                             Ok(thread) => scheduler::run(vec![thread]),
                                             Err(e) => println!("Error creating the thread: {}", e)
                                         };
