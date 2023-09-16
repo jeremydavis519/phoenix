@@ -147,6 +147,8 @@ impl<T: ?Sized> RwLock<T> {
     }
 }
 
+unsafe impl<T: ?Sized> Sync for RwLock<T> {}
+
 impl<'a, T> Deref for RwLockReadGuard<'a, T> {
     type Target = T;
 
