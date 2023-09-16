@@ -92,7 +92,6 @@ pub fn run(mut thread_queue: ThreadQueue<File>) -> ! {
         rand_state[stream] = rand_state[stream].wrapping_add(rand_step[stream]);
         rand_state[stream]
     };
-    drop(n);
 
     loop {
         // Run all the threads we currently have.
