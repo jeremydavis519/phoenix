@@ -59,7 +59,7 @@ pub struct RwLockWriteGuard<'a, T: ?Sized>(&'a mut T);
 
 impl<T> RwLock<T> {
     /// Creates a new, unlocked read-write lock.
-    pub fn new(value: T) -> Self {
+    pub const fn new(value: T) -> Self {
         Self {
             lock:  AtomicUsize::new(0),
             value: UnsafeCell::new(value),
