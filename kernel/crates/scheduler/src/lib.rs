@@ -40,7 +40,7 @@ extern crate alloc;
 #[macro_use] extern crate shared;
 
 use {
-    alloc::sync::Arc,
+    alloc::boxed::Box,
     core::{
         sync::atomic::{AtomicU32, AtomicUsize, Ordering},
         time::Duration,
@@ -167,27 +167,16 @@ pub fn run(mut thread_queue: ThreadQueue<File>) -> ! {
     }
 }
 
-/// Spawns a new thread that will begin execution as soon as possible.
-///
-/// # Returns
-/// The thread's ID, which a userspace application can use to refer to it when making system calls.
-pub fn spawn_thread(
-        process:        Arc<Process<File>>,
-        entry_point:    usize,
-        argument:       usize,
-        max_stack_size: usize,
-        priority:       u8,
-) -> Result<usize, ThreadCreationError> {
+/// Causes the given thread to begin execution as soon as possible.
+// FIXME: This runs in unbounded time and is called by system calls. Turn it into an async fn.
+pub fn enqueue_thread(mut thread: Box<Thread<File>>) {
     // Make a new thread and push it onto the list.
-    let mut thread = Thread::new(process, entry_point, argument, max_stack_size, priority)?;
-    let id = thread.id();
     loop {
         match MOVING_THREADS.insert_head(thread) {
             Ok(()) => break,
             Err(x) => thread = x // We moved this into `insert_head`, so we need to move it back.
         };
     }
-    Ok(id)
 }
 
 // The total number of threads that currently exist.

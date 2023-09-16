@@ -184,15 +184,20 @@ fn thread_spawn(
     if priority == 0 {
         priority = 1;
     }
-    handle.write(
-        scheduler::spawn_thread(
-            parent_thread.process.clone(),
-            entry_point,
-            argument,
-            max_stack_size,
-            priority
-        ).unwrap_or(0)
-    );
+    let Ok(thread) = Thread::new(
+        parent_thread.process.clone(),
+        entry_point,
+        argument,
+        0,
+        max_stack_size,
+        priority.try_into().unwrap_or(u8::max_value()),
+    ) else {
+        handle.write(0);
+        return Response::eret();
+    };
+    handle.write(thread.id());
+    scheduler::enqueue_thread(thread);
+
     profiler_probe!(ENTRANCE);
     Response::eret()
 }
