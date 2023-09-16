@@ -1,4 +1,4 @@
-/* Copyright (c) 2021-2022 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2021-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -119,12 +119,20 @@ impl<'a, E: Read+Seek+Clone> UserspaceStr<'a, E> {
         }
     }
 
-    fn head(&self) -> u8 {
+    /// Returns the first byte of this string.
+    ///
+    /// # Panics
+    /// If the given string is empty.
+    pub fn head(&self) -> u8 {
         assert!(self.len > 0);
         unsafe { *self.start_ptr_kernel }
     }
 
-    fn tail(self) -> Self {
+    /// Returns this string with its first byte removed.
+    ///
+    /// # Panics
+    /// If the given string is empty.
+    pub fn tail(self) -> Self {
         assert!(self.len > 0);
         let start_addr_userspace = self.start_addr_userspace.wrapping_add(1);
         let mut next_kernel_addr = (self.start_ptr_kernel as usize).wrapping_add(1);
@@ -168,4 +176,15 @@ fn userspace_addr_to_kernel_addr<E: Read+Seek>(
             Ok(())
         }
     )
+}
+
+impl<'a, E: Read+Seek+Clone> Read for UserspaceStr<'a, E> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let count = usize::min(self.len(), buf.len());
+        for i in 0 .. count {
+            buf[i] = self.head();
+            *self = self.clone().tail();
+        }
+        Ok(count)
+    }
 }
