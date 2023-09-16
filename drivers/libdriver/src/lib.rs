@@ -1,4 +1,4 @@
-/* Copyright (c) 2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2021-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -22,18 +22,18 @@
 #![no_std]
 #![deny(warnings, missing_docs)]
 
-// FIXME: These `cfg` lines are here only to allow compiling on an x86-64 host.
+// FIXME: These `cfg(target_arch = "aarch64")` lines are here only to allow compiling on an x86-64 host.
 #[cfg(target_arch = "aarch64")]
+#[cfg(not(feature = "kernelspace"))]
 use core::{
-    mem,
     num::NonZeroUsize,
     ops::Deref,
     slice
 };
-#[cfg(not(target_arch = "aarch64"))]
-use core::{mem};
+use core::mem;
 
 #[cfg(target_arch = "aarch64")]
+#[cfg(not(feature = "kernelspace"))]
 /// Represents a physical device owned by this process.
 #[derive(Debug)]
 pub struct Device<'a> {
@@ -52,6 +52,7 @@ pub struct Device<'a> {
 }
 
 #[cfg(target_arch = "aarch64")]
+#[cfg(not(feature = "kernelspace"))]
 impl<'a> Device<'a> {
     /// Retrieves the named device from the kernel.
     ///
@@ -78,6 +79,7 @@ impl<'a> Device<'a> {
 }
 
 #[cfg(target_arch = "aarch64")]
+#[cfg(not(feature = "kernelspace"))]
 impl<'a> Drop for Device<'a> {
     fn drop(&mut self) {
         // FIXME: Use a system call to relinquish control of the device.
@@ -85,6 +87,7 @@ impl<'a> Drop for Device<'a> {
 }
 
 #[cfg(target_arch = "aarch64")]
+#[cfg(not(feature = "kernelspace"))]
 impl<'a> Deref for Device<'a> {
     type Target = DeviceContents;
 

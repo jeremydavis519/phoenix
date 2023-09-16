@@ -8,7 +8,7 @@ edition = "2018"
 name = "devices"
 
 [dependencies]
-libdriver = { path = "../../../drivers/libdriver", default-features = false }
+libdriver = { path = "../../../drivers/libdriver", default-features = false, features = ["kernelspace"] }
 
 phoenix-kernel-error = { path = "../error" }
 phoenix-kernel-i18n = { path = "../i18n" }

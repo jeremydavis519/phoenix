@@ -11,3 +11,4 @@ libphoenix = { path = "../../libphoenix", default-features = false }
 default = ["global-allocator"]
 
 global-allocator = ["libphoenix/global-allocator"]
+kernelspace = ["libphoenix/kernelspace"]
