@@ -119,7 +119,7 @@ pub fn run(mut thread_queue: ThreadQueue<File>) -> ! {
         // running threads as soon as possible.
 
         // Load balancing:
-        if let Ok(moving_threads) = MOVING_THREADS.try_access() {
+        if let Ok(moving_threads) = MOVING_THREADS.try_access_weak() {
             // Each CPU will try to keep the sum of its threads' priorities (which is proportional to
             // the amount of time needed to schedule each of them once) around this level, although
             // some pseudorandom jitter is used to move threads around in ways that will improve
