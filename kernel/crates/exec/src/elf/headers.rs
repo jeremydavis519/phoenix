@@ -558,7 +558,8 @@ ffi_enum! {
         GnuEhFrame = 0x6474_e550,
 
         // Segment types to ignore
-        GnuStack   = 0x6474_e551
+        GnuStack        = 0x6474_e551,
+        GnuPropertyNote = 0x6474_e553,
     }
 
     #[repr(u32)]
@@ -577,7 +578,8 @@ ffi_enum! {
         GnuEhFrame = SegmentTypeCommon::GnuEhFrame as u32,
 
         // Segment types to ignore
-        GnuStack   = SegmentTypeCommon::GnuStack as u32
+        GnuStack        = SegmentTypeCommon::GnuStack as u32,
+        GnuPropertyNote = SegmentTypeCommon::GnuPropertyNote as u32,
     }
 }
 

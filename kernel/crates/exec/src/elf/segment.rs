@@ -1,4 +1,4 @@
-/* Copyright (c) 2018-2020 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2018-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -112,7 +112,8 @@ fn decode_segment(ph_entry: ProgramHeaderEntry64) -> io::Result<Option<Segment>>
         ),
 
         // Segment types to ignore
-        ElfSegTypeArm::GnuStack => { Ok(None) }
+        ElfSegTypeArm::GnuStack |
+        ElfSegTypeArm::GnuPropertyNote => { Ok(None) },
     }
 }
 
@@ -161,7 +162,8 @@ fn decode_segment(ph_entry: ProgramHeaderEntry64) -> io::Result<Option<Segment>>
         ),
 
         // Segment types to ignore
-        ElfSegTypeCommon::GnuStack => { Ok(None) }
+        ElfSegTypeCommon::GnuStack |
+        ElfSegTypeCommon::GnuPropertyNote => { Ok(None) }
     }
 }
 
