@@ -33,6 +33,7 @@
 #![deny(warnings, missing_docs)]
 
 #![cfg_attr(target_arch = "aarch64", feature(allocator_api))]
+#![feature(strict_provenance)]
 
 extern crate alloc;
 

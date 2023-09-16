@@ -1,4 +1,4 @@
-/* Copyright (c) 2022 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2022-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -25,6 +25,7 @@ use {
     core::{
         fmt,
         mem,
+        ptr,
         sync::atomic::Ordering,
     },
     io::{Read, Seek},
@@ -126,7 +127,7 @@ pub struct Thread<T: Read+Seek> {
 impl<T: Read+Seek> Thread<T> {
     /// Returns this thread's unique Thread ID.
     pub fn id(&self) -> usize {
-        self as *const _ as usize
+        (self as *const Self).expose_addr()
     }
 
     /// Converts a Thread ID into a raw pointer to a thread. Note that the thread is *NOT*
@@ -137,7 +138,7 @@ impl<T: Read+Seek> Thread<T> {
     /// The raw pointer, or `Err` if the Thread ID is invalid.
     pub fn from_id(id: usize) -> Result<*const Thread<T>, ()> {
         if id % mem::align_of::<Thread<T>>() == 0 {
-            Ok(id as *const _)
+            Ok(ptr::from_exposed_addr(id))
         } else {
             Err(())
         }
