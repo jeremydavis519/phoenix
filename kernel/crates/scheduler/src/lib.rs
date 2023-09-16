@@ -85,8 +85,8 @@ pub fn run(mut thread_queue: ThreadQueue<File>) -> ! {
     const PRNG_PICK_THREAD:    usize = 0;
     const PRNG_FUZZY_PRIORITY: usize = 1;
     let n = cpu_index as u64;
-    let mut rand_state: [u64; 8] = [n * 0x7e1c, n * 0x0330, n * 0x0899, n * 0x0e8e,
-        n * 0xc5f8, n * 0xffa8, n * 0x98b9, n * 0x2b24];
+    let mut rand_state: [u64; 8] = [n.wrapping_mul(0x7e1c), n.wrapping_mul(0x0330), n.wrapping_mul(0x0899), n.wrapping_mul(0x0e8e),
+        n.wrapping_mul(0xc5f8), n.wrapping_mul(0xffa8), n.wrapping_mul(0x98b9), n.wrapping_mul(0x2b24)];
     let rand_step: [u64; 8] = [1223, 2731, 4391, 6113, 7879, 9679, 11587, 13441];
     let mut rand = move |stream: usize| {
         rand_state[stream] = rand_state[stream].wrapping_add(rand_step[stream]);
