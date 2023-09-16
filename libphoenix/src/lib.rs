@@ -1,4 +1,4 @@
-/* Copyright (c) 2021-2022 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2021-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -21,6 +21,7 @@
 
 #![no_std]
 #![deny(warnings, missing_docs)]
+#![allow(internal_features)]
 
 #![feature(allocator_api)]
 #![feature(coerce_unsized, unsize)]

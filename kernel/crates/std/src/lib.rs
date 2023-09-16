@@ -1,4 +1,4 @@
-/* Copyright (c) 2017-2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2017-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -28,6 +28,7 @@
 #![feature(lang_items)]
 
 #![deny(warnings, missing_docs)]
+#![allow(internal_features)]
 
 extern crate alloc;
 #[cfg_attr(any(target_arch = "arm", target_arch = "armv5te", target_arch = "armv7", target_arch = "aarch64"), macro_use)]
