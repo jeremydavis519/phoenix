@@ -193,6 +193,7 @@ impl<'a, T: ?Sized> ResponseFuture<'a, T> {
         buffer: PhysBox<T>,
         legacy_response_len: Option<usize>
     ) -> Self {
+        assert!(descriptors_count > 0);
         Self {
             virtq: Some(virtq),
             desc_head_idx,
