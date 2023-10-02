@@ -1,4 +1,4 @@
-/* Copyright (c) 2022 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2022-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -19,5 +19,44 @@
 //! This module defines all the standard methods of inter-process communication (IPC) that Phoenix
 //! supports.
 
+use {
+    alloc::vec::Vec,
+    crate::{
+        lock::RwLock,
+        serde::{Serializer, Deserializer, Serialize, Deserialize, SerializeError, DeserializeError},
+    },
+};
+
 pub mod pipe;
 pub mod sharing;
+
+pub use pipe::*;
+pub use sharing::*;
+
+#[cfg(not(feature = "no-start"))]
+pub(crate) static INHERITED_FILE_DESCRIPTORS: RwLock<Vec<FileDescriptor>> = RwLock::new(Vec::new());
+
+/// A file descriptor of any kind.
+#[allow(missing_docs)]
+pub enum FileDescriptor {
+    PipeReader(PipeReader),
+    PipeWriter(PipeWriter),
+}
+
+impl Serialize for FileDescriptor {
+    fn serialize<S: Serializer + ?Sized>(&self, s: &mut S) -> Result<(), SerializeError> {
+        match self {
+            Self::PipeReader(pipe_reader) => pipe_reader.serialize(s),
+            Self::PipeWriter(pipe_writer) => pipe_writer.serialize(s),
+        }
+    }
+}
+
+impl Deserialize for FileDescriptor {
+    fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<Self, DeserializeError>
+        where Self: Sized {
+        if let Ok(pipe_reader) = PipeReader::deserialize(d) { return Ok(Self::PipeReader(pipe_reader)); }
+        if let Ok(pipe_writer) = PipeWriter::deserialize(d) { return Ok(Self::PipeWriter(pipe_writer)); }
+        Err(DeserializeError)
+    }
+}
