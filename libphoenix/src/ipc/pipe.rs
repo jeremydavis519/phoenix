@@ -159,7 +159,7 @@ pub struct PipeReader {
 }
 
 impl PipeWriter {
-    const SERIALIZED_TYPE: &str = "pipe-writer";
+    const SERIALIZED_TYPE: &'static str = "pipe-writer";
 
     /// Writes bytes from the given buffer to the pipe.
     ///
@@ -240,7 +240,7 @@ impl PipeWriter {
 }
 
 impl PipeReader {
-    const SERIALIZED_TYPE: &str = "pipe-reader";
+    const SERIALIZED_TYPE: &'static str = "pipe-reader";
 
     /// Reads bytes from the pipe into the given buffer.
     ///
