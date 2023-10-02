@@ -1,4 +1,4 @@
-/* Copyright (c) 2022 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2022-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -70,7 +70,7 @@
 /* TODO: #define MAX_CANON                      {>= _POSIX_MAX_CANON} */
 /* TODO: #define MAX_INPUT                      {>= _POSIX_MAX_INPUT} */
 /* TODO: #define NAME_MAX                       {>= _POSIX_NAME_MAX and >= _XOPEN_NAME_MAX} */
-/* TODO: #define PATH_MAX                       {>= _POSIX_PATH_MAX and >= _XOPEN_PATH_MAX} */
+#define PATH_MAX                                1024
 #define PIPE_BUF                                1024
 /* TODO: #define POSIX_ALLOC_SIZE_MIN           {no minimum acceptable value} */
 /* TODO: #define POSIX_REC_INCR_XFER_SIZE       {no minimum acceptable value} */
