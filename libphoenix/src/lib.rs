@@ -41,6 +41,7 @@ extern crate alloc;
 
 // FIXME: This is only here to allow compiling on an x86-64 host.
 #[cfg(target_arch = "aarch64")]
+#[cfg(not(feature = "kernelspace"))]
 pub mod allocator;
 #[cfg(not(feature = "kernelspace"))]
 pub mod ipc;
@@ -58,6 +59,7 @@ pub mod profiler;
 pub mod syscall;
 // FIXME: This is only here to allow compiling on an x86-64 host.
 #[cfg(target_arch = "aarch64")]
+#[cfg(not(feature = "kernelspace"))]
 pub mod thread;
 
 #[cfg(target_arch = "aarch64")]
