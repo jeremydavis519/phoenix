@@ -26,6 +26,7 @@ use {
     alloc::{
         alloc::AllocError,
         boxed::Box,
+        string::String,
         sync::Arc,
     },
     core::{
@@ -284,7 +285,7 @@ impl PipeReader {
 impl Serialize for PipeWriter {
     fn serialize<S: Serializer + ?Sized>(&self, s: &mut S) -> Result<(), SerializeError> {
         serialize_object!(s, {
-            "type" => |s| s.string(Self::SERIALIZED_TYPE),
+            "type" => |s| s.str(Self::SERIALIZED_TYPE),
             "pipe" => |s| s.serialize(&self.pipe),
         })
     }
@@ -299,7 +300,7 @@ impl Deserialize for PipeWriter {
             match field_name {
                 "type" => {
                     if ty.is_some() { return Err(DeserializeError); }
-                    let val = deserializer.string()?;
+                    let val = deserializer.deserialize::<String>()?;
                     if val != Self::SERIALIZED_TYPE { return Err(DeserializeError); }
                     ty = Some(val);
                 },
@@ -323,7 +324,7 @@ impl Deserialize for PipeWriter {
 impl Serialize for PipeReader {
     fn serialize<S: Serializer + ?Sized>(&self, s: &mut S) -> Result<(), SerializeError> {
         serialize_object!(s, {
-            "type" => |s| s.string(Self::SERIALIZED_TYPE),
+            "type" => |s| s.str(Self::SERIALIZED_TYPE),
             "pipe" => |s| s.serialize(&self.pipe),
         })
     }
@@ -338,7 +339,7 @@ impl Deserialize for PipeReader {
             match field_name {
                 "type" => {
                     if ty.is_some() { return Err(DeserializeError); }
-                    let val = deserializer.string()?;
+                    let val = deserializer.deserialize::<String>()?;
                     if val != Self::SERIALIZED_TYPE { return Err(DeserializeError); }
                     ty = Some(val);
                 },

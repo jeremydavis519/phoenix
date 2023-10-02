@@ -8,6 +8,7 @@ edition = "2018"
 crate-type = ["lib"]
 
 [dependencies]
+hashbrown = "0.14"
 
 [features]
 default = ["global-allocator"]

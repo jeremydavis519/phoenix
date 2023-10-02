@@ -37,25 +37,21 @@ use {
         any::Any,
         error,
         fmt,
-        ops::{Deref, DerefMut},
+        mem,
+        ops::Deref,
     },
 };
+
+mod default;
+pub(crate) use default::*;
 
 /// An abstraction over any serialization implementation.
 pub trait Serializer {
     /// The type that is used to serialize a single field during a call to the [`object`] function.
-    ///
-    /// [`object`]: #tymethod.object.html
     type FieldSerializer: Serializer;
 
-    /// The type that represents an iterator over the serializers for all of the fields in an
-    /// object during a call to the [`object`] function.
-    ///
-    /// [`object`]: #tymethod.object.html
-    type FieldSerializers<S: DerefMut<Target = Self::FieldSerializer>>: IntoIterator<Item = S>;
-
     /// Serializes a string.
-    fn string(&mut self, value: &str) -> Result<(), SerializeError>;
+    fn str(&mut self, value: &str) -> Result<(), SerializeError>;
     /// Serializes a boolean value.
     fn bool(&mut self, value: bool) -> Result<(), SerializeError>;
     /// Serializes an integer.
@@ -87,18 +83,15 @@ pub trait Serializer {
     /// The serializers are given to the `serialize` callback function in the same order as the
     /// corresponding names appear in `field_names`.
     ///
-    /// The arguments are designed for use with the [`fields`] macro. If you decide to write them
-    /// by hand, your code is likely to become quite messy.
+    /// The arguments are designed for use with the [`serialize_object`] macro. If you decide to
+    /// write them by hand, your code is likely to become quite messy.
     ///
     /// This function returns an error if the callback returns an error, and it may also return an
     /// error even if the callback succeeds.
-    ///
-    /// [`fields`]: ../macro.fields.html
-    fn object<S, N, F>(&mut self, field_names: N, serialize: F)
-        -> Result<(), SerializeError>
+    fn object<S, I, F>(&mut self, field_names: I, serialize: F) -> Result<(), SerializeError>
         where S: Deref<Target = str>,
-              N: IntoIterator<Item = S>,
-              F: FnOnce(Self::FieldSerializers<&mut Self::FieldSerializer>) -> Result<(), SerializeError>;
+              I: IntoIterator<Item = S>,
+              F: Fn(&mut Self::FieldSerializer, usize) -> Result<(), SerializeError>;
 
     /// Serializes a serializable value.
     fn serialize<T: Serialize>(&mut self, value: T) -> Result<(), SerializeError> {
@@ -108,12 +101,10 @@ pub trait Serializer {
     /// Serializes a serializable value, but only once.
     ///
     /// If the same value (by pointer equality) is passed to this function more than once, the
-    /// first call serializes the value and returns a unique index by which it can be referenced
-    /// after serialization. Then, all subsequent calls with the same value look up and return this
-    /// index without serializing a new copy of the value.
-    ///
-    /// Returned indices are not guaranteed to be consecutive, only unique.
-    fn serialize_once<T: Serialize, P: Deref<Target = T>>(&mut self, value: P) -> Result<u32, SerializeError>;
+    /// first call serializes the value and also an implementation-defined "pointer" that the
+    /// deserializer can use to find it. Then, all subsequent calls with the same value are
+    /// serialized to that same implementation-defined "pointer".
+    fn serialize_once<T: Serialize, P: Deref<Target = T>>(&mut self, value: P) -> Result<(), SerializeError>;
 }
 
 /// Converts a comma-separated list of fields into the correct type for the [`Serializer::object`]
@@ -126,9 +117,9 @@ pub trait Serializer {
 /// this:
 /// ```
 /// fn foo<S: Serializer>(s: &mut Serializer) -> Result<(), SerializeError> {
-///     serialize_object!(s {
+///     serialize_object!(s, {
 ///         "bar" => |s| s.u32(42),
-///         "baz" => |s| s.string("value"),
+///         "baz" => |s| s.str("value"),
 ///     })
 /// }
 /// ```
@@ -143,27 +134,18 @@ macro_rules! __serde_serialize_object__ {
         $crate::serde::Serializer::object(
             $s,
             ::core::iter::empty()$(.chain(::core::iter::once($name)))*,
-            |serializers| {
-                let mut serializers = serializers.into_iter();
-                $(match serializers.next() {
-                    Some(s) => {
-                        // A little convoluted, but Rust's type inference can't handle real
-                        // closures in this context.
-                        let $serializer$(: $t)? = s;
-                        $serialize?;
-                    },
-                    None => {
-                        // Not enough serializers were provided.
-                        return ::core::result::Result::Err($crate::serde::SerializeError);
-                    },
-                };)*
-                match serializers.next() {
-                    Some(_) => {
-                        // Too many serializers were provided.
-                        return ::core::result::Result::Err($crate::serde::SerializeError);
-                    },
-                    None => ::core::result::Result::Ok(()),
+            |serializer, index: ::core::primitive::usize| {
+                let _i: ::core::primitive::usize = 0;
+                $(if index == _i {
+                    // A little convoluted, but Rust's type inference can't handle real
+                    // closures in this context.
+                    let $serializer$(: $t)? = serializer;
+                    return $serialize;
                 }
+                let _i: ::core::primitive::usize = _i + 1;)*
+
+                // The requested field doesn't exist.
+                panic!("`Serializer::object` implementation tried to serialize a field that doesn't exist")
             },
         )
     };
@@ -187,7 +169,7 @@ pub trait Deserializer {
     type OnceDeserializer: Deserializer;
 
     /// Deserializes a string.
-    fn string(&mut self) -> Result<String, DeserializeError>;
+    fn str(&mut self) -> Result<&str, DeserializeError>;
     /// Deserializes a boolean value.
     fn bool(&mut self) -> Result<bool, DeserializeError>;
     /// Deserializes an integer.
@@ -244,18 +226,17 @@ pub trait Deserializer {
     /// function returns an error.
     ///
     /// [`serialize_once`]: ../trait.Serializer.html#tymethod.serialize_once
-    fn deserialize_once<T: Any, F: FnOnce(Self::OnceDeserializer) -> T>(
-        &mut self,
-        index: u32,
-        deserialize: F,
-    ) -> Result<T, DeserializeError>;
+    fn deserialize_once<T, P, F, G>(&mut self, deserialize: F, retrieve: G) -> Result<P, DeserializeError>
+        where T: Deserialize,
+              P: Deref<Target = T>,
+              F: FnOnce(Self::OnceDeserializer) -> Result<P, DeserializeError>,
+              G: FnOnce(*const ()) -> P;
 }
 
 impl<T: Serializer + ?Sized> Serializer for &mut T {
     type FieldSerializer = T::FieldSerializer;
-    type FieldSerializers<S: DerefMut<Target = Self::FieldSerializer>> = T::FieldSerializers<S>;
 
-    fn string(&mut self, value: &str) -> Result<(), SerializeError> { T::string(*self, value) }
+    fn str(&mut self, value: &str) -> Result<(), SerializeError> { T::str(*self, value) }
     fn bool(&mut self, value: bool) -> Result<(), SerializeError> { T::bool(*self, value) }
     fn i8(&mut self, value: i8) -> Result<(), SerializeError> { T::i8(*self, value) }
     fn i16(&mut self, value: i16) -> Result<(), SerializeError> { T::i16(*self, value) }
@@ -268,22 +249,21 @@ impl<T: Serializer + ?Sized> Serializer for &mut T {
     fn u64(&mut self, value: u64) -> Result<(), SerializeError> { T::u64(*self, value) }
     fn u128(&mut self, value: u128) -> Result<(), SerializeError> { T::u128(*self, value) }
     fn list<U: Serialize, I: IntoIterator<Item = U>>(&mut self, values: I) -> Result<(), SerializeError> { T::list(*self, values) }
-    fn object<S, N, F>(&mut self, field_names: N, serialize: F)
-            -> Result<(), SerializeError>
+    fn object<S, I, F>(&mut self, field_names: I, serialize: F) -> Result<(), SerializeError>
             where S: Deref<Target = str>,
-                  N: IntoIterator<Item = S>,
-                  F: FnOnce(Self::FieldSerializers<&mut Self::FieldSerializer>) -> Result<(), SerializeError> {
+                  I: IntoIterator<Item = S>,
+                  F: Fn(&mut Self::FieldSerializer, usize) -> Result<(), SerializeError> {
         T::object(*self, field_names, serialize)
     }
     fn serialize<U: Serialize>(&mut self, value: U) -> Result<(), SerializeError> { T::serialize(*self, value) }
-    fn serialize_once<U: Serialize, P: Deref<Target = U>>(&mut self, value: P) -> Result<u32, SerializeError> { T::serialize_once(*self, value) }
+    fn serialize_once<U: Serialize, P: Deref<Target = U>>(&mut self, value: P) -> Result<(), SerializeError> { T::serialize_once(*self, value) }
 }
 
 impl<T: Deserializer + ?Sized> Deserializer for &mut T {
     type FieldDeserializer = T::FieldDeserializer;
     type OnceDeserializer = T::OnceDeserializer;
 
-    fn string(&mut self) -> Result<String, DeserializeError> { T::string(*self) }
+    fn str(&mut self) -> Result<&str, DeserializeError> { T::str(*self) }
     fn bool(&mut self) -> Result<bool, DeserializeError> { T::bool(*self) }
     fn i8(&mut self) -> Result<i8, DeserializeError> { T::i8(*self) }
     fn i16(&mut self) -> Result<i16, DeserializeError> { T::i16(*self) }
@@ -301,12 +281,12 @@ impl<T: Deserializer + ?Sized> Deserializer for &mut T {
         T::object(*self, deserialize_field)
     }
     fn deserialize<U: Deserialize>(&mut self) -> Result<U, DeserializeError> { T::deserialize(*self) }
-    fn deserialize_once<U: Any, F: FnOnce(Self::OnceDeserializer) -> U>(
-            &mut self,
-            index: u32,
-            deserialize: F,
-        ) -> Result<U, DeserializeError> {
-        T::deserialize_once(*self, index, deserialize)
+    fn deserialize_once<U, P, F, G>(&mut self, deserialize: F, retrieve: G) -> Result<P, DeserializeError>
+            where U: Deserialize,
+                  P: Deref<Target = U>,
+                  F: FnOnce(Self::OnceDeserializer) -> Result<P, DeserializeError>,
+                  G: FnOnce(*const ()) -> P {
+        T::deserialize_once(*self, deserialize, retrieve)
     }
 }
 
@@ -325,19 +305,19 @@ pub trait Deserialize {
 
 impl Serialize for String {
     fn serialize<S: Serializer + ?Sized>(&self, s: &mut S) -> Result<(), SerializeError> {
-        s.string(self)
+        s.str(self)
     }
 }
 
 impl Serialize for str {
     fn serialize<S: Serializer + ?Sized>(&self, s: &mut S) -> Result<(), SerializeError> {
-        s.string(self)
+        s.str(self)
     }
 }
 
 impl Deserialize for String {
     fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<Self, DeserializeError> {
-        d.string()
+        Ok(String::from(d.str()?))
     }
 }
 
@@ -389,39 +369,51 @@ impl<T: Serialize> Serialize for &T {
 
 impl<T: Serialize> Serialize for Rc<T> {
     fn serialize<S: Serializer + ?Sized>(&self, s: &mut S) -> Result<(), SerializeError> {
-        let index = s.serialize_once(&**self)?;
-        s.u32(index)
+        s.serialize_once(&**self)
     }
 }
 
-impl<T: Deserialize> Deserialize for Rc<T> where Rc<T>: Any {
+impl<T: Deserialize> Deserialize for Rc<T> {
     fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<Self, DeserializeError> {
-        let index = d.u32()?;
-        d.deserialize_once(index, |mut deserializer| {
-            let val = deserializer.deserialize::<T>()?;
-            Rc::try_new(val)
-                // FIXME: Make allocation errors distinguishable from parsing errors.
-                .map_err(|AllocError| DeserializeError)
-        })?
+        d.deserialize_once(
+            |mut deserializer| {
+                let val = deserializer.deserialize::<T>()?;
+                Rc::try_new(val)
+                    // FIXME: Make allocation errors distinguishable from parsing errors.
+                    .map_err(|AllocError| DeserializeError)
+            },
+            |ptr| unsafe {
+                let unsafe_rc = Rc::from_raw(ptr as *mut T);
+                let rc = unsafe_rc.clone();
+                mem::forget(unsafe_rc);
+                rc
+            },
+        )
     }
 }
 
 impl<T: Serialize> Serialize for Arc<T> {
     fn serialize<S: Serializer + ?Sized>(&self, s: &mut S) -> Result<(), SerializeError> {
-        let index = s.serialize_once(&**self)?;
-        s.u32(index)
+        s.serialize_once(&**self)
     }
 }
 
 impl<T: Deserialize> Deserialize for Arc<T> where Arc<T>: Any {
     fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<Self, DeserializeError> {
-        let index = d.u32()?;
-        d.deserialize_once(index, |mut deserializer| {
-            let val = deserializer.deserialize::<T>()?;
-            Arc::try_new(val)
-                // FIXME: Make allocation errors distinguishable from parsing errors.
-                .map_err(|AllocError| DeserializeError)
-        })?
+        d.deserialize_once(
+            |mut deserializer| {
+                let val = deserializer.deserialize::<T>()?;
+                Arc::try_new(val)
+                    // FIXME: Make allocation errors distinguishable from parsing errors.
+                    .map_err(|AllocError| DeserializeError)
+            },
+            |ptr| unsafe {
+                let unsafe_arc = Arc::from_raw(ptr as *mut T);
+                let arc = unsafe_arc.clone();
+                mem::forget(unsafe_arc);
+                arc
+            },
+        )
     }
 }
 
