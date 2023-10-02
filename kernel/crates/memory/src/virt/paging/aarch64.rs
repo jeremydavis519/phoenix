@@ -55,6 +55,7 @@ use {
 static PAGE_SIZE: AtomicUsize = AtomicUsize::new(0);
 
 const KERNEL_ASID: u16 = 0;
+const TRAMPOLINE_ASID: u16 = 1;
 
 /// Returns the size of a page of virtual memory.
 pub fn page_size() -> usize {
@@ -1900,7 +1901,7 @@ extern fn init_trampoline_page_tables(max_virt_bits: u8) -> *const c_void {
 
     // When mapping a page, this mask's clear bits must be clear in the address. When accessing the
     // page, they must be set in the address.
-    let root_block = RootPageTable::new(ExceptionLevel::El1, KERNEL_ASID)
+    let root_block = RootPageTable::new(ExceptionLevel::El1, TRAMPOLINE_ASID)
         .expect("failed to allocate the kernel trampoline's root page table");
     let root = unsafe { &mut *root_block.index(0) };
     let page_size = page_size();

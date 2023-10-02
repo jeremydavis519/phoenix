@@ -89,6 +89,8 @@ enter_userspace:
 
     // Switch to the thread's root page table and restore the thread's X19.
     msr TTBR0_EL1, x19
+    and x19, x19, 0xffff000000000000
+    tlbi aside1, x19
     ldr x19, [sp], 16
 
     eret
