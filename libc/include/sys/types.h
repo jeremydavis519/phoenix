@@ -57,7 +57,7 @@ typedef uint16_t timer_t;
 typedef uint32_t id_t;
 typedef uint32_t gid_t;
 typedef uint32_t uid_t;
-typedef uint32_t pid_t;
+typedef uint64_t pid_t;
 
 typedef void* pthread_attr_t; /* FIXME: Use a proper type. */
 /* TODO
