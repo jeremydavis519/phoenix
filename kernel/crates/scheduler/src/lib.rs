@@ -98,8 +98,9 @@ pub fn run(mut thread_queue: ThreadQueue<File>) -> ! {
         // Run all the threads we currently have.
         let mut i = 0;
         while i < thread_queue.len() {
-            SCHEDULING_TIMER.interrupt_after(quantum(thread_queue[i].priority()));
-            match thread_queue[i].run() {
+            let thread = &mut thread_queue[i];
+            SCHEDULING_TIMER.interrupt_after(quantum(thread.priority()));
+            match thread.run() {
                 ThreadStatus::Running => {
                     // Just move on to the next thread.
                     i += 1;
@@ -110,7 +111,7 @@ pub fn run(mut thread_queue: ThreadQueue<File>) -> ! {
                 },
                 ThreadStatus::Terminated => {
                     // Remove the terminated thread.
-                    printlndebug!("Terminating thread {:#x}", thread_queue[i].id());
+                    printlndebug!("Terminating thread {} (ID = {:#x})", i, thread.id());
                     priority_sum -= u32::from(thread_queue.swap_remove(i).priority());
                 },
             };
