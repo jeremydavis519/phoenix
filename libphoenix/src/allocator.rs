@@ -1,4 +1,4 @@
-/* Copyright (c) 2021-2022 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2021-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -44,7 +44,7 @@ use {
 static ALLOCATOR: Allocator = Allocator;
 
 /// A memory allocator capable of getting new memory from the kernel.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Allocator;
 
 impl Allocator {
