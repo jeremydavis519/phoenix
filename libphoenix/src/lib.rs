@@ -52,6 +52,7 @@ pub mod serde;
 // FIXME: This is only here to allow compiling on an x86-64 host.
 #[cfg(all(target_arch = "aarch64", not(feature = "kernelspace")))]
 mod panic;
+pub mod posix;
 pub mod process;
 pub mod profiler;
 // FIXME: This is only here to allow compiling on an x86-64 host.
