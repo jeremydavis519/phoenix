@@ -1950,7 +1950,6 @@ extern fn init_trampoline_page_tables(max_virt_bits: u8) -> *const c_void {
 
     // Make sure everyone uses the same root table.
     let table_ptr;
-    let _ = root; // We must avoid having two mutable references at once.
     let root_ptr = root_block.index(0);
     match TRAMPOLINE_PAGE_TABLE.compare_exchange(ptr::null_mut(), root_ptr, Ordering::AcqRel, Ordering::Acquire) {
         Ok(_) => {
