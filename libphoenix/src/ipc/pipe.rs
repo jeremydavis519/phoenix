@@ -427,6 +427,7 @@ impl Drop for PipeReader {
 struct PipeBuffer {
     readers_count:       AtomicU32,
     writers_count:       AtomicU32,
+    // `reader_index == writer_index` indicates that the buffer is empty.
     reader_index:        AtomicUsize,
     writer_index:        RwLock<usize>,
     _access_time:        u64,
@@ -472,7 +473,10 @@ impl PipeBuffer {
         // If someone corrupted the reader index, try to recover.
         while reader_index >= bytes_size {
             match self.reader_index.compare_exchange_weak(reader_index, 0, Ordering::AcqRel, Ordering::Acquire) {
-                Ok(_) => break,
+                Ok(_) => {
+                    reader_index = 0;
+                    break;
+                },
                 Err(x) => reader_index = x,
             };
         }
@@ -480,10 +484,10 @@ impl PipeBuffer {
         // A corrupted writer index is easy to fix.
         if writer_index >= bytes_size { writer_index = 0; }
 
-        if reader_index >= writer_index {
-            reader_index - writer_index
+        if reader_index > writer_index {
+            reader_index - 1 - writer_index
         } else {
-            reader_index + bytes_size - writer_index
+            reader_index + bytes_size - 1 - writer_index
         }
     }
 
@@ -500,9 +504,9 @@ impl PipeBuffer {
         let mut reader_index = self.reader_index.load(Ordering::Acquire);
         if reader_index >= bytes_size { reader_index = 0; }
 
-        if reader_index >= *writer_index {
+        if reader_index > *writer_index {
             // Write all bytes in one chunk.
-            let bytes_written = usize::min(buf.len(), reader_index - *writer_index);
+            let bytes_written = usize::min(buf.len(), reader_index - 1 - *writer_index);
             for i in 0 .. bytes_written {
                 unsafe { bytes.add(*writer_index + i).write_volatile(buf[i]); }
             }
@@ -523,7 +527,7 @@ impl PipeBuffer {
         }
 
         // Write the rest of the bytes at the start of the array.
-        let last_bytes_written = usize::min(buf.len(), reader_index);
+        let last_bytes_written = usize::min(buf.len(), reader_index - 1);
         for i in 0 .. last_bytes_written {
             unsafe { bytes.add(i).write_volatile(buf[i]); }
         }
