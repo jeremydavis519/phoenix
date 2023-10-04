@@ -49,13 +49,19 @@ pub struct RwLock<T: ?Sized> {
 ///
 /// The lock is released when this object is dropped.
 #[derive(Debug)]
-pub struct RwLockReadGuard<'a, T: ?Sized>(&'a T);
+pub struct RwLockReadGuard<'a, T: ?Sized> {
+    lock:  &'a AtomicUsize,
+    value: &'a T,
+}
 
 /// An RAII guard used for reading from and writing to a read-write lock.
 ///
 /// The lock is released when this object is dropped.
 #[derive(Debug)]
-pub struct RwLockWriteGuard<'a, T: ?Sized>(&'a mut T);
+pub struct RwLockWriteGuard<'a, T: ?Sized> {
+    lock:  &'a AtomicUsize,
+    value: &'a mut T,
+}
 
 impl<T> RwLock<T> {
     /// Creates a new, unlocked read-write lock.
@@ -108,7 +114,10 @@ impl<T: ?Sized> RwLock<T> {
         if x >= Self::MAX_READERS { return Err(TryLockError::WouldBlock); }
 
         match self.lock.compare_exchange_weak(x, x + 1, Ordering::AcqRel, Ordering::Acquire) {
-            Ok(_)  => Ok(RwLockReadGuard(unsafe { &*self.value.get() })),
+            Ok(_)  => Ok(RwLockReadGuard {
+                lock: &self.lock,
+                value: unsafe { &*self.value.get() },
+            }),
             Err(_) => Err(TryLockError::WouldBlock),
         }
     }
@@ -141,7 +150,10 @@ impl<T: ?Sized> RwLock<T> {
         if x != 0 { return Err(TryLockError::WouldBlock); }
 
         match self.lock.compare_exchange_weak(x, Self::WRITER_SIGNATURE, Ordering::AcqRel, Ordering::Acquire) {
-            Ok(_)  => Ok(RwLockWriteGuard(unsafe { &mut *self.value.get() })),
+            Ok(_)  => Ok(RwLockWriteGuard {
+                lock: &self.lock,
+                value: unsafe { &mut *self.value.get() },
+            }),
             Err(_) => Err(TryLockError::WouldBlock),
         }
     }
@@ -149,24 +161,39 @@ impl<T: ?Sized> RwLock<T> {
 
 unsafe impl<T: ?Sized> Sync for RwLock<T> {}
 
-impl<'a, T> Deref for RwLockReadGuard<'a, T> {
+impl<'a, T: ?Sized> Deref for RwLockReadGuard<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        self.value
     }
 }
 
-impl<'a, T> Deref for RwLockWriteGuard<'a, T> {
+impl<'a, T: ?Sized> Drop for RwLockReadGuard<'a, T> {
+    fn drop(&mut self) {
+        self.lock.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+impl<'a, T: ?Sized> Deref for RwLockWriteGuard<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        self.value
     }
 }
 
-impl<'a, T> DerefMut for RwLockWriteGuard<'a, T> {
+impl<'a, T: ?Sized> DerefMut for RwLockWriteGuard<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+        self.value
+    }
+}
+
+impl<'a, T: ?Sized> Drop for RwLockWriteGuard<'a, T> {
+    fn drop(&mut self) {
+        match self.lock.compare_exchange(RwLock::<T>::WRITER_SIGNATURE, 0, Ordering::AcqRel, Ordering::Acquire) {
+            Ok(_) => {},
+            Err(e) => panic!("failed to unlock a write-locked RwLock: expected writer signature {}, found {}", RwLock::<T>::WRITER_SIGNATURE, e),
+        };
     }
 }
