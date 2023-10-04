@@ -68,10 +68,50 @@ pub mod thread;
 #[lang = "start"]
 fn lang_start<T: 'static+ProcessReturnValue>(
     main: fn() -> T,
-    _argc: isize,
-    _argv: *const *const u8,
+    argc: isize,
+    argv: *const *const u8,
     _sigpipe: u8,
 ) -> isize {
+    use {
+        core::{
+            convert::{TryFrom, TryInto},
+            mem,
+            slice,
+        },
+        serde::{DefaultDeserializer, Deserializer},
+    };
+
+    if !argv.is_null() {
+        let argc = usize::try_from(argc).expect("argument count can't fit in a usize");
+
+        // Initialize file descriptors and environment variables
+        if let Some(start_data_index) = argc.checked_add(1) {
+            let start_data_base_ptr = unsafe { *argv.add(start_data_index) };
+            let start_data_len = unsafe {
+                usize::try_from(u64::from_ne_bytes(
+                    slice::from_raw_parts(start_data_base_ptr, mem::size_of::<u64>()).try_into().unwrap(),
+                )).expect("start data longer than address space")
+            };
+            let start_data = unsafe { slice::from_raw_parts(start_data_base_ptr.add(mem::size_of::<u64>()), start_data_len) };
+            let mut deserializer = DefaultDeserializer::new(start_data).expect("invalid process start data");
+            let mut file_descriptors = ipc::INHERITED_FILE_DESCRIPTORS.write();
+            deserializer.object(|field_name, deserializer| {
+                let mut len = 0;
+                match field_name {
+                    // TODO: Make a new method in `Deserializer` that returns an iterator rather than a vector.
+                    "fds" => {
+                        let (mut value, value_len) = deserializer.vec()?;
+                        file_descriptors.append(&mut value);
+                        len += value_len;
+                    },
+                    _ => {},
+                };
+                Ok(len)
+            }).expect("invalid process start data (expected an object)");
+        }
+    }
+
+    // Call user-defined main function
     let retval = main().retval();
     syscall::process_exit(retval)
 }
