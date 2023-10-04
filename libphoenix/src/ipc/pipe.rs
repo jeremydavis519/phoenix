@@ -141,8 +141,9 @@ impl Serialize for Pipe {
 }
 
 impl Deserialize for Pipe {
-    fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<Self, DeserializeError> {
-        Ok(Pipe { buffer: d.deserialize::<SharedMemory>()? })
+    fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<(Self, usize), DeserializeError> {
+        let (buffer, serialized_len) = d.deserialize::<SharedMemory>()?;
+        Ok((Pipe { buffer }, serialized_len))
     }
 }
 
@@ -292,32 +293,35 @@ impl Serialize for PipeWriter {
 }
 
 impl Deserialize for PipeWriter {
-    fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<Self, DeserializeError> {
+    fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<(Self, usize), DeserializeError> {
         let mut ty = None;
         let mut pipe = None;
 
-        d.object(|field_name, mut deserializer| {
+        let ((), serialized_len) = d.object(|field_name, mut deserializer| {
+            let field_len;
             match field_name {
                 "type" => {
                     if ty.is_some() { return Err(DeserializeError); }
-                    let val = deserializer.deserialize::<String>()?;
+                    let (val, val_len) = deserializer.deserialize::<String>()?;
                     if val != Self::SERIALIZED_TYPE { return Err(DeserializeError); }
                     ty = Some(val);
+                    field_len = val_len;
                 },
                 "pipe" => {
                     if pipe.is_some() { return Err(DeserializeError); }
-                    let val = deserializer.deserialize::<Arc<Pipe>>()?;
+                    let (val, val_len) = deserializer.deserialize::<Arc<Pipe>>()?;
                     pipe = Some(val);
+                    field_len = val_len;
                 },
                 _ => return Err(DeserializeError),
             };
-            Ok(())
+            Ok(field_len)
         })?;
 
         let Some(_) = ty else { return Err(DeserializeError) };
         let Some(pipe) = pipe else { return Err(DeserializeError) };
 
-        Ok(Self { pipe })
+        Ok((Self { pipe }, serialized_len))
     }
 }
 
@@ -331,32 +335,35 @@ impl Serialize for PipeReader {
 }
 
 impl Deserialize for PipeReader {
-    fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<Self, DeserializeError> {
+    fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<(Self, usize), DeserializeError> {
         let mut ty = None;
         let mut pipe = None;
 
-        d.object(|field_name, mut deserializer| {
+        let ((), serialized_len) = d.object(|field_name, mut deserializer| {
+            let field_len;
             match field_name {
                 "type" => {
                     if ty.is_some() { return Err(DeserializeError); }
-                    let val = deserializer.deserialize::<String>()?;
+                    let (val, val_len) = deserializer.deserialize::<String>()?;
                     if val != Self::SERIALIZED_TYPE { return Err(DeserializeError); }
                     ty = Some(val);
+                    field_len = val_len;
                 },
                 "pipe" => {
                     if pipe.is_some() { return Err(DeserializeError); }
-                    let val = deserializer.deserialize::<Arc::<Pipe>>()?;
+                    let (val, val_len) = deserializer.deserialize::<Arc::<Pipe>>()?;
                     pipe = Some(val);
+                    field_len = val_len;
                 },
                 _ => return Err(DeserializeError),
             };
-            Ok(())
+            Ok(field_len)
         })?;
 
         let Some(_) = ty else { return Err(DeserializeError) };
         let Some(pipe) = pipe else { return Err(DeserializeError) };
 
-        Ok(Self { pipe })
+        Ok((Self { pipe }, serialized_len))
     }
 }
 

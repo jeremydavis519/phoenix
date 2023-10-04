@@ -98,25 +98,28 @@ impl Serialize for SharedMemory {
 }
 
 impl Deserialize for SharedMemory {
-    fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<Self, DeserializeError> {
+    fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<(Self, usize), DeserializeError> {
         let mut addr = None;
         let mut len = None;
 
-        d.object(|field_name, mut deserializer| {
+        let ((), serialized_len) = d.object(|field_name, mut deserializer| {
+            let field_len;
             match field_name {
                 "addr" => {
                     if addr.is_some() { return Err(DeserializeError); }
-                    let val = deserializer.u64()?;
+                    let (val, val_len) = deserializer.u64()?;
                     addr = Some(val);
+                    field_len = val_len;
                 },
                 "len" => {
                     if len.is_some() { return Err(DeserializeError); }
-                    let val = deserializer.u64()?;
+                    let (val, val_len) = deserializer.u64()?;
                     len = Some(val);
+                    field_len = val_len;
                 },
                 _ => return Err(DeserializeError),
             };
-            Ok(())
+            Ok(field_len)
         })?;
 
         let Some(addr) = addr else { return Err(DeserializeError) };
@@ -129,8 +132,6 @@ impl Deserialize for SharedMemory {
 
         let len = if ptr.is_null() { 0 } else { len };
 
-        Ok(Self {
-            bytes: ptr::slice_from_raw_parts_mut(ptr.cast::<AtomicU8>(), len)
-        })
+        Ok((Self { bytes: ptr::slice_from_raw_parts_mut(ptr.cast::<AtomicU8>(), len) }, serialized_len))
     }
 }

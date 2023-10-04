@@ -53,10 +53,10 @@ impl Serialize for FileDescriptor {
 }
 
 impl Deserialize for FileDescriptor {
-    fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<Self, DeserializeError>
+    fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<(Self, usize), DeserializeError>
         where Self: Sized {
-        if let Ok(pipe_reader) = PipeReader::deserialize(d) { return Ok(Self::PipeReader(pipe_reader)); }
-        if let Ok(pipe_writer) = PipeWriter::deserialize(d) { return Ok(Self::PipeWriter(pipe_writer)); }
+        if let Ok((pipe_reader, len)) = PipeReader::deserialize(d) { return Ok((Self::PipeReader(pipe_reader), len)); }
+        if let Ok((pipe_writer, len)) = PipeWriter::deserialize(d) { return Ok((Self::PipeWriter(pipe_writer), len)); }
         Err(DeserializeError)
     }
 }

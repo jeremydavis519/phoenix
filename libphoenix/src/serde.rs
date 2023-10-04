@@ -169,32 +169,32 @@ pub trait Deserializer {
     type OnceDeserializer: Deserializer;
 
     /// Deserializes a string.
-    fn str(&mut self) -> Result<&str, DeserializeError>;
+    fn str(&mut self) -> Result<(&str, usize), DeserializeError>;
     /// Deserializes a boolean value.
-    fn bool(&mut self) -> Result<bool, DeserializeError>;
+    fn bool(&mut self) -> Result<(bool, usize), DeserializeError>;
     /// Deserializes an integer.
-    fn i8(&mut self) -> Result<i8, DeserializeError>;
+    fn i8(&mut self) -> Result<(i8, usize), DeserializeError>;
     /// Deserializes an integer.
-    fn i16(&mut self) -> Result<i16, DeserializeError>;
+    fn i16(&mut self) -> Result<(i16, usize), DeserializeError>;
     /// Deserializes an integer.
-    fn i32(&mut self) -> Result<i32, DeserializeError>;
+    fn i32(&mut self) -> Result<(i32, usize), DeserializeError>;
     /// Deserializes an integer.
-    fn i64(&mut self) -> Result<i64, DeserializeError>;
+    fn i64(&mut self) -> Result<(i64, usize), DeserializeError>;
     /// Deserializes an integer.
-    fn i128(&mut self) -> Result<i128, DeserializeError>;
+    fn i128(&mut self) -> Result<(i128, usize), DeserializeError>;
     /// Deserializes an integer.
-    fn u8(&mut self) -> Result<u8, DeserializeError>;
+    fn u8(&mut self) -> Result<(u8, usize), DeserializeError>;
     /// Deserializes an integer.
-    fn u16(&mut self) -> Result<u16, DeserializeError>;
+    fn u16(&mut self) -> Result<(u16, usize), DeserializeError>;
     /// Deserializes an integer.
-    fn u32(&mut self) -> Result<u32, DeserializeError>;
+    fn u32(&mut self) -> Result<(u32, usize), DeserializeError>;
     /// Deserializes an integer.
-    fn u64(&mut self) -> Result<u64, DeserializeError>;
+    fn u64(&mut self) -> Result<(u64, usize), DeserializeError>;
     /// Deserializes an integer.
-    fn u128(&mut self) -> Result<u128, DeserializeError>;
+    fn u128(&mut self) -> Result<(u128, usize), DeserializeError>;
 
     /// Deserializes a vector of deserializable values.
-    fn vec<T: Deserialize>(&mut self) -> Result<Vec<T>, DeserializeError>;
+    fn vec<T: Deserialize>(&mut self) -> Result<(Vec<T>, usize), DeserializeError>;
 
     /// Deserializes an object with named fields.
     ///
@@ -205,11 +205,11 @@ pub trait Deserializer {
     /// Any error returned by the callback causes this function to return an error. In that case,
     /// it is unspecified which, if any, other fields will be passed to the callback as well. This
     /// function may also return an error even if every callback succeeds.
-    fn object<F: FnMut(&str, Self::FieldDeserializer) -> Result<(), DeserializeError>>(&mut self, deserialize_field: F)
-        -> Result<(), DeserializeError>;
+    fn object<F: FnMut(&str, Self::FieldDeserializer) -> Result<usize, DeserializeError>>(&mut self, deserialize_field: F)
+        -> Result<((), usize), DeserializeError>;
 
     /// Deserializes a value of the given type.
-    fn deserialize<T: Deserialize>(&mut self) -> Result<T, DeserializeError> {
+    fn deserialize<T: Deserialize>(&mut self) -> Result<(T, usize), DeserializeError> {
         T::deserialize(self)
     }
 
@@ -226,7 +226,7 @@ pub trait Deserializer {
     /// function returns an error.
     ///
     /// [`serialize_once`]: ../trait.Serializer.html#tymethod.serialize_once
-    fn deserialize_once<T, P, F, G>(&mut self, deserialize: F, retrieve: G) -> Result<P, DeserializeError>
+    fn deserialize_once<T, P, F, G>(&mut self, deserialize: F, retrieve: G) -> Result<(P, usize), DeserializeError>
         where T: Deserialize,
               P: Deref<Target = T>,
               F: FnOnce(Self::OnceDeserializer) -> Result<P, DeserializeError>,
@@ -263,25 +263,25 @@ impl<T: Deserializer + ?Sized> Deserializer for &mut T {
     type FieldDeserializer = T::FieldDeserializer;
     type OnceDeserializer = T::OnceDeserializer;
 
-    fn str(&mut self) -> Result<&str, DeserializeError> { T::str(*self) }
-    fn bool(&mut self) -> Result<bool, DeserializeError> { T::bool(*self) }
-    fn i8(&mut self) -> Result<i8, DeserializeError> { T::i8(*self) }
-    fn i16(&mut self) -> Result<i16, DeserializeError> { T::i16(*self) }
-    fn i32(&mut self) -> Result<i32, DeserializeError> { T::i32(*self) }
-    fn i64(&mut self) -> Result<i64, DeserializeError> { T::i64(*self) }
-    fn i128(&mut self) -> Result<i128, DeserializeError> { T::i128(*self) }
-    fn u8(&mut self) -> Result<u8, DeserializeError> { T::u8(*self) }
-    fn u16(&mut self) -> Result<u16, DeserializeError> { T::u16(*self) }
-    fn u32(&mut self) -> Result<u32, DeserializeError> { T::u32(*self) }
-    fn u64(&mut self) -> Result<u64, DeserializeError> { T::u64(*self) }
-    fn u128(&mut self) -> Result<u128, DeserializeError> { T::u128(*self) }
-    fn vec<U: Deserialize>(&mut self) -> Result<Vec<U>, DeserializeError> { T::vec(*self) }
-    fn object<F: FnMut(&str, Self::FieldDeserializer) -> Result<(), DeserializeError>>(&mut self, deserialize_field: F)
-            -> Result<(), DeserializeError> {
+    fn str(&mut self) -> Result<(&str, usize), DeserializeError> { T::str(*self) }
+    fn bool(&mut self) -> Result<(bool, usize), DeserializeError> { T::bool(*self) }
+    fn i8(&mut self) -> Result<(i8, usize), DeserializeError> { T::i8(*self) }
+    fn i16(&mut self) -> Result<(i16, usize), DeserializeError> { T::i16(*self) }
+    fn i32(&mut self) -> Result<(i32, usize), DeserializeError> { T::i32(*self) }
+    fn i64(&mut self) -> Result<(i64, usize), DeserializeError> { T::i64(*self) }
+    fn i128(&mut self) -> Result<(i128, usize), DeserializeError> { T::i128(*self) }
+    fn u8(&mut self) -> Result<(u8, usize), DeserializeError> { T::u8(*self) }
+    fn u16(&mut self) -> Result<(u16, usize), DeserializeError> { T::u16(*self) }
+    fn u32(&mut self) -> Result<(u32, usize), DeserializeError> { T::u32(*self) }
+    fn u64(&mut self) -> Result<(u64, usize), DeserializeError> { T::u64(*self) }
+    fn u128(&mut self) -> Result<(u128, usize), DeserializeError> { T::u128(*self) }
+    fn vec<U: Deserialize>(&mut self) -> Result<(Vec<U>, usize), DeserializeError> { T::vec(*self) }
+    fn object<F: FnMut(&str, Self::FieldDeserializer) -> Result<usize, DeserializeError>>(&mut self, deserialize_field: F)
+            -> Result<((), usize), DeserializeError> {
         T::object(*self, deserialize_field)
     }
-    fn deserialize<U: Deserialize>(&mut self) -> Result<U, DeserializeError> { T::deserialize(*self) }
-    fn deserialize_once<U, P, F, G>(&mut self, deserialize: F, retrieve: G) -> Result<P, DeserializeError>
+    fn deserialize<U: Deserialize>(&mut self) -> Result<(U, usize), DeserializeError> { T::deserialize(*self) }
+    fn deserialize_once<U, P, F, G>(&mut self, deserialize: F, retrieve: G) -> Result<(P, usize), DeserializeError>
             where U: Deserialize,
                   P: Deref<Target = U>,
                   F: FnOnce(Self::OnceDeserializer) -> Result<P, DeserializeError>,
@@ -299,7 +299,7 @@ pub trait Serialize {
 /// An interface for deserializing a type.
 pub trait Deserialize {
     /// Deserializes an object from the given deserializer.
-    fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<Self, DeserializeError>
+    fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<(Self, usize), DeserializeError>
         where Self: Sized;
 }
 
@@ -316,8 +316,9 @@ impl Serialize for str {
 }
 
 impl Deserialize for String {
-    fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<Self, DeserializeError> {
-        Ok(String::from(d.str()?))
+    fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<(Self, usize), DeserializeError> {
+        let (val, len) = d.str()?;
+        Ok((String::from(val), len))
     }
 }
 
@@ -330,7 +331,7 @@ macro_rules! impl_serde {
         }
 
         impl Deserialize for $t {
-            fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<Self, DeserializeError> {
+            fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<(Self, usize), DeserializeError> {
                 d.$t()
             }
         }
@@ -356,7 +357,7 @@ impl<T: Serialize> Serialize for [T] {
 }
 
 impl<T: Deserialize> Deserialize for Vec<T> {
-    fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<Self, DeserializeError> {
+    fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<(Self, usize), DeserializeError> {
         d.vec()
     }
 }
@@ -374,10 +375,10 @@ impl<T: Serialize> Serialize for Rc<T> {
 }
 
 impl<T: Deserialize> Deserialize for Rc<T> {
-    fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<Self, DeserializeError> {
+    fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<(Self, usize), DeserializeError> {
         d.deserialize_once(
             |mut deserializer| {
-                let val = deserializer.deserialize::<T>()?;
+                let (val, _) = deserializer.deserialize::<T>()?;
                 Rc::try_new(val)
                     // FIXME: Make allocation errors distinguishable from parsing errors.
                     .map_err(|AllocError| DeserializeError)
@@ -399,10 +400,10 @@ impl<T: Serialize> Serialize for Arc<T> {
 }
 
 impl<T: Deserialize> Deserialize for Arc<T> where Arc<T>: Any {
-    fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<Self, DeserializeError> {
+    fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<(Self, usize), DeserializeError> {
         d.deserialize_once(
             |mut deserializer| {
-                let val = deserializer.deserialize::<T>()?;
+                let (val, _) = deserializer.deserialize::<T>()?;
                 Arc::try_new(val)
                     // FIXME: Make allocation errors distinguishable from parsing errors.
                     .map_err(|AllocError| DeserializeError)

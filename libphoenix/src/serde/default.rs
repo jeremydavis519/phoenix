@@ -28,7 +28,6 @@ use {
     core::{
         convert::{TryInto, TryFrom},
         mem,
-        num::NonZeroUsize,
         ops::Deref,
         str,
     },
@@ -244,7 +243,6 @@ pub(crate) struct DefaultDeserializer<'a> {
     bytes: &'a [u8],
     uniques_bytes: &'a [u8],
     uniques: HashMap<u64, *const ()>,
-    value_length: Option<NonZeroUsize>,
 }
 
 impl<'a> DefaultDeserializer<'a> {
@@ -258,7 +256,7 @@ impl<'a> DefaultDeserializer<'a> {
         if bytes.len() < 10 + len { return None; }
         let (bytes, uniques_bytes) = bytes[10 .. ].split_at(len);
 
-        Some(Self { bytes, uniques_bytes, uniques: HashMap::new(), value_length: None })
+        Some(Self { bytes, uniques_bytes, uniques: HashMap::new() })
     }
 }
 
@@ -266,116 +264,105 @@ impl<'a> Deserializer for DefaultDeserializer<'a> {
     type FieldDeserializer = &'a mut Self;
     type OnceDeserializer = &'a mut Self;
 
-    fn str(&mut self) -> Result<&str, DeserializeError> {
+    fn str(&mut self) -> Result<(&str, usize), DeserializeError> {
+        if self.bytes.len() < 9 { return Err(DeserializeError); }
+
         if self.bytes[0] != Tag::String.into() { return Err(DeserializeError); }
 
         let string_len = usize::try_from(u64::from_le_bytes(self.bytes[1 .. 9].try_into().unwrap()))
             .expect("serialized string length doesn't fit in a usize");
-        if string_len < self.bytes.len() - 9 { return Err(DeserializeError); }
+        if self.bytes.len() - 9 < string_len { return Err(DeserializeError); }
 
         match str::from_utf8(&self.bytes[9 .. 9 + string_len]) {
             Ok(s) => {
-                self.value_length = Some(unsafe { NonZeroUsize::new_unchecked(9 + string_len) });
-                Ok(s)
+                Ok((s, 9 + string_len))
             },
             Err(_) => Err(DeserializeError),
         }
     }
 
-    fn bool(&mut self) -> Result<bool, DeserializeError> {
+    fn bool(&mut self) -> Result<(bool, usize), DeserializeError> {
         if self.bytes.len() < 1 { return Err(DeserializeError); }
 
         let Some(&tag) = self.bytes.get(0) else { return Err(DeserializeError) };
-        self.value_length = Some(unsafe { NonZeroUsize::new_unchecked(1) });
 
-        if tag == Tag::True.into() { return Ok(true); }
-        if tag == Tag::False.into() { return Ok(false); }
+        if tag == Tag::True.into() { return Ok((true, 1)); }
+        if tag == Tag::False.into() { return Ok((false, 1)); }
 
-        self.value_length = None;
         Err(DeserializeError)
     }
 
-    fn i8(&mut self) -> Result<i8, DeserializeError> {
+    fn i8(&mut self) -> Result<(i8, usize), DeserializeError> {
         if self.bytes.len() < 2 { return Err(DeserializeError); }
 
         if self.bytes[0] != Tag::I8.into() { return Err(DeserializeError); }
-        self.value_length = Some(unsafe { NonZeroUsize::new_unchecked(2) });
-        Ok(i8::from_le_bytes(self.bytes[1 .. 2].try_into().unwrap()))
+        Ok((i8::from_le_bytes(self.bytes[1 .. 2].try_into().unwrap()), 2))
     }
 
-    fn i16(&mut self) -> Result<i16, DeserializeError> {
+    fn i16(&mut self) -> Result<(i16, usize), DeserializeError> {
         if self.bytes.len() < 3 { return Err(DeserializeError); }
 
         if self.bytes[0] != Tag::I16.into() { return Err(DeserializeError); }
-        self.value_length = Some(unsafe { NonZeroUsize::new_unchecked(3) });
-        Ok(i16::from_le_bytes(self.bytes[1 .. 3].try_into().unwrap()))
+        Ok((i16::from_le_bytes(self.bytes[1 .. 3].try_into().unwrap()), 3))
     }
 
-    fn i32(&mut self) -> Result<i32, DeserializeError> {
+    fn i32(&mut self) -> Result<(i32, usize), DeserializeError> {
         if self.bytes.len() < 5 { return Err(DeserializeError); }
 
         if self.bytes[0] != Tag::I32.into() { return Err(DeserializeError); }
-        self.value_length = Some(unsafe { NonZeroUsize::new_unchecked(5) });
-        Ok(i32::from_le_bytes(self.bytes[1 .. 5].try_into().unwrap()))
+        Ok((i32::from_le_bytes(self.bytes[1 .. 5].try_into().unwrap()), 5))
     }
 
-    fn i64(&mut self) -> Result<i64, DeserializeError> {
+    fn i64(&mut self) -> Result<(i64, usize), DeserializeError> {
         if self.bytes.len() < 9 { return Err(DeserializeError); }
 
         if self.bytes[0] != Tag::I64.into() { return Err(DeserializeError); }
-        self.value_length = Some(unsafe { NonZeroUsize::new_unchecked(9) });
-        Ok(i64::from_le_bytes(self.bytes[1 .. 9].try_into().unwrap()))
+        Ok((i64::from_le_bytes(self.bytes[1 .. 9].try_into().unwrap()), 9))
     }
 
-    fn i128(&mut self) -> Result<i128, DeserializeError> {
+    fn i128(&mut self) -> Result<(i128, usize), DeserializeError> {
         if self.bytes.len() < 17 { return Err(DeserializeError); }
 
         if self.bytes[0] != Tag::I128.into() { return Err(DeserializeError); }
-        self.value_length = Some(unsafe { NonZeroUsize::new_unchecked(17) });
-        Ok(i128::from_le_bytes(self.bytes[1 .. 17].try_into().unwrap()))
+        Ok((i128::from_le_bytes(self.bytes[1 .. 17].try_into().unwrap()), 17))
     }
 
-    fn u8(&mut self) -> Result<u8, DeserializeError> {
+    fn u8(&mut self) -> Result<(u8, usize), DeserializeError> {
         if self.bytes.len() < 2 { return Err(DeserializeError); }
 
         if self.bytes[0] != Tag::U8.into() { return Err(DeserializeError); }
-        self.value_length = Some(unsafe { NonZeroUsize::new_unchecked(2) });
-        Ok(u8::from_le_bytes(self.bytes[1 .. 2].try_into().unwrap()))
+        Ok((u8::from_le_bytes(self.bytes[1 .. 2].try_into().unwrap()), 2))
     }
 
-    fn u16(&mut self) -> Result<u16, DeserializeError> {
+    fn u16(&mut self) -> Result<(u16, usize), DeserializeError> {
         if self.bytes.len() < 3 { return Err(DeserializeError); }
 
         if self.bytes[0] != Tag::U16.into() { return Err(DeserializeError); }
-        self.value_length = Some(unsafe { NonZeroUsize::new_unchecked(3) });
-        Ok(u16::from_le_bytes(self.bytes[1 .. 3].try_into().unwrap()))
+        Ok((u16::from_le_bytes(self.bytes[1 .. 3].try_into().unwrap()), 3))
     }
 
-    fn u32(&mut self) -> Result<u32, DeserializeError> {
+    fn u32(&mut self) -> Result<(u32, usize), DeserializeError> {
         if self.bytes.len() < 5 { return Err(DeserializeError); }
 
         if self.bytes[0] != Tag::U32.into() { return Err(DeserializeError); }
-        self.value_length = Some(unsafe { NonZeroUsize::new_unchecked(5) });
-        Ok(u32::from_le_bytes(self.bytes[1 .. 5].try_into().unwrap()))
+        Ok((u32::from_le_bytes(self.bytes[1 .. 5].try_into().unwrap()), 5))
     }
 
-    fn u64(&mut self) -> Result<u64, DeserializeError> {
+    fn u64(&mut self) -> Result<(u64, usize), DeserializeError> {
         if self.bytes.len() < 9 { return Err(DeserializeError); }
 
         if self.bytes[0] != Tag::U64.into() { return Err(DeserializeError); }
-        self.value_length = Some(unsafe { NonZeroUsize::new_unchecked(9) });
-        Ok(u64::from_le_bytes(self.bytes[1 .. 9].try_into().unwrap()))
+        Ok((u64::from_le_bytes(self.bytes[1 .. 9].try_into().unwrap()), 9))
     }
 
-    fn u128(&mut self) -> Result<u128, DeserializeError> {
+    fn u128(&mut self) -> Result<(u128, usize), DeserializeError> {
         if self.bytes.len() < 17 { return Err(DeserializeError); }
 
         if self.bytes[0] != Tag::U128.into() { return Err(DeserializeError); }
-        self.value_length = Some(unsafe { NonZeroUsize::new_unchecked(17) });
-        Ok(u128::from_le_bytes(self.bytes[1 .. 17].try_into().unwrap()))
+        Ok((u128::from_le_bytes(self.bytes[1 .. 17].try_into().unwrap()), 17))
     }
 
-    fn vec<T: Deserialize>(&mut self) -> Result<Vec<T>, DeserializeError> {
+    fn vec<T: Deserialize>(&mut self) -> Result<(Vec<T>, usize), DeserializeError> {
         if self.bytes.len() < 9 { return Err(DeserializeError); }
         if self.bytes[0] != Tag::List.into() { return Err(DeserializeError); }
 
@@ -388,18 +375,17 @@ impl<'a> Deserializer for DefaultDeserializer<'a> {
                 bytes: &self.bytes[index .. ],
                 uniques_bytes: self.uniques_bytes,
                 uniques: HashMap::new(),
-                value_length: None
             };
-            vec.push(T::deserialize(&mut deserializer)?);
-            index += deserializer.value_length.unwrap().get();
+            let (value, value_length) = T::deserialize(&mut deserializer)?;
+            vec.push(value);
+            index += value_length;
         }
 
-        self.value_length = Some(unsafe { NonZeroUsize::new_unchecked(index) });
-        Ok(vec)
+        Ok((vec, index))
     }
 
-    fn object<F: FnMut(&str, Self::FieldDeserializer) -> Result<(), DeserializeError>>(&mut self, mut deserialize_field: F)
-            -> Result<(), DeserializeError> {
+    fn object<F: FnMut(&str, Self::FieldDeserializer) -> Result<usize, DeserializeError>>(&mut self, mut deserialize_field: F)
+            -> Result<((), usize), DeserializeError> {
         if self.bytes.len() < 9 { return Err(DeserializeError); }
         if self.bytes[0] != Tag::Object.into() { return Err(DeserializeError); }
 
@@ -412,18 +398,17 @@ impl<'a> Deserializer for DefaultDeserializer<'a> {
                 bytes: &self.bytes[index .. ],
                 uniques_bytes: self.uniques_bytes,
                 uniques: HashMap::new(),
-                value_length: None
             };
-            let field_name = name_deserializer.str()?;
+            let (field_name, field_name_length) = name_deserializer.str()?;
+            index += field_name_length;
 
             // Value
             let mut value_deserializer = Self {
                 bytes: &self.bytes[index .. ],
                 uniques_bytes: self.uniques_bytes,
                 uniques: HashMap::new(),
-                value_length: None
             };
-            deserialize_field(
+            let value_length = deserialize_field(
                 field_name,
                 // Transmute to modify lifetimes.
                 // SAFETY: The deserialized value is valid as long as `self.bytes` and
@@ -431,26 +416,23 @@ impl<'a> Deserializer for DefaultDeserializer<'a> {
                 // `*self` exists.
                 unsafe { mem::transmute::<&mut Self, &'a mut Self>(&mut value_deserializer) },
             )?;
-
-            index += name_deserializer.value_length.unwrap().get() + value_deserializer.value_length.unwrap().get();
+            index += value_length;
         }
 
-        self.value_length = Some(unsafe { NonZeroUsize::new_unchecked(index) });
-        Ok(())
+        Ok(((), index))
     }
 
-    fn deserialize_once<T, P, F, G>(&mut self, deserialize: F, retrieve: G) -> Result<P, DeserializeError>
+    fn deserialize_once<T, P, F, G>(&mut self, deserialize: F, retrieve: G) -> Result<(P, usize), DeserializeError>
             where T: Deserialize,
                   P: Deref<Target = T>,
                   F: FnOnce(Self::OnceDeserializer) -> Result<P, DeserializeError>,
                   G: FnOnce(*const ()) -> P {
-        let pointer = self.u64()?;
+        let (pointer, pointer_len) = self.u64()?;
         match self.uniques.get(&pointer) {
-            Some(&value) => Ok(retrieve(value)),
+            Some(&value) => Ok((retrieve(value), pointer_len)),
             None => {
                 let Ok(index) = usize::try_from(pointer) else { return Err(DeserializeError) };
                 let outer_bytes = mem::replace(&mut self.bytes, &self.uniques_bytes[index .. ]);
-                let value_length = self.value_length;
                 let value = deserialize(
                     // Transmute to modify lifetimes.
                     // SAFETY: The deserialized value is valid as long as `self.uniques_bytes`
@@ -458,9 +440,8 @@ impl<'a> Deserializer for DefaultDeserializer<'a> {
                     unsafe { mem::transmute::<&mut Self, &'a mut Self>(self) }
                 )?;
                 self.bytes = outer_bytes;
-                self.value_length = value_length;
                 self.uniques.insert(pointer, &*value as *const T as *const ());
-                Ok(value)
+                Ok((value, pointer_len))
             },
         }
     }
