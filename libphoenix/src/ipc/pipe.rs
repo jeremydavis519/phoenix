@@ -143,6 +143,7 @@ impl Serialize for Pipe {
 impl Deserialize for Pipe {
     fn deserialize<D: Deserializer + ?Sized>(d: &mut D) -> Result<(Self, usize), DeserializeError> {
         let (buffer, serialized_len) = d.deserialize::<SharedMemory>()?;
+        if buffer.len() < mem::size_of::<PipeBuffer>() { return Err(DeserializeError); }
         Ok((Pipe { buffer }, serialized_len))
     }
 }

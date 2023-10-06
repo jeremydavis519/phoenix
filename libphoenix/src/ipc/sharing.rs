@@ -129,8 +129,7 @@ impl Deserialize for SharedMemory {
         let len = usize::try_from(len).map_err(|_| DeserializeError)?;
 
         let ptr = syscall::memory_access_shared(addr, len);
-
-        let len = if ptr.is_null() { 0 } else { len };
+        if ptr.is_null() { return Err(DeserializeError); }
 
         Ok((Self { bytes: ptr::slice_from_raw_parts_mut(ptr.cast::<AtomicU8>(), len) }, serialized_len))
     }
