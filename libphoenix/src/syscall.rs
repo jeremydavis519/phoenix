@@ -216,7 +216,15 @@ pub fn process_spawn(path: &str, argv: &[&[u8]], file_descriptors: &[FileDescrip
         );
     }
 
-    ProcessId::new(pid).ok_or(ProcessSpawnError::Errno(errno))
+    let Some(pid) = ProcessId::new(pid) else { return Err(ProcessSpawnError::Errno(errno)) };
+
+    // Prevent the file descriptors from being closed while they're transferred to the other
+    // process.
+    for fd in file_descriptors {
+        fd.suppress_close();
+    }
+
+    Ok(pid)
 }
 
 #[cfg(not(feature = "kernelspace"))]

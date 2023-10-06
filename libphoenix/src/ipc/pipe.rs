@@ -35,7 +35,7 @@ use {
         hint,
         mem::{self, MaybeUninit},
         ptr::{addr_of, addr_of_mut},
-        sync::atomic::{AtomicU32, AtomicUsize, Ordering},
+        sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering},
     },
     crate::{
         ipc::sharing::SharedMemory,
@@ -120,13 +120,13 @@ impl Pipe {
     /// Adds a writer to the pipe.
     pub fn new_writer(self: &Arc<Self>) -> PipeWriter {
         self.buffer().writers_count.fetch_add(1, Ordering::Release);
-        PipeWriter { pipe: self.clone() }
+        PipeWriter { pipe: self.clone(), suppressed_close: AtomicBool::new(false) }
     }
 
     /// Adds a reader to the pipe.
     pub fn new_reader(self: &Arc<Self>) -> PipeReader {
         self.buffer().readers_count.fetch_add(1, Ordering::Release);
-        PipeReader { pipe: self.clone() }
+        PipeReader { pipe: self.clone(), suppressed_close: AtomicBool::new(false) }
     }
 
     fn buffer(&self) -> &PipeBuffer {
@@ -151,12 +151,14 @@ impl Deserialize for Pipe {
 #[derive(Debug)]
 pub struct PipeWriter {
     pipe: Arc<Pipe>,
+    suppressed_close: AtomicBool,
 }
 
 /// An object that can receive data from a pipe.
 #[derive(Debug)]
 pub struct PipeReader {
     pipe: Arc<Pipe>,
+    suppressed_close: AtomicBool,
 }
 
 impl PipeWriter {
@@ -238,6 +240,10 @@ impl PipeWriter {
 
         Ok(())
     }
+
+    pub(crate) fn suppress_close(&self) {
+        self.suppressed_close.store(true, Ordering::Release);
+    }
 }
 
 impl PipeReader {
@@ -281,6 +287,10 @@ impl PipeReader {
         }
         Ok(())
     }
+
+    pub(crate) fn suppress_close(&self) {
+        self.suppressed_close.store(true, Ordering::Release);
+    }
 }
 
 impl Serialize for PipeWriter {
@@ -321,7 +331,7 @@ impl Deserialize for PipeWriter {
         let Some(_) = ty else { return Err(DeserializeError) };
         let Some(pipe) = pipe else { return Err(DeserializeError) };
 
-        Ok((Self { pipe }, serialized_len))
+        Ok((Self { pipe, suppressed_close: AtomicBool::new(false) }, serialized_len))
     }
 }
 
@@ -363,7 +373,7 @@ impl Deserialize for PipeReader {
         let Some(_) = ty else { return Err(DeserializeError) };
         let Some(pipe) = pipe else { return Err(DeserializeError) };
 
-        Ok((Self { pipe }, serialized_len))
+        Ok((Self { pipe, suppressed_close: AtomicBool::new(false) }, serialized_len))
     }
 }
 
@@ -413,13 +423,17 @@ impl Clone for PipeReader {
 
 impl Drop for PipeWriter {
     fn drop(&mut self) {
-        self.pipe.buffer().writers_count.fetch_sub(1, Ordering::Release);
+        if !self.suppressed_close.load(Ordering::Acquire) {
+            self.pipe.buffer().writers_count.fetch_sub(1, Ordering::Release);
+        }
     }
 }
 
 impl Drop for PipeReader {
     fn drop(&mut self) {
-        self.pipe.buffer().readers_count.fetch_sub(1, Ordering::Release);
+        if !self.suppressed_close.load(Ordering::Acquire) {
+            self.pipe.buffer().readers_count.fetch_sub(1, Ordering::Release);
+        }
     }
 }
 

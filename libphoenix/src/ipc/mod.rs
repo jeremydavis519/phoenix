@@ -43,6 +43,15 @@ pub enum FileDescriptor {
     PipeWriter(PipeWriter),
 }
 
+impl FileDescriptor {
+    pub(crate) fn suppress_close(&self) {
+        match self {
+            Self::PipeReader(reader) => reader.suppress_close(),
+            Self::PipeWriter(writer) => writer.suppress_close(),
+        }
+    }
+}
+
 impl Serialize for FileDescriptor {
     fn serialize<S: Serializer + ?Sized>(&self, s: &mut S) -> Result<(), SerializeError> {
         match self {
