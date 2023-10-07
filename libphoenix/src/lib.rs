@@ -74,7 +74,6 @@ fn lang_start<T: 'static+ProcessReturnValue>(
 ) -> isize {
     use {
         core::{
-            convert::{TryFrom, TryInto},
             mem,
             slice,
         },
