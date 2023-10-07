@@ -42,6 +42,7 @@ use {
 
     libphoenix::profiler,
 
+    collections::AtomicLinkedList,
     fs::File,
     i18n::Text,
     io::{Read, Write},
@@ -297,7 +298,7 @@ fn shell() {
                                 match exec::read_exe(file) {
                                     Ok(image) => {
                                         let entry_point = image.entry_point;
-                                        let process = Arc::new(Process::new(image, Vec::new()));
+                                        let process = Arc::new(Process::new(image, AtomicLinkedList::new()));
                                         match Thread::new(process, entry_point, 0, 0, 0x0001_0000, 10) {
                                             Ok(thread) => scheduler::run(vec![thread]),
                                             Err(e) => println!("Error creating the thread: {}", e)

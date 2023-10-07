@@ -25,6 +25,7 @@ use {
         arch::asm,
         mem::{self, MaybeUninit},
     },
+    hashbrown::HashSet,
     crate::{
         ipc::FileDescriptor,
         process::ProcessId,
@@ -179,10 +180,26 @@ pub extern "C" fn process_exit(status: i32) -> ! {
 /// [`posix_spawn`]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/posix_spawn.html
 pub fn process_spawn(path: &str, argv: &[&[u8]], file_descriptors: &[FileDescriptor]) -> Result<ProcessId, ProcessSpawnError> {
     // Serialize the data.
+    let mut serializer = DefaultSerializer::new();
+    serialize_object!(&mut serializer, {
+        "fds" => |serializer| serializer.list(file_descriptors)
+    }).map_err(|e| ProcessSpawnError::SerializeError(e))?;
+    let mut serialized = serializer.finish();
+
+    let shared_blocks = file_descriptors.iter()
+        .filter_map(|fd| fd.shared_block_addr())
+        .collect::<HashSet<usize>>();
+
     let mut data = Vec::new();
     data.extend_from_slice(&DEFAULT_STACK_SIZE.to_ne_bytes()[..]);
     data.push(DEFAULT_PRIORITY);
     data.extend_from_slice(&[0; 7][..]);
+    data.extend_from_slice(&shared_blocks.len().to_ne_bytes()[..]);
+    data.extend(
+        shared_blocks.into_iter()
+            .map(|addr| addr.to_ne_bytes().into_iter())
+            .flatten()
+    );
     data.extend_from_slice(&argv.len().to_ne_bytes()[..]);
     data.extend_from_slice(&(argv as *const [&[u8]]).expose_addr().to_ne_bytes()[..]);
 
@@ -193,11 +210,6 @@ pub fn process_spawn(path: &str, argv: &[&[u8]], file_descriptors: &[FileDescrip
         data.extend_from_slice(&argv[i].len().to_ne_bytes()[..]);
     }
 
-    let mut serializer = DefaultSerializer::new();
-    serialize_object!(&mut serializer, {
-        "fds" => |serializer| serializer.list(file_descriptors)
-    }).map_err(|e| ProcessSpawnError::SerializeError(e))?;
-    let mut serialized = serializer.finish();
     data.extend_from_slice(&u64::try_from(serialized.len()).expect("serialized data longer than 2^64").to_ne_bytes()[..]);
     data.append(&mut serialized);
 

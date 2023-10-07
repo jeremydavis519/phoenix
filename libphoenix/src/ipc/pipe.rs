@@ -245,6 +245,10 @@ impl PipeWriter {
     pub(crate) fn suppress_close(&self) {
         self.suppressed_close.store(true, Ordering::Release);
     }
+
+    pub(crate) fn shared_block_addr(&self) -> Option<usize> {
+        Some((self.pipe.buffer() as *const PipeBuffer).addr())
+    }
 }
 
 impl PipeReader {
@@ -291,6 +295,10 @@ impl PipeReader {
 
     pub(crate) fn suppress_close(&self) {
         self.suppressed_close.store(true, Ordering::Release);
+    }
+
+    pub(crate) fn shared_block_addr(&self) -> Option<usize> {
+        Some((self.pipe.buffer() as *const PipeBuffer).addr())
     }
 }
 

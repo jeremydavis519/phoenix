@@ -50,6 +50,13 @@ impl FileDescriptor {
             Self::PipeWriter(writer) => writer.suppress_close(),
         }
     }
+
+    pub(crate) fn shared_block_addr(&self) -> Option<usize> {
+        match self {
+            Self::PipeReader(reader) => reader.shared_block_addr(),
+            Self::PipeWriter(writer) => writer.shared_block_addr(),
+        }
+    }
 }
 
 impl Serialize for FileDescriptor {

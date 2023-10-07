@@ -44,14 +44,17 @@ use {
         posix::errno::Errno,
         syscall::TimeSelector,
     },
-    collections::atomic::AtomicLinkedListSemaphore,
+    collections::{AtomicLinkedList, AtomicLinkedListSemaphore},
     devices::DEVICES,
     exec::read_exe,
     fs::File,
     io::{println, Read},
     memory::{
         allocator::AllMemAlloc,
-        phys::ptr::PhysPtr,
+        phys::{
+            RegionType,
+            ptr::PhysPtr,
+        },
         virt::paging,
     },
     scheduler::{
@@ -237,6 +240,8 @@ fn process_exit(thread: Option<&mut Thread<File>>, status: usize) -> Response {
 // struct StartData {
 //     max_stack_size:    usize,
 //     priority:          u8,
+//     shared_blocks_len: usize,
+//     shared_blocks:     [usize; shared_blocks_len],
 //     argc:              usize,
 //     argv:              *const *const i8,
 //     argv_strings_size: usize,
@@ -252,11 +257,19 @@ fn process_exit(thread: Option<&mut Thread<File>>, status: usize) -> Response {
 //
 // `argv_strings_size` is the total length of all the strings as they will be stored in the new
 // process's address space, including their null terminators. To calculate it, add 1 to each
-// element of `argv_lengths` and add together all the resulting sums. This size must be accurate,
-// or else the calling thread will be terminated.
+// element of `argv_lengths` and add together all the resulting sums.
+//
+// `shared_blocks` contains the base address of each block of shared memory that the child process
+// should have access to. These addresses are in the parent process's address space; the child
+// process must use the `memory_access_shared` system call in order to map them into its own
+// address space.
 //
 // `data` is an array of bytes that the kernel will copy into the new process's address space
 // verbatim. That process can get a pointer to the data by reading `argv[argc + 1]`.
+//
+// # Returns
+// The PID of the process if successful. Otherwise, 0 is returned for the PID and the secondary
+// return value is an error number from `/libc/include/errno.h`.
 fn process_spawn(
         calling_thread: Option<&mut Thread<File>>,
         path_userspace_addr: usize,
@@ -269,8 +282,9 @@ fn process_spawn(
     let calling_thread = calling_thread.expect("kernel thread attempted to spawn a process");
 
     // Verify arguments
-    if start_data_len < 4 * mem::size_of::<usize>() + mem::size_of::<u8>() {
-        return Response::leave_userspace(ThreadStatus::Terminated); // Invalid arguments
+    if start_data_len < 6 * mem::size_of::<usize>() {
+        pid_and_errno.write([0, Errno::EINVAL.into()]);
+        return Response::eret();
     };
 
     let Some(mut start_data_userspace) = UserspaceStr::from_raw_parts(
@@ -306,9 +320,59 @@ fn process_spawn(
 
     let mut bytes = [0; mem::size_of::<usize>()];
     for i in 0 .. bytes.len() { bytes[i] = start_data_userspace.head(); start_data_userspace = start_data_userspace.tail(); }
+    let shared_blocks_len = usize::from_ne_bytes(bytes);
+    if start_data_userspace.len() / mem::size_of::<usize>() - 3 < shared_blocks_len {
+        pid_and_errno.write([0, Errno::EINVAL.into()]);
+        return Response::eret();
+    }
+    let mut shared_block_addrs = Vec::new();
+    let Ok(()) = shared_block_addrs.try_reserve_exact(shared_blocks_len) else {
+        pid_and_errno.write([0, Errno::ENOMEM.into()]);
+        return Response::eret();
+    };
+    for _ in 0 .. shared_blocks_len {
+        let mut bytes = [0; mem::size_of::<usize>()];
+        for i in 0 .. bytes.len() { bytes[i] = start_data_userspace.head(); start_data_userspace = start_data_userspace.tail(); }
+        shared_block_addrs.push(usize::from_ne_bytes(bytes));
+    }
+    let shared_blocks = AtomicLinkedList::new();
+    let Ok(shared_memory) = calling_thread.process.shared_memory.try_access_weak() else {
+        profiler_probe!(ENTRANCE);
+        return Response::retry_syscall();
+    };
+    let page_table = calling_thread.process.exec_image.page_table();
+    'shared_blocks: for &virt_addr in shared_block_addrs.iter() {
+        let Some(phys_addr) = page_table.virt_addr_to_phys_addr(virt_addr, RegionType::Ram, |_, _| Err(())) else {
+            return Response::leave_userspace(ThreadStatus::Terminated); // Tried to share unmapped memory
+        };
+        for shared_block in shared_memory.iter() {
+            let block_phys_addr = shared_block.block.base().as_addr_phys();
+            if phys_addr == block_phys_addr {
+                let Ok(elem) = Box::try_new(SharedMemory::new(shared_block.block.clone(), virt_addr)) else {
+                    pid_and_errno.write([0, Errno::ENOMEM.into()]);
+                    return Response::eret();
+                };
+                match shared_blocks.insert_head(elem) {
+                    Ok(()) => {},
+                    Err(_shared_mem_record) => {
+                        // TODO
+                        todo!("prepare to retry without reallocating anything and return RetrySyscall");
+                    },
+                };
+                continue 'shared_blocks;
+            }
+        }
+        // Failed to find a matching shared block
+        pid_and_errno.write([0, Errno::EINVAL.into()]);
+        return Response::eret();
+    }
+
+    let mut bytes = [0; mem::size_of::<usize>()];
+    for i in 0 .. bytes.len() { bytes[i] = start_data_userspace.head(); start_data_userspace = start_data_userspace.tail(); }
     let argc = usize::from_ne_bytes(bytes);
     let Some(argv_ptrs_size) = argc.checked_mul(mem::size_of::<*mut i8>()) else {
-        return Response::leave_userspace(ThreadStatus::Terminated); // Too many strings in argv
+        pid_and_errno.write([0, Errno::EINVAL.into()]);
+        return Response::eret();
     };
 
     let mut bytes = [0; mem::size_of::<usize>()];
@@ -328,7 +392,8 @@ fn process_spawn(
 
     // Next in the start data is an array of the string lengths of the elements of argv.
     if start_data_userspace.len() / mem::size_of::<usize>() < argc {
-        return Response::leave_userspace(ThreadStatus::Terminated); // Invalid arguments
+        pid_and_errno.write([0, Errno::EINVAL.into()]);
+        return Response::eret();
     }
 
     // Open file
@@ -366,20 +431,23 @@ fn process_spawn(
     let entry_point = exec_image.entry_point;
 
     // Spawn process
-    let process = Arc::new(Process::new(exec_image, Vec::new()));
+    let process = Arc::new(Process::new(exec_image, shared_blocks));
     pid_and_errno.write([process.id().get().try_into().unwrap(), 0]);
 
     // Allocate memory for argv and the start data.
     // There needs to be enough for each pointer, including the NULL at argv[argc] and the pointer
     // to the start data at argv[argc + 1], the argument strings, and the start data.
     let Some(all_ptrs_size) = argv_ptrs_size.checked_add(2 * mem::size_of::<*mut i8>()) else {
-        return Response::leave_userspace(ThreadStatus::Terminated);
+        pid_and_errno.write([0, Errno::EINVAL.into()]);
+        return Response::eret();
     };
     let Some(min_block_size) = all_ptrs_size.checked_add(argv_strings_size) else {
-        return Response::leave_userspace(ThreadStatus::Terminated);
+        pid_and_errno.write([0, Errno::EINVAL.into()]);
+        return Response::eret();
     };
     let Some(min_block_size) = min_block_size.checked_add(start_data_userspace.len() - argc * mem::size_of::<usize>()) else {
-        return Response::leave_userspace(ThreadStatus::Terminated);
+        pid_and_errno.write([0, Errno::EINVAL.into()]);
+        return Response::eret();
     };
     let page_size = paging::page_size();
 
@@ -442,7 +510,8 @@ fn process_spawn(
 
             // Copy the string and a null terminator.
             if i.saturating_add(str_userspace.len()) >= min_block_size {
-                return Response::leave_userspace(ThreadStatus::Terminated); // The total string length was incorrect.
+                pid_and_errno.write([0, Errno::EINVAL.into()]);
+                return Response::eret();
             }
             while str_userspace.len() > 0 {
                 block.index(i).write_volatile(MaybeUninit::new(str_userspace.head()));
@@ -459,7 +528,8 @@ fn process_spawn(
         // Set argv[argc + 1] to the address of the start data and copy the start data to the new
         // address space.
         if i.saturating_add(start_data_userspace.len()) != min_block_size {
-            return Response::leave_userspace(ThreadStatus::Terminated); // The total string length was incorrect.
+            pid_and_errno.write([0, Errno::EINVAL.into()]);
+            return Response::eret();
         }
         block.index((argc + 1) * mem::size_of::<*mut i8>()).cast::<MaybeUninit<usize>>().write_volatile(MaybeUninit::new(argv_new + i));
         while start_data_userspace.len() > 0 {
@@ -749,7 +819,7 @@ fn memory_alloc_shared(
                     memory::phys::RegionType::Ram,
                 ) {
                     Ok(addr) => {
-                        match thread.process.shared_memory.insert_head(Box::new(Arc::new(SharedMemory::new(block, addr)))) {
+                        match thread.process.shared_memory.insert_head(Box::new(SharedMemory::new(Arc::new(block), addr))) {
                             Ok(()) => {},
                             Err(_shared_mem_record) => {
                                 // TODO
@@ -775,10 +845,10 @@ fn memory_alloc_shared(
 // Grants read-write access to a block of memory previously allocated via the `memory_alloc_shared`
 // system call. Returns the virtual address of the block, or null on failure.
 //
-// `addr` must be the value returned from `memory_alloc_shared`, and `size` must be the same size
-// that was provided to that system call. The address returned from `memory_access_shared` is not
-// guaranteed to be the same as the value of `addr`, since each process is in its own virtual
-// address space.
+// `addr` must be the value returned from `memory_alloc_shared`, and `size` must be no greater than
+// the size that was provided to that system call. The address returned from `memory_access_shared`
+// is not guaranteed to be the same as the value of `addr`, since each process is in its own
+// virtual address space.
 //
 // The intent is for a parent process to call `memory_alloc_shared`, then spawn a child process,
 // which will then call `memory_access_shared` to open a communication channel with the parent.
@@ -801,10 +871,12 @@ fn memory_access_shared(
 
     userspace_addr.write(0); // In case the shared memory isn't found.
 
-    for mem in thread.process.sharable_memory.iter() {
-        let Some(mem) = mem.upgrade() else { continue };
-
-        if mem.virt_addr != addr || mem.block.size() != size { continue }
+    let Ok(shared_memory) = thread.process.shared_memory.try_access_weak() else {
+        profiler_probe!(ENTRANCE);
+        return Response::retry_syscall();
+    };
+    for mem in shared_memory.iter() {
+        if mem.virt_addr != addr || mem.block.size() < size { continue }
 
         let Some(size) = NonZeroUsize::new(mem.block.size()) else { break };
         let Ok(addr) = root_page_table.map(
@@ -813,14 +885,6 @@ fn memory_access_shared(
             size,
             memory::phys::RegionType::Ram,
         ) else { break };
-
-        match thread.process.shared_memory.insert_head(Box::new(mem.clone())) {
-            Ok(()) => {},
-            Err(_shared_mem_record) => {
-                // TODO
-                todo!("prepare to retry without reallocating anything and return RetrySyscall");
-            },
-        };
 
         userspace_addr.write(addr);
         break

@@ -288,15 +288,25 @@ macro_rules! define_root_page_table {
                 region_type: RegionType,
                 read_exe_file: E,
             ) -> Option<usize> {
-                let phys_addr = match self.internals {
+                let phys_addr = self.virt_addr_to_phys_addr(userspace_addr, region_type, read_exe_file)?;
+                Some(PhysPtr::<u8, *const u8>::from_addr_phys(phys_addr).as_virt_unchecked() as usize)
+            }
+
+            /// Returns the physical address that the given virtual address is mapped to.
+            pub fn virt_addr_to_phys_addr<E: FnOnce(usize, &mut [MaybeUninit<u8>]) -> Result<(), ()>>(
+                &self,
+                virt_addr: usize,
+                region_type: RegionType,
+                read_exe_file: E,
+            ) -> Option<usize> {
+                match self.internals {
                     $(
                         RootPageTableInternal::$table(ref table_block) => {
                             let table = unsafe { &mut *table_block.index(0) };
-                            table.virt_addr_to_phys_addr(userspace_addr, region_type, read_exe_file)?
+                            table.virt_addr_to_phys_addr(virt_addr, region_type, read_exe_file)
                         }
                     ),*
-                };
-                Some(PhysPtr::<u8, *const u8>::from_addr_phys(phys_addr).as_virt_unchecked() as usize)
+                }
             }
 
             // Identity-maps the given list of regions. The given bases and sizes are required to be
