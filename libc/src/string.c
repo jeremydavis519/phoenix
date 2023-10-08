@@ -60,9 +60,7 @@ char* strcpy(char* restrict dest, const char* restrict src) {
 char* strncpy(char* restrict dest, const char* restrict src, size_t count) {
     char* sdest = dest;
     while (count--) {
-        if (!(*sdest++ = *src++)) {
-            break;
-        }
+        if (!(*sdest++ = *src++)) break;
     }
 
     /* The rest of the array needs to be padded with null characters. */
@@ -79,15 +77,21 @@ char* strncat(char* dest, const char* src, size_t count); */
 
 
 /* Comparison */
-/* TODO
-int memcmp(const void* ptr1, const void* ptr2, size_t count); */
+int memcmp(const void* ptr1, const void* ptr2, size_t count) {
+    const unsigned char* s1 = ptr1;
+    const unsigned char* s2 = ptr2;
+    int result = 0;
+    while (count--) {
+        result = (int)*s1++ - (int)*s2++;
+        if (result) return result;
+    }
+    return result;
+}
 
 int strcmp(const char* s1, const char* s2) {
     while (*s1 && *s2) {
         int result = (int)*s1++ - (int)*s2++;
-        if (result) {
-            return result;
-        }
+        if (result) return result;
     }
     return (int)*s1 - (int)*s2;
 }

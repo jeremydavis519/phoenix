@@ -69,9 +69,10 @@ build/%.o: src/%.c $(LIBPHOENIX_ROOT)/clib/target/$(TARGET)/$(DEBUG_OR_RELEASE)/
 		-o $@ $<
 
 $(LIBPHOENIX_ROOT)/clib/target/$(TARGET)/$(DEBUG_OR_RELEASE)/liblibphoenix.a: null
-	cd $(LIBPHOENIX_ROOT)/clib && \
-	RUST_TARGET_PATH="$$PWD" \
-	xargo build $(CARGO_FLAGS) --target=$(TARGET)
+	cd $(LIBPHOENIX_ROOT) && \
+	RUST_TARGET_PATH="$$PWD/clib" \
+	CARGO_MANIFEST_DIR="$$PWD/clib" \
+	cargo build $(CARGO_FLAGS) --features=no-std --target=$(TARGET)
 endif
 
 null:

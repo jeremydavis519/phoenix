@@ -2,12 +2,13 @@
 name = "libphoenix"
 version = "0.1.0"
 authors = ["Jeremy Davis <jeremydavis519@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 [lib]
 crate-type = ["staticlib"]
 
 [dependencies]
+hashbrown = "0.14"
 
 [features]
 default = ["global-allocator"]
