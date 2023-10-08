@@ -26,11 +26,6 @@ OBJ = $(patsubst src/%.c,build/%.o,$(SRC))
 DEP = $(patsubst src/%.c,build/%.d,$(SRC))
 
 LIBPHOENIX_ROOT = ../libphoenix
-
-# We should be able to use `-include $(DEP)` here, but for some reason make is only including
-# the first file. So we concatenate them all into a single file.
--include build/dep/deps.d
-
 ifeq ($(DEBUG_OR_RELEASE),debug)
 	CC_OPT := -Og
 	CARGO_FLAGS :=
@@ -40,6 +35,10 @@ else
 endif
 
 all: lib/libc.a lib/libg.a
+
+# We should be able to use `-include $(DEP)` here, but for some reason make is only including
+# the first file. So we concatenate them all into a single file.
+-include build/dep/deps.d
 
 aarch64-phoenix:
 	$(MAKE) --eval="CC := aarch64-none-elf-gcc" --eval="AR := aarch64-none-elf-ar" --eval="TARGET := aarch64-phoenix"
