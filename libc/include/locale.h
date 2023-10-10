@@ -26,30 +26,33 @@
 #include <stdint.h>
 
 struct lconv {
-    char* currency_symbol;
+    /* LC_NUMERIC */
     char* decimal_point;
-    char  frac_digits;
     char* grouping;
+    char* thousands_sep;
+
+    /* LC_MONETARY */
     char* int_curr_symbol;
+    char* currency_symbol;
+    char* mon_decimal_point;
+    char* mon_thousands_sep;
+    char* mon_grouping;
+    char* positive_sign;
+    char* negative_sign;
     char  int_frac_digits;
-    char  int_n_cs_precedes;
-    char  int_n_sep_by_space;
-    char  int_n_sign_posn;
+    char  frac_digits;
     char  int_p_cs_precedes;
     char  int_p_sep_by_space;
     char  int_p_sign_posn;
-    char* mon_decimal_point;
-    char* mon_grouping;
-    char* mon_thousands_sep;
-    char* negative_sign;
-    char  n_cs_precedes;
-    char  n_sep_by_space;
-    char  n_sign_posn;
-    char* positive_sign;
+    char  int_n_cs_precedes;
+    char  int_n_sep_by_space;
+    char  int_n_sign_posn;
     char  p_cs_precedes;
     char  p_sep_by_space;
     char  p_sign_posn;
-    char* thousands_sep;
+    char  n_cs_precedes;
+    char  n_sep_by_space;
+    char  n_sign_posn;
 };
 
 #define LC_COLLATE  0
@@ -66,11 +69,11 @@ struct lconv {
 #define LC_MONETARY_MASK    0x08
 #define LC_NUMERIC_MASK     0x10
 #define LC_TIME_MASK        0x20
-#define LC_ALL_MASK         (int)UINT_MAX
+#define LC_ALL_MASK         0x3f
 
 typedef void* locale_t;
 
-const locale_t LC_GLOBAL_LOCALE = ""; /* Any non-null pointer will do as long as it can't ever point to a real locale. */
+const locale_t LC_GLOBAL_LOCALE;
 
 locale_t        duplocale(locale_t);
 void            freelocale(locale_t);
