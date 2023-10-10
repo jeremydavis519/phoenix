@@ -121,7 +121,7 @@ int                 system(const char* command);
 void*               bsearch(const void* key, const void* base, size_t num, size_t size, int (*compar)(const void*, const void*));
 void                qsort(void* base, size_t num, size_t size, int (*compar)(const void*, const void*));
 
-/* Integer arithmetics */
+/* Integer arithmetic */
 int                 abs(int n);
 div_t               div(int numer, int denom);
 long                labs(long n);
