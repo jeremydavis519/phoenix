@@ -1,4 +1,4 @@
-/* Copyright (c) 2022 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2022-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -226,8 +226,17 @@ pid_t        setpgrp(void);
 int          setregid(gid_t, gid_t);
 int          setreuid(uid_t, uid_t);
 pid_t        setsid(void);
-int          setuid(uid_t);
-unsigned int sleep(unsigned int);
+int          setuid(uid_t); */
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/sleep.html */
+unsigned int sleep(unsigned int seconds) {
+    thread_sleep((uint64_t)seconds * 1000000000);
+    /* FIXME: If this thread receives a signal that "invokes a signal-catching function or terminates the process", return early
+     *        with the number of seconds left until the duration will have elapsed. */
+    return 0;
+}
+
+/* TODO
 void         swab(const void* restrict, void* restrict, ssize_t);
 int          symlink(const char*, const char*);
 int          symlinkat(const char*, int, const char*);
