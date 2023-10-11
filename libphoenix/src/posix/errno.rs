@@ -18,8 +18,14 @@
 
 //! This module defines all the constants defined by libc's errno.h.
 
+use core::ffi::c_int;
+
 include!(concat!(env!("OUT_DIR"), "/posix/errno.rs"));
 
 impl From<Errno> for usize {
     fn from(errno: Errno) -> usize { errno as usize }
+}
+
+impl From<Errno> for c_int {
+    fn from(errno: Errno) -> c_int { usize::from(errno).try_into().unwrap() }
 }

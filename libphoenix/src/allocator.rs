@@ -40,6 +40,47 @@ use {
 };
 
 #[cfg(feature = "global-allocator")]
+use {
+    core::ffi::{c_void, c_int},
+    crate::posix::errno::Errno,
+};
+
+#[cfg(feature = "global-allocator")]
+extern "C" {
+    #[thread_local]
+    static mut errno: c_int;
+}
+
+// https://pubs.opengroup.org/onlinepubs/9699919799/functions/malloc.html
+#[cfg(feature = "global-allocator")]
+#[no_mangle]
+unsafe extern "C" fn malloc(size: usize) -> *mut c_void {
+    // "The pointer returned if the allocation succeeds shall be suitably aligned so that it may be
+    // assigned to a pointer to any type of object and then used to access such an object in the
+    // space allocated ...."
+    const ALIGNMENT_FOR_ANYTHING: usize = 16;
+
+    let Ok(layout) = Layout::from_size_align(size, ALIGNMENT_FOR_ANYTHING) else {
+        errno = Errno::ENOMEM.into();
+        return ptr::null_mut();
+    };
+    let ptr = Allocator.alloc(layout);
+    if ptr.is_null() {
+        errno = Errno::ENOMEM.into();
+    }
+    ptr.cast::<c_void>()
+}
+
+// https://pubs.opengroup.org/onlinepubs/9699919799/functions/free.html
+#[cfg(feature = "global-allocator")]
+#[no_mangle]
+unsafe extern "C" fn free(ptr: *mut c_void) {
+    if !ptr.is_null() {
+        Allocator.dealloc(ptr.cast::<u8>(), Layout::new::<u8>());
+    }
+}
+
+#[cfg(feature = "global-allocator")]
 #[global_allocator]
 static ALLOCATOR: Allocator = Allocator;
 

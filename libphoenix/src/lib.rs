@@ -36,6 +36,7 @@
 #![feature(slice_ptr_get)]
 #![feature(slice_ptr_len)]
 #![feature(strict_provenance)]
+#![feature(thread_local)]
 
 extern crate alloc;
 

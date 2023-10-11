@@ -47,9 +47,12 @@ void srand(unsigned int seed) {
 
 /* Dynamic memory management */
 /* TODO
-void* calloc(size_t num, size_t size);
-void free(void* ptr);
-void* malloc(size_t size);
+void* calloc(size_t num, size_t size); */
+
+/* void free(void* ptr); (Defined in libphoenix) */
+/* void* malloc(size_t size); (Defined in libphoenix) */
+
+/* TODO
 void* realloc(void* ptr, size_t size); */
 
 
