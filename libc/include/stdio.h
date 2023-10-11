@@ -56,9 +56,9 @@ extern "C" {
 typedef struct FILE   FILE;
 typedef struct fpos_t fpos_t;
 
-FILE* stdin;
-FILE* stdout;
-FILE* stderr;
+extern FILE* stdin;
+extern FILE* stdout;
+extern FILE* stderr;
 
 /* Operations on files */
 int remove(const char* filename);
