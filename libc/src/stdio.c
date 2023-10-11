@@ -1026,15 +1026,15 @@ void perror(const char* s) {
     case CW_UNSET:
     case CW_NARROW:
         if (s) {
-            (void)fprintf(stderr, "%s: ", s);
+            fprintf(stderr, "%s: ", s);
         }
-        (void)fprintf(stderr, "%s\n", strerror(errno));
+        fprintf(stderr, "%s\n", strerror(errno));
         break;
     case CW_WIDE:
         if (s) {
             fwprintf(stderr, L"%s: ", s);
         }
-        (void)fwprintf(stderr, L"%s\n", strerror(errno));
+        fwprintf(stderr, L"%s\n", strerror(errno));
         break;
     }
 }
