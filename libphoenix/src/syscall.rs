@@ -89,11 +89,11 @@ pub extern "C" fn thread_exit(status: i32) -> ! {
 /// assert!(time_now() >= first_timestamp + 1000);
 /// ```
 #[no_mangle]
-pub extern "C" fn thread_sleep(milliseconds: u64) {
+pub extern "C" fn thread_sleep(nanoseconds: u64) {
     unsafe {
         asm!(
             "svc 0x0001",
-            in("x2") milliseconds,
+            in("x2") nanoseconds,
             options(nomem, nostack, preserves_flags),
         );
     }

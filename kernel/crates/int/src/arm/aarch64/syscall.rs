@@ -165,11 +165,11 @@ fn thread_exit(thread: Option<&mut Thread<File>>, status: usize) -> Response {
 
 // Puts the current thread to sleep for at least the specified amount of time. Asking to sleep for
 // 0 seconds results in forfeiting the rest of this time slice.
-fn thread_sleep(thread: Option<&mut Thread<File>>, milliseconds: usize) -> Response {
+fn thread_sleep(thread: Option<&mut Thread<File>>, nanoseconds: usize) -> Response {
     let thread = thread.expect("attempted to put a kernel thread to sleep");
     let status;
-    if milliseconds > 0 {
-        thread.wake_time = SystemTime::now_raw() + Duration::from_millis(milliseconds.try_into().unwrap());
+    if nanoseconds > 0 {
+        thread.wake_time = SystemTime::now_raw() + Duration::from_nanos(nanoseconds.try_into().unwrap());
         status = ThreadStatus::Sleeping;
     } else {
         status = ThreadStatus::Running;

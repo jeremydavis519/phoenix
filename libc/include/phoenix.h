@@ -1,4 +1,4 @@
-/* Copyright (c) 2022 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2022-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -28,7 +28,7 @@ extern "C" {
 #endif /* __cplusplus */
 
 void            thread_exit(int32_t status);
-void            thread_sleep(uint64_t milliseconds);
+void            thread_sleep(uint64_t nanoseconds);
 size_t          thread_spawn(void (*entry_point)(void*), void* argument, uint8_t priority, size_t stack_size);
 
 void            process_exit(int32_t status);
