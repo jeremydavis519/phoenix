@@ -779,10 +779,18 @@ int puts(const char* str) {
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/ungetc.html */
 int ungetc(int ch, FILE* stream) {
     if (ch == EOF) return EOF; /* Ungetting nothing */
-    if (stream->pushback_index == sizeof(stream->pushback_buffer.c)) return EOF; /* Buffer already full */
+
+    lock_file(stream);
+    int result = EOF;
+    if (stream->pushback_index == sizeof(stream->pushback_buffer.c)) goto end; /* Buffer already full */
+
     stream->pushback_buffer.c[stream->pushback_index++] = ch;
     stream->eof = false;
-    return ch;
+    result = ch;
+
+end:
+    unlock_file(stream);
+    return result;
 }
 
 /* Direct input/output */
