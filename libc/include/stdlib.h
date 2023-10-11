@@ -30,7 +30,7 @@
 #define EXIT_FAILURE -1
 #define EXIT_SUCCESS 0
 /* TODO: #define MB_CUR_MAX ... (should be the maximum size of a multibyte character in the current locale) */
-#define RAND_MAX 32767
+#define RAND_MAX 65535
 
 #ifdef __cplusplus
 extern "C" {

@@ -33,15 +33,22 @@ unsigned long long strtoull(const char* restrict str, char** restrict endptr, in
 
 
 /* Pseudorandom number generation */
-static unsigned int _rand_seed = 0;
+static uint32_t rand_seed = 1;
 
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/rand.html */
 int rand(void) {
-    _rand_seed = 65854829 * _rand_seed + 1;
-    return _rand_seed / 65536 % (RAND_MAX + 1);
+    return rand_r(&rand_seed);
 }
 
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/rand_r.html */
+int rand_r(unsigned int* seed) {
+    *seed = 65854829 * *seed + 1;
+    return *seed / (0xffffffff / (RAND_MAX + 1) + 1);
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/srand.html */
 void srand(unsigned int seed) {
-    _rand_seed = seed;
+    rand_seed = seed;
 }
 
 
