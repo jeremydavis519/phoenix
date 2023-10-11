@@ -23,7 +23,7 @@
 extern "C" {
 #endif
 
-__thread int errno;
+extern __thread int errno;
 
 #ifdef __cplusplus
 }
