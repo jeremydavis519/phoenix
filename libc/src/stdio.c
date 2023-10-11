@@ -967,7 +967,7 @@ offset_t fn_name(FILE* stream) { \
     } \
 \
     /* Calculate current offset, including buffered writes and calls to unget. */ \
-    off_t offset = stream->position.offset + stream->buffer_index - stream->pushback_index; \
+    offset_t offset = stream->position.offset + stream->buffer_index - stream->pushback_index; \
 \
     if (offset > offset_t_max) { \
         errno = EOVERFLOW; \
