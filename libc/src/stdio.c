@@ -131,6 +131,7 @@ struct FILE {
     uint8_t      pushback_index;
 };
 
+static size_t fread_locked(void* restrict buffer, size_t size, size_t count, FILE* restrict stream);
 static int fflush_locked(FILE* stream);
 static int fseek_locked(FILE* stream, long offset, int whence);
 static int fseeko_locked(FILE* stream, off_t offset, int whence);
@@ -707,8 +708,22 @@ matching_break:
 
 
 /* Character input/output */
-/* TODO 
-int fgetc(FILE* stream); */
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fgetc.html */
+int fgetc(FILE* stream) {
+    unsigned char buf[1];
+    if (fread(&buf, 1, 1, stream) < 1) {
+        return EOF;
+    }
+    return buf[0];
+}
+
+static int fgetc_locked(FILE* stream) {
+    unsigned char buf[1];
+    if (fread_locked(&buf, 1, 1, stream) < 1) {
+        return EOF;
+    }
+    return buf[0];
+}
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/getc.html */
 int getc(FILE* stream) {
@@ -720,8 +735,36 @@ int getchar(void) {
     return fgetc(stdin);
 }
 
-/* TODO
-char* fgets(char* restrict str, int num, FILE* restrict stream); */
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fgets.html */
+char* fgets(char* restrict str, int num, FILE* restrict stream) {
+    if (num == 0) {
+        /* No room in the buffer for even the null terminator */
+        errno = EINVAL;
+        return NULL;
+    }
+
+    lock_file(stream);
+
+    char* result = str;
+
+    /* "If the end-of-file condition is encountered before any bytes are read, the contents of the array pointed to by s shall not be changed." */
+    if (stream->eof) return NULL;
+
+    while (--num) {
+        if (stream->eof) break;
+        int c = fgetc_locked(stream);
+        if (c == EOF) {
+            if (stream->error) result = NULL;
+            break;
+        }
+        *str++ = (char)c;
+        if (c == '\n') break;
+    }
+    *str = '\0';
+
+    unlock_file(stream);
+    return result;
+}
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fputc.html */
 int fputc(int ch, FILE* stream) {
@@ -794,8 +837,37 @@ end:
 }
 
 /* Direct input/output */
-/* TODO
-size_t fread(void* restrict buffer, size_t size, size_t count, FILE* restrict stream); */
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fread.html */
+size_t fread(void* restrict buffer, size_t size, size_t count, FILE* restrict stream) {
+    if (size == 0 || count == 0) return 0;
+
+    lock_file(stream);
+    size_t result = fread_locked(buffer, size, count, stream);
+    unlock_file(stream);
+    return result;
+}
+
+size_t fread_locked(void* restrict buffer, size_t size, size_t count, FILE* restrict stream) {
+    if (size == 0 || count == 0) return 0;
+    if (!stream->is_open || !(stream->io_mode & IO_READ)) {
+        stream->error = -1;
+        errno = EBADF;
+        return 0;
+    }
+    if (stream->eof) return 0;
+
+    size_t bytes_read = 0;
+    size_t total_size = size * count;
+
+    size_t pushback_bytes = stream->pushback_index < total_size ? stream->pushback_index : total_size;
+    memcpy(buffer, stream->pushback_buffer.c, pushback_bytes);
+    bytes_read += pushback_bytes;
+    stream->pushback_index -= pushback_bytes;
+
+    bytes_read += read(stream->fildes, buffer, total_size - bytes_read);
+
+    return bytes_read / size;
+}
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fwrite.html */
 size_t fwrite(const void* restrict buffer, size_t size, size_t count, FILE* restrict stream) {
