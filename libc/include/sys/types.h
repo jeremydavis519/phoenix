@@ -25,15 +25,19 @@
 #include <stddef.h>
 #include <stdint.h>
 
+typedef uint64_t blkcnt_t;
+typedef uint64_t blksize_t;
 /* TODO
-typedef  blkcnt_t;
-typedef  blksize_t;
 typedef  fsblkcnt_t;
-typedef  fsfilcnt_t;
-typedef  ino_t;
-typedef  key_t;
-typedef  mode_t;
-typedef  nlink_t; */
+typedef  fsfilcnt_t; */
+typedef struct {
+    uint8_t bytes[16]; /* Intended to store a UUID */
+} dev_t;
+typedef uint64_t ino_t;
+/* TODO
+typedef  key_t; */
+typedef uint16_t mode_t;
+typedef uint64_t nlink_t;
 
 #ifdef INT64_MAX
 typedef int64_t off_t;
