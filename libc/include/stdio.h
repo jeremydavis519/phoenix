@@ -61,7 +61,7 @@ extern FILE* stdout;
 extern FILE* stderr;
 
 /* Operations on files */
-int remove(const char* filename);
+int remove(const char* path);
 int rename(const char* oldname, const char* newname);
 FILE* tmpfile(void);
 char* tmpnam(char* str);
@@ -69,8 +69,8 @@ char* tmpnam(char* str);
 /* File access */
 int fclose(FILE* stream);
 int fflush(FILE* stream);
-FILE* fopen(const char* SEEK_restrict filename, const char* SEEK_restrict mode);
-FILE* freopen(const char* SEEK_restrict filename, const char* SEEK_restrict mode, FILE* SEEK_restrict stream);
+FILE* fopen(const char* SEEK_restrict path, const char* SEEK_restrict mode);
+FILE* freopen(const char* SEEK_restrict path, const char* SEEK_restrict mode, FILE* SEEK_restrict stream);
 void setbuf(FILE* SEEK_restrict stream, char* SEEK_restrict buffer);
 int setvbuf(FILE* SEEK_restrict stream, char* SEEK_restrict buffer, int mode, size_t size);
 

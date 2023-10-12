@@ -1,4 +1,4 @@
-/* Copyright (c) 2021-2022 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2021-2023 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -156,7 +156,7 @@ FILE* stderr = &files[2];
 
 /* Operations on files */
 /* TODO 
-int remove(const char* filename);
+int remove(const char* path);
 int rename(const char* oldname, const char* newname);
 FILE* tmpfile(void);
 char* tmpnam(char* str); */
@@ -186,7 +186,7 @@ int fflush_locked(FILE* stream) {
 }
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fopen.html */
-FILE* fopen(const char* restrict filename, const char* restrict mode) {
+FILE* fopen(const char* restrict path, const char* restrict mode) {
     /* Find an unused `FILE` object. */
     size_t i;
     while (true) {
@@ -204,14 +204,13 @@ FILE* fopen(const char* restrict filename, const char* restrict mode) {
     }
 
     /* Open the file. */
-    FILE* result = freopen(filename, mode, files + i);
+    FILE* result = freopen(path, mode, files + i);
 
     unlock_file(files + i);
     return result;
 }
 
-/* TODO
-FILE* freopen(const char* restrict filename, const char* restrict mode, FILE* restrict stream); */
+FILE* freopen(const char* restrict path, const char* restrict mode, FILE* restrict stream); */
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/setbuf.html */
 void setbuf(FILE* restrict stream, char* restrict buffer) {
