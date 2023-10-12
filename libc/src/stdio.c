@@ -253,6 +253,7 @@ int setvbuf(FILE* restrict stream, char* restrict buffer, int mode, size_t size)
     stream->buffer = buffer;
     stream->buffer_mode = mode;
     stream->buffer_size = size;
+    stream->buffer_index = 0;
 
     unlock_file(stream);
 
