@@ -18,6 +18,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <stdarg.h>
 #include <stdatomic.h>
@@ -117,6 +118,7 @@ struct FILE {
     int          eof             : 1;
     int          error           : 1;
     int          malloced_buffer : 1;
+    const char*  path;
     int          fildes;       /* File descriptor */
     fpos_t       position;
     off_t        length;
@@ -210,7 +212,96 @@ FILE* fopen(const char* restrict path, const char* restrict mode) {
     return result;
 }
 
-FILE* freopen(const char* restrict path, const char* restrict mode, FILE* restrict stream); */
+FILE* freopen(const char* restrict path, const char* restrict mode, FILE* restrict stream) {
+    lock_file(stream);
+
+    if (!path) path = stream->path;
+
+    {
+        int old_errno = errno;
+        fflush_locked(stream);
+        close(stream->fildes);
+        errno = old_errno;
+    }
+    stream->error = 0;
+    stream->eof = 0;
+
+    int oflag;
+    switch (mode[0]) {
+        case 'r':
+            oflag = O_RDONLY;
+            stream->io_mode = IO_READ;
+            break;
+        case 'w':
+            oflag = O_WRONLY | O_CREAT | O_TRUNC;
+            stream->io_mode = IO_WRITE;
+            break;
+        case 'a':
+            oflag = O_WRONLY | O_CREAT | O_APPEND;
+            stream->io_mode = IO_WRITE;
+            break;
+        default:
+            errno = EINVAL;
+            stream = NULL;
+            goto end;
+    }
+    switch (mode[1]) {
+        case '\0':
+            break;
+        case 'b':
+            switch (mode[2]) {
+                case '\0':
+                    break;
+                case '+':
+                    oflag = (oflag & ~(O_RDONLY | O_WRONLY)) | O_RDWR;
+                    stream->io_mode = IO_RW;
+                    if (mode[3] == '\0') break;
+                    /* Intentional fall-through */
+                default:
+                    errno = EINVAL;
+                    stream = NULL;
+                    goto end;
+            }
+            break;
+        case '+':
+            oflag = (oflag & ~(O_RDONLY | O_WRONLY)) | O_RDWR;
+            stream->io_mode = IO_RW;
+            switch (mode[2]) {
+                case '\0':
+                    break;
+                case 'b':
+                    if (mode[3] == '\0') break;
+                    /* Intentional fall-through */
+                default:
+                    errno = EINVAL;
+                    stream = NULL;
+                    goto end;
+            }
+            break;
+        default:
+            errno = EINVAL;
+            stream = NULL;
+            goto end;
+    }
+
+    stream->fildes = open(path, oflag);
+    stream->is_open = -1;
+
+    stream->path = path;
+    stream->char_width = CW_UNSET;
+    stream->position.offset = 0;
+    /* FIXME: stream->position.mb_parse_state = ...; */
+    stream->malloced_buffer = 0;
+    stream->buffer = NULL;
+    stream->buffer_mode = _IONBF;
+    stream->buffer_size = 0;
+    stream->buffer_index = 0;
+    stream->pushback_index = 0;
+
+end:
+    unlock_file(stream);
+    return stream;
+}
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/setbuf.html */
 void setbuf(FILE* restrict stream, char* restrict buffer) {
