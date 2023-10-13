@@ -213,18 +213,28 @@ FILE* fopen(const char* restrict path, const char* restrict mode) {
 }
 
 FILE* freopen(const char* restrict path, const char* restrict mode, FILE* restrict stream) {
+#define FAIL(e) do { errno = (e); stream = NULL; goto end; } while (0)
     lock_file(stream);
 
-    if (!path) path = stream->path;
+    /* TODO: If a signal is caught during this function, then FAIL(EINTR). */
 
     {
+        /* Ignore errors while flushing and closing, except EINTR and (when no path is given) EBADF. */
         int old_errno = errno;
-        fflush_locked(stream);
-        close(stream->fildes);
+        errno = 0;
+        if (fflush_locked(stream) == EOF && (errno == EINTR || (!path && errno == EBADF))) {
+            stream->error = 0;
+            FAIL(errno);
+        }
+        stream->error = 0;
+        stream->eof = 0;
+        if (close(stream->fildes) == -1 && (errno == EINTR || (!path && errno == EBADF))) {
+            FAIL(errno);
+        }
         errno = old_errno;
     }
-    stream->error = 0;
-    stream->eof = 0;
+
+    if (!path) path = stream->path;
 
     int oflag;
     switch (mode[0]) {
@@ -241,9 +251,7 @@ FILE* freopen(const char* restrict path, const char* restrict mode, FILE* restri
             stream->io_mode = IO_WRITE;
             break;
         default:
-            errno = EINVAL;
-            stream = NULL;
-            goto end;
+            FAIL(EINVAL);
     }
     switch (mode[1]) {
         case '\0':
@@ -258,9 +266,7 @@ FILE* freopen(const char* restrict path, const char* restrict mode, FILE* restri
                     if (mode[3] == '\0') break;
                     /* Intentional fall-through */
                 default:
-                    errno = EINVAL;
-                    stream = NULL;
-                    goto end;
+                    FAIL(EINVAL);
             }
             break;
         case '+':
@@ -273,18 +279,14 @@ FILE* freopen(const char* restrict path, const char* restrict mode, FILE* restri
                     if (mode[3] == '\0') break;
                     /* Intentional fall-through */
                 default:
-                    errno = EINVAL;
-                    stream = NULL;
-                    goto end;
+                    FAIL(EINVAL);
             }
             break;
         default:
-            errno = EINVAL;
-            stream = NULL;
-            goto end;
+            FAIL(EINVAL);
     }
 
-    stream->fildes = open(path, oflag);
+    if ((stream->fildes = open(path, oflag)) == -1) goto end;
     stream->is_open = -1;
 
     stream->path = path;
