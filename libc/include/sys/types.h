@@ -25,43 +25,34 @@
 #include <stddef.h>
 #include <stdint.h>
 
-typedef uint64_t blkcnt_t;
-typedef uint64_t blksize_t;
+typedef int64_t blkcnt_t;
+typedef int64_t blksize_t;
 /* TODO
-typedef  fsblkcnt_t;
-typedef  fsfilcnt_t; */
-typedef struct {
-    uint8_t bytes[16]; /* Intended to store a UUID */
-} dev_t;
+typedef (unsigned) fsblkcnt_t;
+typedef (unsigned) fsfilcnt_t; */
+typedef uint64_t dev_t; /* TODO: What's the format of a dev_t value? MAC address + 2-byte local device number? */
 typedef uint64_t ino_t;
 /* TODO
 typedef  key_t; */
 typedef uint16_t mode_t;
 typedef uint64_t nlink_t;
 
-#ifdef INT64_MAX
 typedef int64_t off_t;
 #define OFF_MIN INT64_MIN
 #define OFF_MAX INT64_MAX
-#else
-typedef int32_t off_t;
-#define OFF_MIN INT32_MIN
-#define OFF_MAX INT32_max
-#endif /* defined(INT64_MAX) */
 
-typedef size_t ssize_t;
+typedef int64_t ssize_t;
 
 typedef uint8_t clockid_t;
 typedef uint64_t clock_t;
-/* TODO
-typedef  suseconds_t; */
+typedef int32_t suseconds_t;
 typedef uint64_t time_t;
 typedef uint16_t timer_t;
 
 typedef uint32_t id_t;
 typedef uint32_t gid_t;
 typedef uint32_t uid_t;
-typedef uint64_t pid_t;
+typedef int64_t pid_t;
 
 typedef void* pthread_attr_t; /* FIXME: Use a proper type. */
 /* TODO

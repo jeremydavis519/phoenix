@@ -184,7 +184,7 @@
 
 #endif /* __GNUC__ */
 
-#define SSIZE_MAX                               SIZE_MAX
+#define SSIZE_MAX                               INT64_MAX
 
 #define MB_LEN_MAX                              4 /* Enough for UTF-8 */
 
