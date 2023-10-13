@@ -27,6 +27,12 @@
 extern "C" {
 #endif /* __cplusplus */
 
+#if !defined(__cplusplus) && __STDC_VERSION__ >= 199901L
+#define _PHOENIX_restrict restrict
+#else
+#define _PHOENIX_restrict
+#endif /* __cplusplus and __STDC_VERSION__ */
+
 void                  _PHOENIX_thread_exit(int32_t status);
 void                  _PHOENIX_thread_sleep(uint64_t nanoseconds);
 size_t                _PHOENIX_thread_spawn(void (*entry_point)(void*), void* argument, uint8_t priority, size_t stack_size);
@@ -51,9 +57,10 @@ uint64_t              _PHOENIX_time_now_unix_nanos(void);
 
 typedef struct _PHOENIX_PipeReader _PHOENIX_PipeReader;
 typedef struct _PHOENIX_PipeWriter _PHOENIX_PipeWriter;
-int8_t                _PHOENIX_pipe_new(_PHOENIX_PipeReader** reader, _PHOENIX_PipeWriter** writer);
+int8_t                _PHOENIX_pipe_new(_PHOENIX_PipeReader** _PHOENIX_restrict reader, _PHOENIX_PipeWriter** _PHOENIX_restrict writer);
 void                  _PHOENIX_pipe_free_reader(_PHOENIX_PipeReader* reader);
 void                  _PHOENIX_pipe_free_writer(_PHOENIX_PipeWriter* writer);
+ssize_t               _PHOENIX_pipe_read(_PHOENIX_PipeReader* _PHOENIX_restrict reader, char* _PHOENIX_restrict buf, ssize_t count);
 
 #ifdef __cplusplus
 }

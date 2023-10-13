@@ -35,6 +35,7 @@ use {
         hint,
         mem::{self, MaybeUninit},
         ptr::{addr_of, addr_of_mut},
+        slice,
         sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering},
     },
     crate::{
@@ -81,17 +82,33 @@ mod ffi {
 
     /// Frees the given pipe reader.
     #[export_name = "_PHOENIX_pipe_free_reader"]
-    extern "C" fn pipe_free_reader(reader: *mut PipeReader) {
+    unsafe extern "C" fn pipe_free_reader(reader: *mut PipeReader) {
         if !reader.is_null() {
-            unsafe { drop(Box::from_raw(reader)); }
+            drop(Box::from_raw(reader));
         }
     }
 
     /// Frees the given pipe writer.
     #[export_name = "_PHOENIX_pipe_free_writer"]
-    extern "C" fn pipe_free_writer(writer: *mut PipeWriter) {
+    unsafe extern "C" fn pipe_free_writer(writer: *mut PipeWriter) {
         if !writer.is_null() {
-            unsafe { drop(Box::from_raw(writer)); }
+            drop(Box::from_raw(writer));
+        }
+    }
+
+    /// Reads data with the given pipe reader as if with `O_NONBLOCK` set on the file description.
+    ///
+    /// # Panics
+    /// If the given count is negative or larger than a `usize`.
+    ///
+    /// # Returns
+    /// The number of bytes read, or -1 if the pipe is empty and has no writers.
+    #[export_name = "_PHOENIX_pipe_read"]
+    unsafe extern "C" fn pipe_read(reader: *mut PipeReader, buf: *mut u8, count: i64) -> i64 {
+        let buf = slice::from_raw_parts_mut(buf, count.try_into().expect("pipe_read: count doesn't fit in a usize"));
+        match (*reader).read(buf) {
+            Ok(x) => x.try_into().expect("PipeReader::read claims to have read more bytes than can be requested"),
+            Err(PipeReadError::PipeClosed) => -1,
         }
     }
 }

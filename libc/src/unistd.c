@@ -20,6 +20,7 @@
    https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/unistd.h.html */
 
 #include <errno.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <stdatomic.h>
 #include <stdlib.h>
@@ -170,8 +171,32 @@ int          isatty(int);
 int          lchown(const char*, uid_t, gid_t);
 int          link(const char*, const char*);
 int          linkat(int, const char*, int, const char*, int);
-int          lockf(int, int, off_t);
-off_t        lseek(int, off_t, int);
+int          lockf(int, int, off_t); */
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/lseek.html */
+off_t lseek(int fildes, off_t offset, int whence) {
+    if (fildes < 0 || fildes >= OPEN_MAX) EFAIL(EBADF);
+
+    FileDescription* file_description = &file_descriptions[fildes];
+
+    switch (atomic_load_explicit(&file_description->type, memory_order_acquire)) {
+    case FDT_NONE:
+        EFAIL(EBADF);
+
+    case FDT_PIPE_WRITER:
+    case FDT_PIPE_READER:
+        EFAIL(ESPIPE);
+
+    default:
+        /* Unrecognized file descriptor type. This is almost certainly a bug in libc. */
+        EFAIL(EINTERNAL);
+    }
+
+fail:
+    return -1;
+}
+
+/* TODO
 int          nice(int);
 long         pathconf(const char*, int);
 int          pause(void); */
@@ -211,10 +236,72 @@ fail:
     return -1;
 }
 
+ssize_t pread(int fildes, void* buf, size_t nbyte, off_t offset) {
+    off_t orig_offset = lseek(fildes, 0, SEEK_CUR);
+    if (orig_offset == -1) return -1;
+
+    if (lseek(fildes, offset, SEEK_SET) == -1) return -1;
+    ssize_t result = read(fildes, buf, nbyte);
+    if (lseek(fildes, orig_offset, SEEK_SET) == -1) return -1;
+
+    return result;
+}
+
 /* TODO
-ssize_t      pread(int, void*, size_t, off_t);
-ssize_t      pwrite(int, const void*, size_t, off_t);
-ssize_t      read(int, void*, size_t);
+ssize_t pwrite(int, const void*, size_t, off_t); */
+
+ssize_t read(int fildes, void* buf, size_t nbyte) {
+    if (fildes < 0 || fildes >= OPEN_MAX) EFAIL(EBADF);
+
+    if (nbyte > SSIZE_MAX) EFAIL(EINVAL);
+
+    FileDescription* file_description = &file_descriptions[fildes];
+
+    FDPipeReader* pr;
+
+    /* FIXME: "If read() is interrupted by a signal before it reads any data, it shall return -1 with errno set to [EINTR]." */
+    /* TODO: "If the O_DSYNC and O_RSYNC bits have been set, read I/O operations on the file descriptor shall complete as defined by synchronized
+     *        I/O data integrity completion. If the O_SYNC and O_RSYNC bits have been set, read I/O operations on the file descriptor shall
+     *        complete as defined by synchronized I/O file integrity completion." */
+
+    ssize_t bytes_read = 0;
+
+    switch (atomic_load_explicit(&file_description->type, memory_order_acquire)) {
+    case FDT_NONE:
+    case FDT_PIPE_WRITER:
+        EFAIL(EBADF); /* "The fildes argument is not a valid file descriptor open for reading." */
+
+    case FDT_PIPE_READER:
+        pr = &file_description->pipe_reader;
+        for (;;) {
+            bytes_read = _PHOENIX_pipe_read(pr->reader, buf, nbyte);
+            if (bytes_read == -1) {
+                /* EOF: pipe has no writers. */
+                bytes_read = 0;
+                break;
+            }
+            if (bytes_read == 0) {
+                /* Pipe has writers but is currently empty. */
+                if (pr->file_status_flags & O_NONBLOCK) EFAIL(EAGAIN);
+                _PHOENIX_thread_sleep(0); /* Wait for some data. */
+            }
+        };
+        break;
+
+    default:
+        /* Unrecognized file descriptor type. This is almost certainly a bug in libc. */
+        EFAIL(EINTERNAL);
+    }
+
+    /* TODO: "Upon successful completion, where nbyte is greater than 0, read() shall mark for update the last data access timestamp of the file" */
+
+    return bytes_read;
+
+fail:
+    return -1;
+}
+
+/* TODO
 ssize_t      readlink(const char* restrict, char* restrict, size_t);
 ssize_t      readlinkat(int, const char* restrict, char* restrict, size_t);
 int          rmdir(const char*);
