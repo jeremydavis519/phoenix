@@ -27,10 +27,9 @@ extern "C" {
 #endif
 
 #if !defined(__cplusplus) && __STDC_VERSION__ >= 199901L
-/* Use a prefix allowed by POSIX. */
-#define st_restrict restrict
+#define _PHOENIX_restrict restrict
 #else
-#define st_restrict
+#define _PHOENIX_restrict
 #endif /* __cplusplus and __STDC_VERSION__ */
 
 struct stat {
@@ -101,16 +100,16 @@ int    chmod(const char*, mode_t);
 int    fchmod(int, mode_t);
 int    fchmodat(int, const char*, mode_t, int);
 int    fstat(int, struct stat*);
-int    fstatat(int, const char* st_restrict, struct stat* st_restrict, int);
+int    fstatat(int, const char* _PHOENIX_restrict, struct stat* _PHOENIX_restrict, int);
 int    futimens(int, const struct timespec [2]);
-int    lstat(const char* st_restrict, struct stat* st_restrict);
+int    lstat(const char* _PHOENIX_restrict, struct stat* _PHOENIX_restrict);
 int    mkdir(const char*, mode_t);
 int    mkdirat(int, const char*, mode_t);
 int    mkfifo(const char*, mode_t);
 int    mkfifoat(int, const char*, mode_t);
 int    mknod(const char*, mode_t, dev_t);
 int    mknodat(int, const char*, mode_t, dev_t);
-int    stat(const char* st_restrict, struct stat* st_restrict);
+int    stat(const char* _PHOENIX_restrict, struct stat* _PHOENIX_restrict);
 mode_t umask(mode_t);
 int    utimensat(int, const char*, const struct timespec [2], int);
 

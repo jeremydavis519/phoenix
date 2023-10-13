@@ -37,17 +37,17 @@ typedef enum {
 } FDType;
 
 typedef struct {
-    _Atomic(FDType) type; /* Must be FDT_PIPE_READER */
-    PipeReader*     reader;
-    int             file_descriptor_flags;
-    int             file_status_flags;
+    _Atomic(FDType)      type; /* Must be FDT_PIPE_READER */
+    _PHOENIX_PipeReader* reader;
+    int                  file_descriptor_flags;
+    int                  file_status_flags;
 } FDPipeReader;
 
 typedef struct {
-    _Atomic(FDType) type; /* Must be FDT_PIPE_WRITER */
-    PipeWriter*     writer;
-    int             file_descriptor_flags;
-    int             file_status_flags;
+    _Atomic(FDType)      type; /* Must be FDT_PIPE_WRITER */
+    _PHOENIX_PipeWriter* writer;
+    int                  file_descriptor_flags;
+    int                  file_status_flags;
 } FDPipeWriter;
 
 typedef union {
@@ -101,12 +101,12 @@ int close(int fildes) {
 
     case FDT_PIPE_READER:
         pr = &file_description->pipe_reader;
-        pipe_free_reader(pr->reader);
+        _PHOENIX_pipe_free_reader(pr->reader);
         break;
 
     case FDT_PIPE_WRITER:
         pw = &file_description->pipe_writer;
-        pipe_free_writer(pw->writer);
+        _PHOENIX_pipe_free_writer(pw->writer);
         break;
 
     default:
@@ -179,10 +179,10 @@ int          pause(void); */
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/pipe.html */
 int pipe(int fildes[2]) {
     int reader = -1, writer = -1;
-    PipeReader* pipe_reader = NULL;
-    PipeWriter* pipe_writer = NULL;
+    _PHOENIX_PipeReader* pipe_reader = NULL;
+    _PHOENIX_PipeWriter* pipe_writer = NULL;
 
-    if (pipe_new(&pipe_reader, &pipe_writer)) EFAIL(ENOMEM);
+    if (_PHOENIX_pipe_new(&pipe_reader, &pipe_writer)) EFAIL(ENOMEM);
 
     if ((reader = allocate_file_descriptor(FDT_PIPE_READER)) < 0) EFAIL(EMFILE);
     if ((writer = allocate_file_descriptor(FDT_PIPE_WRITER)) < 0) EFAIL(EMFILE);
@@ -206,8 +206,8 @@ int pipe(int fildes[2]) {
 fail:
     free_file_descriptor(reader);
     free_file_descriptor(writer);
-    pipe_free_reader(pipe_reader);
-    pipe_free_writer(pipe_writer);
+    _PHOENIX_pipe_free_reader(pipe_reader);
+    _PHOENIX_pipe_free_writer(pipe_writer);
     return -1;
 }
 
@@ -230,7 +230,7 @@ int          setuid(uid_t); */
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/sleep.html */
 unsigned int sleep(unsigned int seconds) {
-    thread_sleep((uint64_t)seconds * 1000000000);
+    _PHOENIX_thread_sleep((uint64_t)seconds * 1000000000);
     /* FIXME: If this thread receives a signal that "invokes a signal-catching function or terminates the process", return early
      *        with the number of seconds left until the duration will have elapsed. */
     return 0;

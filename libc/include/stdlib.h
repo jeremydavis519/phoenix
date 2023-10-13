@@ -37,10 +37,9 @@ extern "C" {
 #endif
 
 #if !defined(__cplusplus) && __STDC_VERSION__ >= 199901L
-/* Use a prefix allowed by POSIX. */
-#define strrestrict restrict
+#define _PHOENIX_restrict restrict
 #else
-#define strrestrict
+#define _PHOENIX_restrict
 #endif /* __cplusplus and __STDC_VERSION__ */
 
 typedef struct {
@@ -66,15 +65,15 @@ double              atof(const char* str);
 int                 atoi(const char* str);
 long                atol(const char* str);
 char*               l64a(long value);
-float               strtof(const char* strrestrict str, char** strrestrict endptr);
-double              strtod(const char* strrestrict str, char** strrestrict endptr);
-long double         strtold(const char* strrestrict str, char** strrestrict endptr);
-long                strtol(const char* strrestrict str, char** strrestrict endptr, int base);
-unsigned long       strtoul(const char* strrestrict str, char** strrestrict endptr, int base);
+float               strtof(const char* _PHOENIX_restrict str, char** _PHOENIX_restrict endptr);
+double              strtod(const char* _PHOENIX_restrict str, char** _PHOENIX_restrict endptr);
+long double         strtold(const char* _PHOENIX_restrict str, char** _PHOENIX_restrict endptr);
+long                strtol(const char* _PHOENIX_restrict str, char** _PHOENIX_restrict endptr, int base);
+unsigned long       strtoul(const char* _PHOENIX_restrict str, char** _PHOENIX_restrict endptr, int base);
 #if defined(__cplusplus) || __STDC_VERSION__ >= 199901L
 long long           atoll(const char* str);
-long long           strtoll(const char* strrestrict str, char** strrestrict endptr, int base);
-unsigned long long  strtoull(const char* strrestrict str, char** strrestrict endptr, int base);
+long long           strtoll(const char* _PHOENIX_restrict str, char** _PHOENIX_restrict endptr, int base);
+unsigned long long  strtoull(const char* _PHOENIX_restrict str, char** _PHOENIX_restrict endptr, int base);
 #endif
 
 /* Pseudorandom number generation */
@@ -133,17 +132,17 @@ lldiv_t             lldiv(long long numer, long long denom);
 
 /* Multibyte characters */
 int                 mblen(const char* mbc, size_t max_bytes);
-int                 mbtowc(wchar_t* strrestrict wc, const char* strrestrict mbc, size_t max_bytes);
+int                 mbtowc(wchar_t* _PHOENIX_restrict wc, const char* _PHOENIX_restrict mbc, size_t max_bytes);
 int                 wctomb(char* mbc, wchar_t wc);
 
 /* Multibyte strings */
-size_t              mbstowcs(wchar_t* strrestrict dest, const char* strrestrict src, size_t max_chars);
-size_t              wcstombs(char* strrestrict dest, const wchar_t* strrestrict src, size_t max_bytes);
+size_t              mbstowcs(wchar_t* _PHOENIX_restrict dest, const char* _PHOENIX_restrict src, size_t max_chars);
+size_t              wcstombs(char* _PHOENIX_restrict dest, const wchar_t* _PHOENIX_restrict src, size_t max_bytes);
 
 /* File system */
 char*               mkdtemp(char* template);
 int                 mkstemp(char* template);
-char*               realpath(const char* strrestrict filename, char* strrestrict resolved_name);
+char*               realpath(const char* _PHOENIX_restrict filename, char* _PHOENIX_restrict resolved_name);
 
 /* Pseudo-terminals */
 int                 grantpt(int fildes);

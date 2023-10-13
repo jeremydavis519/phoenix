@@ -66,7 +66,7 @@ mod ffi {
     ///
     /// # Returns
     /// 0 on success, or -1 if there was insufficient memory to allocate the pipe.
-    #[no_mangle]
+    #[export_name = "_PHOENIX_pipe_new"]
     extern "C" fn pipe_new(reader: *mut *mut PipeReader, writer: *mut *mut PipeWriter) -> i8 {
         let Ok(pipe) = Pipe::try_new() else { return -1 };
         let Ok(pipe) = Arc::try_new(pipe) else { return -1 };
@@ -80,7 +80,7 @@ mod ffi {
     }
 
     /// Frees the given pipe reader.
-    #[no_mangle]
+    #[export_name = "_PHOENIX_pipe_free_reader"]
     extern "C" fn pipe_free_reader(reader: *mut PipeReader) {
         if !reader.is_null() {
             unsafe { drop(Box::from_raw(reader)); }
@@ -88,7 +88,7 @@ mod ffi {
     }
 
     /// Frees the given pipe writer.
-    #[no_mangle]
+    #[export_name = "_PHOENIX_pipe_free_writer"]
     extern "C" fn pipe_free_writer(writer: *mut PipeWriter) {
         if !writer.is_null() {
             unsafe { drop(Box::from_raw(writer)); }

@@ -138,10 +138,9 @@ extern "C" {
 #endif /* __cplusplus */
 
 #if !defined(__cplusplus) && __STDC_VERSION__ >= 199901L
-/* Use a prefix allowed by POSIX */
-#define SIG_restrict restrict
+#define _PHOENIX_restrict restrict
 #else
-#define SIG_restrict
+#define _PHOENIX_restrict
 #endif /* __cplusplus and __STDC_VERSION__ */
 
 typedef __SIG_ATOMIC_TYPE__ sig_atomic_t;
@@ -203,20 +202,20 @@ void (*signal(int sig, void (*func)(int)))(int);
 int    sigqueue(pid_t pid, int sig, union sigval value);
 
 /* Handling signals */
-int    sigaction(int sig, const struct sigaction* SIG_restrict act, struct sigaction* SIG_restrict oact);
-int    sigaltstack(const stack_t* SIG_restrict ss, stack_t* SIG_restrict oss);
+int    sigaction(int sig, const struct sigaction* _PHOENIX_restrict act, struct sigaction* _PHOENIX_restrict oact);
+int    sigaltstack(const stack_t* _PHOENIX_restrict ss, stack_t* _PHOENIX_restrict oss);
 int    siginterrupt(int sig, int flag);
 
 /* Waiting for signals */
 int    sigpending(sigset_t* set);
 int    sigsuspend(const sigset_t* sigmask);
-int    sigtimedwait(const sigset_t* SIG_restrict set, siginfo_t* SIG_restrict info, const struct timespec* SIG_restrict timeout);
-int    sigwait(const sigset_t* SIG_restrict set, int* SIG_restrict sig);
-int    sigwaitinfo(const sigset_t* SIG_restrict set, siginfo_t* SIG_restrict info);
+int    sigtimedwait(const sigset_t* _PHOENIX_restrict set, siginfo_t* _PHOENIX_restrict info, const struct timespec* _PHOENIX_restrict timeout);
+int    sigwait(const sigset_t* _PHOENIX_restrict set, int* _PHOENIX_restrict sig);
+int    sigwaitinfo(const sigset_t* _PHOENIX_restrict set, siginfo_t* _PHOENIX_restrict info);
 
 /* Signal sets */
-int    pthread_sigmask(int how, const sigset_t* SIG_restrict set, sigset_t* SIG_restrict oset);
-int    sigprocmask(int how, const sigset_t* SIG_restrict set, sigset_t* SIG_restrict oset);
+int    pthread_sigmask(int how, const sigset_t* _PHOENIX_restrict set, sigset_t* _PHOENIX_restrict oset);
+int    sigprocmask(int how, const sigset_t* _PHOENIX_restrict set, sigset_t* _PHOENIX_restrict oset);
 int    sigaddset(sigset_t* set, int sig);
 int    sigdelset(sigset_t* set, int sig);
 int    sigemptyset(sigset_t* set);

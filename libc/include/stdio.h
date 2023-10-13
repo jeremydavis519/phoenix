@@ -47,10 +47,9 @@ extern "C" {
 #endif
 
 #if !defined(__cplusplus) && __STDC_VERSION__ >= 199901L
-/* Use a prefix allowed by POSIX */
-#define SEEK_restrict restrict
+#define _PHOENIX_restrict restrict
 #else
-#define SEEK_restrict
+#define _PHOENIX_restrict
 #endif /* __cplusplus and __STDC_VERSION__ */
 
 typedef struct FILE   FILE;
@@ -69,34 +68,34 @@ char* tmpnam(char* str);
 /* File access */
 int fclose(FILE* stream);
 int fflush(FILE* stream);
-FILE* fopen(const char* SEEK_restrict path, const char* SEEK_restrict mode);
-FILE* freopen(const char* SEEK_restrict path, const char* SEEK_restrict mode, FILE* SEEK_restrict stream);
-void setbuf(FILE* SEEK_restrict stream, char* SEEK_restrict buffer);
-int setvbuf(FILE* SEEK_restrict stream, char* SEEK_restrict buffer, int mode, size_t size);
+FILE* fopen(const char* _PHOENIX_restrict path, const char* _PHOENIX_restrict mode);
+FILE* freopen(const char* _PHOENIX_restrict path, const char* _PHOENIX_restrict mode, FILE* _PHOENIX_restrict stream);
+void setbuf(FILE* _PHOENIX_restrict stream, char* _PHOENIX_restrict buffer);
+int setvbuf(FILE* _PHOENIX_restrict stream, char* _PHOENIX_restrict buffer, int mode, size_t size);
 
 /* Formatted input/output */
-int fprintf(FILE* SEEK_restrict stream, const char* SEEK_restrict format, ...);
-int fscanf(FILE* SEEK_restrict stream, const char* SEEK_restrict format, ...);
+int fprintf(FILE* _PHOENIX_restrict stream, const char* _PHOENIX_restrict format, ...);
+int fscanf(FILE* _PHOENIX_restrict stream, const char* _PHOENIX_restrict format, ...);
 int printf(const char* format, ...);
 int scanf(const char* format, ...);
-int snprintf(char* SEEK_restrict s, size_t n, const char* SEEK_restrict format, ...);
-int sprintf(char* SEEK_restrict s, const char* SEEK_restrict format, ...);
-int sscanf(const char* SEEK_restrict s, const char* SEEK_restrict format, ...);
-int vfprintf(FILE* SEEK_restrict stream, const char* SEEK_restrict format, va_list args);
-int vfscanf(FILE* SEEK_restrict stream, const char* SEEK_restrict format, va_list args);
+int snprintf(char* _PHOENIX_restrict s, size_t n, const char* _PHOENIX_restrict format, ...);
+int sprintf(char* _PHOENIX_restrict s, const char* _PHOENIX_restrict format, ...);
+int sscanf(const char* _PHOENIX_restrict s, const char* _PHOENIX_restrict format, ...);
+int vfprintf(FILE* _PHOENIX_restrict stream, const char* _PHOENIX_restrict format, va_list args);
+int vfscanf(FILE* _PHOENIX_restrict stream, const char* _PHOENIX_restrict format, va_list args);
 int vprintf(const char* format, va_list args);
 int vscanf(const char* format, va_list args);
-int vsnprintf(char* SEEK_restrict s, size_t n, const char* SEEK_restrict format, va_list args);
-int vsprintf(char* SEEK_restrict s, const char* SEEK_restrict format, va_list args);
-int vsscanf(const char* SEEK_restrict s, const char* SEEK_restrict format, va_list args);
+int vsnprintf(char* _PHOENIX_restrict s, size_t n, const char* _PHOENIX_restrict format, va_list args);
+int vsprintf(char* _PHOENIX_restrict s, const char* _PHOENIX_restrict format, va_list args);
+int vsscanf(const char* _PHOENIX_restrict s, const char* _PHOENIX_restrict format, va_list args);
 
 /* Character input/output */
 int fgetc(FILE* stream);
 int getc(FILE* stream);
-char* fgets(char* SEEK_restrict str, int num, FILE* SEEK_restrict stream);
+char* fgets(char* _PHOENIX_restrict str, int num, FILE* _PHOENIX_restrict stream);
 int fputc(int ch, FILE* stream);
 int putc(int ch, FILE* stream);
-int fputs(const char* SEEK_restrict str, FILE* SEEK_restrict stream);
+int fputs(const char* _PHOENIX_restrict str, FILE* _PHOENIX_restrict stream);
 int getc(FILE* stream);
 int getchar(void);
 /* char* gets(char* s) -- Removed from the C standard as of 2011 (prone to buffer overflows) */
@@ -105,11 +104,11 @@ int puts(const char* str);
 int ungetc(int ch, FILE* stream);
 
 /* Direct input/output */
-size_t fread(void* SEEK_restrict buffer, size_t size, size_t count, FILE* SEEK_restrict stream);
-size_t fwrite(const void* SEEK_restrict buffer, size_t size, size_t count, FILE* SEEK_restrict stream);
+size_t fread(void* _PHOENIX_restrict buffer, size_t size, size_t count, FILE* _PHOENIX_restrict stream);
+size_t fwrite(const void* _PHOENIX_restrict buffer, size_t size, size_t count, FILE* _PHOENIX_restrict stream);
 
 /* File positioning */
-int fgetpos(FILE* SEEK_restrict stream, fpos_t* SEEK_restrict pos);
+int fgetpos(FILE* _PHOENIX_restrict stream, fpos_t* _PHOENIX_restrict pos);
 int fsetpos(FILE* stream, const fpos_t* pos);
 int fseek(FILE* stream, long offset, int whence);
 int fseeko(FILE* stream, off_t offset, int whence);

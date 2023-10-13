@@ -27,33 +27,33 @@
 extern "C" {
 #endif /* __cplusplus */
 
-void            thread_exit(int32_t status);
-void            thread_sleep(uint64_t nanoseconds);
-size_t          thread_spawn(void (*entry_point)(void*), void* argument, uint8_t priority, size_t stack_size);
+void                  _PHOENIX_thread_exit(int32_t status);
+void                  _PHOENIX_thread_sleep(uint64_t nanoseconds);
+size_t                _PHOENIX_thread_spawn(void (*entry_point)(void*), void* argument, uint8_t priority, size_t stack_size);
 
-void            process_exit(int32_t status);
+void                  _PHOENIX_process_exit(int32_t status);
 
-size_t          device_claim(char* name, size_t len);
+size_t                _PHOENIX_device_claim(char* name, size_t len);
 
 typedef struct {
     void*   virt;
     size_t  phys;
-} VirtPhysAddr;
+} _PHOENIX_VirtPhysAddr;
 
-void            memory_free(void* ptr);
-void*           memory_alloc(size_t size, size_t align);
-VirtPhysAddr    memory_alloc_phys(size_t size, size_t align, size_t max_bits);
-void*           memory_alloc_shared(size_t size);
-size_t          memory_page_size(void);
+void                  _PHOENIX_memory_free(void* ptr);
+void*                 _PHOENIX_memory_alloc(size_t size, size_t align);
+_PHOENIX_VirtPhysAddr _PHOENIX_memory_alloc_phys(size_t size, size_t align, size_t max_bits);
+void*                 _PHOENIX_memory_alloc_shared(size_t size);
+size_t                _PHOENIX_memory_page_size(void);
 
-uint64_t        time_now_unix(void);
-uint64_t        time_now_unix_nanos(void);
+uint64_t              _PHOENIX_time_now_unix(void);
+uint64_t              _PHOENIX_time_now_unix_nanos(void);
 
-typedef struct PipeReader PipeReader;
-typedef struct PipeWriter PipeWriter;
-int8_t          pipe_new(PipeReader** reader, PipeWriter** writer);
-void            pipe_free_reader(PipeReader* reader);
-void            pipe_free_writer(PipeWriter* writer);
+typedef struct _PHOENIX_PipeReader _PHOENIX_PipeReader;
+typedef struct _PHOENIX_PipeWriter _PHOENIX_PipeWriter;
+int8_t                _PHOENIX_pipe_new(_PHOENIX_PipeReader** reader, _PHOENIX_PipeWriter** writer);
+void                  _PHOENIX_pipe_free_reader(_PHOENIX_PipeReader* reader);
+void                  _PHOENIX_pipe_free_writer(_PHOENIX_PipeWriter* writer);
 
 #ifdef __cplusplus
 }

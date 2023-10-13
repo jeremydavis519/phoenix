@@ -26,25 +26,25 @@ extern "C" {
 #endif
 
 #if !defined(__cplusplus) && __STDC_VERSION__ >= 199901L
-#define strrestrict restrict
+#define _PHOENIX_restrict restrict
 #else
-#define strrestrict
+#define _PHOENIX_restrict
 #endif /* __cplusplus and __STDC_VERSION__ */
 
 /* Copying */
-void* memccpy(void* strrestrict dest, const void* strrestrict src, size_t count);
-void* memcpy(void* strrestrict dest, const void* strrestrict src, size_t count);
+void* memccpy(void* _PHOENIX_restrict dest, const void* _PHOENIX_restrict src, size_t count);
+void* memcpy(void* _PHOENIX_restrict dest, const void* _PHOENIX_restrict src, size_t count);
 void* memmove(void* dest, const void* src, size_t num);
-char* strcpy(char* strrestrict dest, const char* strrestrict src);
-char* strncpy(char* strrestrict dest, const char* strrestrict src, size_t count);
-char* stpcpy(char* strrestrict dest, const char* strrestrict src);
-char* stpncpy(char* strrestrict dest, const char* strrestrict src, size_t count);
+char* strcpy(char* _PHOENIX_restrict dest, const char* _PHOENIX_restrict src);
+char* strncpy(char* _PHOENIX_restrict dest, const char* _PHOENIX_restrict src, size_t count);
+char* stpcpy(char* _PHOENIX_restrict dest, const char* _PHOENIX_restrict src);
+char* stpncpy(char* _PHOENIX_restrict dest, const char* _PHOENIX_restrict src, size_t count);
 char* strdup(const char* src);
 char* strndup(const char* src, size_t count);
 
 /* Concatenation */
-char* strcat(char* strrestrict dest, const char* strrestrict src);
-char* strncat(char* strrestrict dest, const char* strrestrict src, size_t count);
+char* strcat(char* _PHOENIX_restrict dest, const char* _PHOENIX_restrict src);
+char* strncat(char* _PHOENIX_restrict dest, const char* _PHOENIX_restrict src, size_t count);
 
 /* Comparison */
 int memcmp(const void* ptr1, const void* ptr2, size_t count);
@@ -52,8 +52,8 @@ int strcmp(const char* s1, const char* s2);
 int strcoll(const char* s1, const char* s2);
 int strcoll_l(const char* s1, const char* s2, locale_t locale);
 int strncmp(const char* s1, const char* s2, size_t count);
-size_t strxfrm(char* strrestrict dest, const char* strrestrict src, size_t count);
-size_t strxfrm_l(char* strrestrict dest, const char* strrestrict src, size_t count, locale_t locale);
+size_t strxfrm(char* _PHOENIX_restrict dest, const char* _PHOENIX_restrict src, size_t count);
+size_t strxfrm_l(char* _PHOENIX_restrict dest, const char* _PHOENIX_restrict src, size_t count, locale_t locale);
 
 /* Searching */
 void* memchr(const void* ptr, int value, size_t count);
@@ -63,8 +63,8 @@ char* strpbrk(const char* s1, const char* s2);
 char* strrchr(const char* s, int c);
 size_t strspn(const char* s1, const char* s2);
 char* strstr(const char* s1, const char* s2);
-char* strtok(char* strrestrict s, const char* strrestrict delimiters);
-char* strtok_r(char* strrestrict s, const char* strrestrict delimiters, char** strrestrict state);
+char* strtok(char* _PHOENIX_restrict s, const char* _PHOENIX_restrict delimiters);
+char* strtok_r(char* _PHOENIX_restrict s, const char* _PHOENIX_restrict delimiters, char** _PHOENIX_restrict state);
 
 /* Other */
 void* memset(void* dest, int ch, size_t count);

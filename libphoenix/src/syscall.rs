@@ -62,7 +62,7 @@ const DEFAULT_PRIORITY: u8 = 10;
 ///     panic!("This line will never be reached.");
 /// }
 /// ```
-#[no_mangle]
+#[export_name = "_PHOENIX_thread_exit"]
 pub extern "C" fn thread_exit(status: i32) -> ! {
     unsafe {
         asm!(
@@ -88,7 +88,7 @@ pub extern "C" fn thread_exit(status: i32) -> ! {
 /// thread_sleep(1000);
 /// assert!(time_now() >= first_timestamp + 1000);
 /// ```
-#[no_mangle]
+#[export_name = "_PHOENIX_thread_sleep"]
 pub extern "C" fn thread_sleep(nanoseconds: u64) {
     unsafe {
         asm!(
@@ -156,7 +156,7 @@ extern "C" fn call_rust_abi(f: usize) -> ! {
 /// # #[allow(dead_code)]
 /// panic!("This code will never be reached.");
 /// ```
-#[no_mangle]
+#[export_name = "_PHOENIX_process_exit"]
 pub extern "C" fn process_exit(status: i32) -> ! {
     unsafe {
         asm!(
@@ -291,7 +291,7 @@ extern "C" fn device_claim_ffi(name: *const u8, len: usize) -> usize {
 /// # Aborts the thread
 /// If the given address is not the address of the first byte of an allocated block. (The most
 /// likely reason for this to happen is that the memory has already been freed.)
-#[no_mangle]
+#[export_name = "_PHOENIX_memory_free"]
 pub unsafe extern "C" fn memory_free(ptr: *mut MaybeUninit<u8>) {
     asm!(
         "svc 0x0300",
@@ -308,7 +308,7 @@ pub unsafe extern "C" fn memory_free(ptr: *mut MaybeUninit<u8>) {
 ///
 /// # Returns
 /// A pointer to the allocated block, or null if the allocation failed.
-#[no_mangle]
+#[export_name = "_PHOENIX_memory_alloc"]
 pub extern "C" fn memory_alloc(size: usize, align: usize) -> *mut MaybeUninit<u8> {
     let addr: *mut MaybeUninit<u8>;
     unsafe {
@@ -348,7 +348,7 @@ pub extern "C" fn memory_alloc(size: usize, align: usize) -> *mut MaybeUninit<u8
 /// }
 /// # }
 /// ```
-#[no_mangle]
+#[export_name = "_PHOENIX_memory_alloc_phys"]
 pub extern "C" fn memory_alloc_phys(size: usize, align: usize, max_bits: usize) -> VirtPhysAddr {
     let virt: *mut MaybeUninit<u8>;
     let phys: usize;
@@ -382,7 +382,7 @@ pub extern "C" fn memory_alloc_phys(size: usize, align: usize, max_bits: usize) 
 /// A pointer to the allocated block, or null if the allocation failed.
 ///
 /// [`ipc` module]: super::ipc
-#[no_mangle]
+#[export_name = "_PHOENIX_memory_shared"]
 pub extern "C" fn memory_alloc_shared(size: usize) -> *mut MaybeUninit<u8> {
     let addr: *mut MaybeUninit<u8>;
     unsafe {
@@ -416,7 +416,7 @@ pub extern "C" fn memory_alloc_shared(size: usize) -> *mut MaybeUninit<u8> {
 /// already been freed).
 ///
 /// [`ipc` module]: super::ipc
-#[no_mangle]
+#[export_name = "_PHOENIX_memory_access_shared"]
 pub extern "C" fn memory_access_shared(orig_addr: usize, size: usize) -> *mut MaybeUninit<u8> {
     let addr: *mut MaybeUninit<u8>;
     unsafe {
@@ -442,7 +442,7 @@ pub extern "C" fn memory_access_shared(orig_addr: usize, size: usize) -> *mut Ma
 /// ```norun
 /// println!("The size of a page is {} bytes.", memory_page_size());
 /// ```
-#[no_mangle]
+#[export_name = "_PHOENIX_memory_page_size"]
 pub extern "C" fn memory_page_size() -> usize {
     let page_size: usize;
     unsafe {
@@ -466,7 +466,7 @@ pub extern "C" fn memory_page_size() -> usize {
 ///     println!("Either the user changed the clock or we just went back in time!");
 /// }
 /// ```
-#[no_mangle]
+#[export_name = "_PHOENIX_time_now_unix"]
 pub extern "C" fn time_now_unix() -> u64 {
     // FIXME: Make this work with word sizes other than 64 bits.
     const { assert!(mem::size_of::<usize>() == mem::size_of::<u64>()) };
@@ -496,7 +496,7 @@ pub extern "C" fn time_now_unix() -> u64 {
 ///     println!("Either the user changed the clock or we just went back in time!");
 /// }
 /// ```
-#[no_mangle]
+#[export_name = "_PHOENIX_time_now_unix_nanos"]
 pub extern "C" fn time_now_unix_nanos() -> u64 {
     // FIXME: Make this work with word sizes other than 64 bits.
     const { assert!(mem::size_of::<usize>() == mem::size_of::<u64>()) };
