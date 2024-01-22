@@ -1465,11 +1465,11 @@ static int parse_scanset(const char* restrict* restrict format, FormatSpec* rest
         ++*format;
     }
     while (**format) {
-        if (*(*format++) == ']') {
+        if (*(*format)++ == ']') {
             return 0;
         }
     }
-    return 1;
+    return -1;
 }
 
 /*
