@@ -1,4 +1,4 @@
-/* Copyright (c) 2022-2023 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2022-2024 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -189,7 +189,7 @@
 #define MB_LEN_MAX                              4 /* Enough for UTF-8 */
 
 /* Other invariant values */
-/* TODO: #define NL_ARGMAX                      {>= 9} */
+#define NL_ARGMAX                               16
 /* TODO: #define NL_LANGMAX                     {>= 14} */
 /* TODO: #define NL_MSGMAX                      {>= 32767} */
 /* TODO: #define NL_SETMAX                      {>= 255} */

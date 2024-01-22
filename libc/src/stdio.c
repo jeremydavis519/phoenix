@@ -46,17 +46,18 @@ typedef uint32_t FormatSpecFlags;
 #define FSF_HEX_UPPER              0x000008
 
 #define FSF_TEXT_INTEGER           0x000000
-#define FSF_TEXT_FLOAT             0x000010
-#define FSF_TEXT_FLOAT_SCI_LOWER   0x000020
-#define FSF_TEXT_FLOAT_SCI_UPPER   0x000030
-#define FSF_TEXT_FLOAT_SHORT_LOWER 0x000040
-#define FSF_TEXT_FLOAT_SHORT_UPPER 0x000050
-#define FSF_TEXT_CHAR              0x000060
-#define FSF_TEXT_STRING            0x000070
-#define FSF_TEXT_POINTER           0x000080
-#define FSF_TEXT_SCANSET           0x000090
-#define FSF_TEXT_COUNT             0x0000a0
-#define FSF_TEXT_PERCENT           0x0000b0
+#define FSF_TEXT_FLOAT_LOWER       0x000010
+#define FSF_TEXT_FLOAT_UPPER       0x000020
+#define FSF_TEXT_FLOAT_SCI_LOWER   0x000030
+#define FSF_TEXT_FLOAT_SCI_UPPER   0x000040
+#define FSF_TEXT_FLOAT_FLEX_LOWER  0x000050
+#define FSF_TEXT_FLOAT_FLEX_UPPER  0x000060
+#define FSF_TEXT_CHAR              0x000070
+#define FSF_TEXT_STRING            0x000080
+#define FSF_TEXT_POINTER           0x000090
+#define FSF_TEXT_SCANSET           0x0000a0
+#define FSF_TEXT_COUNT             0x0000b0
+#define FSF_TEXT_PERCENT           0x0000c0
 
 #define FSF_ARG_DEFAULT            0x000000
 #define FSF_ARG_CHAR               0x000100
@@ -68,23 +69,25 @@ typedef uint32_t FormatSpecFlags;
 #define FSF_ARG_PTRDIFF_T          0x000700
 #define FSF_ARG_LONG_DOUBLE        0x000800
 
-#define FSF_JUSTIFY_RIGHT          0x000000
-#define FSF_JUSTIFY_LEFT           0x001000
-#define FSF_FORCE_SIGN             0x002000
-#define FSF_SPACE_AS_SIGN          0x004000
-#define FSF_DECORATE               0x008000 /* Represents the '#' flag */
-#define FSF_PAD_WITH_ZERO          0x010000
-#define FSF_SCANSET_NEGATED        0x020000
-#define FSF_HAS_PRECISION          0x040000
-#define FSF_HAS_WIDTH              0x080000
-#define FSF_PRECISION_FROM_ARG     0x100000
-#define FSF_WIDTH_FROM_ARG         0x200000
+#define FSF_THOUSANDS              0x001000
+#define FSF_JUSTIFY_LEFT           0x002000
+#define FSF_FORCE_SIGN             0x004000
+#define FSF_SPACE_AS_SIGN          0x008000
+#define FSF_DECORATE               0x010000
+#define FSF_PAD_WITH_ZERO          0x020000
+#define FSF_SCANSET_NEGATED        0x040000
+#define FSF_HAS_PRECISION          0x080000
+#define FSF_HAS_WIDTH              0x100000
+#define FSF_PRECISION_FROM_ARG     0x200000
+#define FSF_WIDTH_FROM_ARG         0x400000
 
 typedef struct FormatSpec {
+    long            argpos;           /* 0 indicates the next argument */
     FormatSpecFlags flags;
-    size_t precision;
-    size_t width;
-    const char* scanner;
+    size_t          precision;
+    long            precision_argpos; /* 0 indicates the next argument */
+    size_t          width;
+    const char*     scanner;
 } FormatSpec;
 
 typedef unsigned int CharWidth;
@@ -140,6 +143,7 @@ static int fseeko_locked(FILE* stream, off_t offset, int whence);
 
 static int parse_format_spec(const char* restrict* restrict format, FormatSpec* restrict spec);
 static int parse_scanset(const char* restrict* restrict format, FormatSpec* restrict spec);
+static long find_positioned_args(const char* restrict format, va_list args, va_list positioned_args[NL_ARGMAX]);
 static bool try_lock_file(FILE* stream);
 static void lock_file(FILE* stream);
 static void unlock_file(FILE* stream);
@@ -360,8 +364,13 @@ int setvbuf(FILE* restrict stream, char* restrict buffer, int mode, size_t size)
 
 
 /* Formatted input/output */
-/* TODO
-int dprintf(int fildes, const char* restrict format, ...); */
+int dprintf(int fildes, const char* restrict format, ...) {
+    va_list args;
+    va_start(args, format);
+    int result = vdprintf(fildes, format, args);
+    va_end(args);
+    return result;
+}
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fprintf.html */
 int fprintf(FILE* restrict stream, const char* restrict format, ...) {
@@ -426,8 +435,116 @@ int sscanf(const char* restrict s, const char* restrict format, ...) {
     return result;
 }
 
+/* A common implementation for all the printf variants.
+ * put_char should be a statement that prints the character `c` in the appropriate way.
+ * finalize should be a statement that does any necessary cleanup before the function returns with no error. */
+#define PRINTF_BODY_GENERIC(put_char, finalize) \
+    struct lconv* locale_conv = localeconv(); \
+    char c; \
+    int bytes_written = 0; \
+    const char* old_format; \
+\
+    va_list positioned_args[NL_ARGMAX]; \
+    long positioned_args_count = find_positioned_args(format, args, positioned_args); \
+    if (positioned_args_count < 0) EFAIL(EINVAL); \
+\
+    while ((c = *format++)) { \
+        FormatSpec spec = {0}; \
+        if (c == '%') { \
+            old_format = format; \
+            if (parse_format_spec(&format, &spec)) { \
+                /* POSIX says this branch is UB. Print the conversion specifier to hopefully make the error obvious. */ \
+                goto put; \
+            } \
+\
+            switch (spec.flags & FSF_TEXT_TYPE) { \
+            case FSF_TEXT_INTEGER: \
+                /* TODO */ \
+                break; \
+\
+            case FSF_TEXT_FLOAT_LOWER: \
+                /* TODO */ \
+                break; \
+\
+            case FSF_TEXT_FLOAT_UPPER: \
+                /* TODO */ \
+                break; \
+\
+            case FSF_TEXT_FLOAT_SCI_LOWER: \
+                /* TODO */ \
+                break; \
+\
+            case FSF_TEXT_FLOAT_SCI_UPPER: \
+                /* TODO */ \
+                break; \
+\
+            case FSF_TEXT_FLOAT_FLEX_LOWER: \
+                /* TODO */ \
+                break; \
+\
+            case FSF_TEXT_FLOAT_FLEX_UPPER: \
+                /* TODO */ \
+                break; \
+\
+            case FSF_TEXT_CHAR: \
+                /* TODO */ \
+                break; \
+\
+            case FSF_TEXT_STRING: \
+                /* TODO */ \
+                break; \
+\
+            case FSF_TEXT_POINTER: \
+                /* TODO */ \
+                break; \
+\
+            case FSF_TEXT_SCANSET: \
+                /* This format spec is invalid in a printf() format string. Print it verbatim to hopefully make the error obvious. */ \
+                format = old_format; \
+                goto put; \
+                break; \
+\
+            case FSF_TEXT_COUNT: \
+                /* TODO */ \
+                break; \
+\
+            case FSF_TEXT_PERCENT: \
+                goto put; \
+                break; \
+\
+            default: \
+                /* Unrecognized format spec type, even though it was parsed successfully. This is a bug in libc. */ \
+                EFAIL(EINTERNAL); \
+            } \
+        } else { \
+put: \
+            put_char; \
+            if (bytes_written++ == INT_MAX) EFAIL(EOVERFLOW); \
+        } \
+    } \
+\
+    finalize; \
+\
+    while (positioned_args_count--) { \
+        va_end(positioned_args[positioned_args_count]); \
+    } \
+\
+    return bytes_written; \
+\
+fail: \
+    return -1;
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/vdprintf.html */
+int vdprintf(int fildes, const char* restrict format, va_list args) {
+    PRINTF_BODY_GENERIC(if (write(fildes, &c, 1) == -1) goto fail,)
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/vfprintf.html */
+int vfprintf(FILE* restrict stream, const char* restrict format, va_list args) {
+    PRINTF_BODY_GENERIC(if (fputc(c, stream) == EOF) goto fail,)
+}
+
 /* TODO
-int vfprintf(FILE* restrict stream, const char* restrict format, va_list args);
 int vfscanf(FILE* restrict stream, const char* restrict format, va_list args);
 */
 
@@ -441,16 +558,25 @@ int vscanf(const char* format, va_list args) {
     return vfscanf(stdin, format, args);
 }
 
-/* TODO
-int vsnprintf(char* restrict s, size_t n, const char* restrict format, va_list args);
-int vsprintf(char* restrict s, const char* restrict format, va_list args); */
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/vsnprintf.html */
+int vsnprintf(char* restrict s, size_t n, const char* restrict format, va_list args) {
+    PRINTF_BODY_GENERIC(if (n > 1) { *s++ = c; --n; }, if (n) { *s = '\0'; })
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/vsprintf.html */
+int vsprintf(char* restrict s, const char* restrict format, va_list args) {
+    PRINTF_BODY_GENERIC(*s++ = c, *s = '\0')
+}
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/vsscanf.html */
 int vsscanf(const char* restrict s, const char* restrict format, va_list args) {
     int sign;
     int radix, dec_digits, hex_digits;
     uintmax_t i_acc;
-    void* out;
+    va_list args_temp;
+    void* out = NULL;
+
+    /* FIXME: Allow the "optional assignment-allocation character 'm'", as described by POSIX. */
 
     int args_filled = 0;
     const char* const s_start = s;
@@ -483,17 +609,12 @@ int vsscanf(const char* restrict s, const char* restrict format, va_list args) {
             ++format;
         }
         FormatSpec spec = {0};
-        if (parse_format_spec(&format, &spec)) {
-            goto matching_break;
-        }
+        if (parse_format_spec(&format, &spec)) EFAIL(EINVAL);
 
         size_t width_counter = SIZE_MAX;
         if (spec.flags & FSF_HAS_WIDTH) {
-            if (spec.flags & FSF_WIDTH_FROM_ARG) {
-                width_counter = va_arg(args, int);
-            } else {
-                width_counter = spec.width;
-            }
+            if (spec.flags & FSF_WIDTH_FROM_ARG) EFAIL(EINVAL);
+            width_counter = spec.width;
         }
 
         switch (spec.flags & FSF_TEXT_TYPE) {
@@ -567,56 +688,66 @@ int vsscanf(const char* restrict s, const char* restrict format, va_list args) {
                 }
             }
             if (store_arg) {
+                if (spec.argpos) {
+                    va_copy(args_temp, args);
+                    for (long i = 0; i < spec.argpos; ++i) {
+                        out = va_arg(args_temp, void*);
+                    }
+                    va_end(args_temp);
+                } else {
+                    out = va_arg(args, void*);
+                }
+
                 switch (spec.flags & FSF_ARG_TYPE) {
                 case FSF_ARG_DEFAULT:
                     if ((spec.flags & FSF_TEXT_TYPE) == FSF_TEXT_POINTER) {
-                        *va_arg(args, void**) = (void*)(sign * (intmax_t)i_acc);
+                        *(void**)out = (void*)(sign * (intmax_t)i_acc);
                     } else if ((spec.flags & FSF_SIGN) == FSF_SIGNED) {
-                        *va_arg(args, int*) = sign * (intmax_t)i_acc;
+                        *(int*)out = sign * (intmax_t)i_acc;
                     } else {
-                        *va_arg(args, unsigned int*) = sign * i_acc;
+                        *(unsigned int*)out = sign * i_acc;
                     }
                     break;
                 case FSF_ARG_CHAR:
                     if ((spec.flags & FSF_SIGN) == FSF_SIGNED) {
-                        *va_arg(args, signed char*) = sign * (intmax_t)i_acc;
+                        *(signed char*)out = sign * (intmax_t)i_acc;
                     } else {
-                        *va_arg(args, unsigned char*) = sign * i_acc;
+                        *(unsigned char*)out = sign * i_acc;
                     }
                     break;
                 case FSF_ARG_SHORT:
                     if ((spec.flags & FSF_SIGN) == FSF_SIGNED) {
-                        *va_arg(args, short int*) = sign * (intmax_t)i_acc;
+                        *(short*)out = sign * (intmax_t)i_acc;
                     } else {
-                        *va_arg(args, unsigned short int*) = sign * i_acc;
+                        *(unsigned short*)out = sign * i_acc;
                     }
                     break;
                 case FSF_ARG_LONG:
                     if ((spec.flags & FSF_SIGN) == FSF_SIGNED) {
-                        *va_arg(args, long int*) = sign * (intmax_t)i_acc;
+                        *(long*)out = sign * (intmax_t)i_acc;
                     } else {
-                        *va_arg(args, unsigned long int*) = sign * i_acc;
+                        *(unsigned long*)out = sign * i_acc;
                     }
                     break;
                 case FSF_ARG_LONG_LONG:
                     if ((spec.flags & FSF_SIGN) == FSF_SIGNED) {
-                        *va_arg(args, long long int*) = sign * (intmax_t)i_acc;
+                        *(long long*)out = sign * (intmax_t)i_acc;
                     } else {
-                        *va_arg(args, unsigned long int*) = sign * i_acc;
+                        *(unsigned long*)out = sign * i_acc;
                     }
                     break;
                 case FSF_ARG_INTMAX_T:
                     if ((spec.flags & FSF_SIGN) == FSF_SIGNED) {
-                        *va_arg(args, intmax_t*) = sign * (intmax_t)i_acc;
+                        *(intmax_t*)out = sign * (intmax_t)i_acc;
                     } else {
-                        *va_arg(args, uintmax_t*) = sign * i_acc;
+                        *(uintmax_t*)out = sign * i_acc;
                     }
                     break;
                 case FSF_ARG_SIZE_T:
-                    *va_arg(args, size_t*) = sign * i_acc;
+                    *(size_t*)out = sign * i_acc;
                     break;
                 case FSF_ARG_PTRDIFF_T:
-                    *va_arg(args, ptrdiff_t*) = sign * (intmax_t)i_acc;
+                    *(ptrdiff_t*)out = sign * (intmax_t)i_acc;
                     break;
 
                 default:
@@ -625,11 +756,12 @@ int vsscanf(const char* restrict s, const char* restrict format, va_list args) {
                 ++args_filled;
             }
             break;
-        case FSF_TEXT_FLOAT:
+        case FSF_TEXT_FLOAT_LOWER:
+        case FSF_TEXT_FLOAT_UPPER:
         case FSF_TEXT_FLOAT_SCI_LOWER:
         case FSF_TEXT_FLOAT_SCI_UPPER:
-        case FSF_TEXT_FLOAT_SHORT_LOWER:
-        case FSF_TEXT_FLOAT_SHORT_UPPER:
+        case FSF_TEXT_FLOAT_FLEX_LOWER:
+        case FSF_TEXT_FLOAT_FLEX_UPPER:
             while (isspace(c)) {
                 c = *s++;
             }
@@ -649,7 +781,6 @@ int vsscanf(const char* restrict s, const char* restrict format, va_list args) {
                each character is either an alphanumeric character (as in isalnum) or the underscore
                character (_).
             */
-            va_arg(args, void*); /* Just to avoid really weird undefined behavior if this path is taken */
             ++args_filled; /* TODO: Should be done only if the argument is actually used */
             break;
         case FSF_TEXT_CHAR:
@@ -657,7 +788,15 @@ int vsscanf(const char* restrict s, const char* restrict format, va_list args) {
                 width_counter = 1;
             }
             if (store_arg) {
-                out = va_arg(args, void*);
+                if (spec.argpos) {
+                    va_copy(args_temp, args);
+                    for (long i = 0; i < spec.argpos; ++i) {
+                        out = va_arg(args_temp, void*);
+                    }
+                    va_end(args_temp);
+                } else {
+                    out = va_arg(args, void*);
+                }
             }
             while (width_counter--) {
                 if (store_arg) {
@@ -689,7 +828,15 @@ int vsscanf(const char* restrict s, const char* restrict format, va_list args) {
             }
 
             if (store_arg) {
-                out = va_arg(args, void*);
+                if (spec.argpos) {
+                    va_copy(args_temp, args);
+                    for (long i = 0; i < spec.argpos; ++i) {
+                        out = va_arg(args_temp, void*);
+                    }
+                    va_end(args_temp);
+                } else {
+                    out = va_arg(args, void*);
+                }
             }
             while (width_counter-- && c && !isspace(c)) {
                 if (store_arg) {
@@ -717,7 +864,17 @@ int vsscanf(const char* restrict s, const char* restrict format, va_list args) {
             }
             break;
         case FSF_TEXT_SCANSET:
-            out = store_arg ? va_arg(args, void*) : NULL;
+            if (store_arg) {
+                if (spec.argpos) {
+                    va_copy(args_temp, args);
+                    for (long i = 0; i < spec.argpos; ++i) {
+                        out = va_arg(args_temp, void*);
+                    }
+                    va_end(args_temp);
+                } else {
+                    out = va_arg(args, void*);
+                }
+            }
             while (width_counter-- && c) {
                 const char* scanner = spec.scanner;
                 do {
@@ -757,30 +914,40 @@ scanset_break:
             break;
         case FSF_TEXT_COUNT:
             if (store_arg) {
+                if (spec.argpos) {
+                    va_copy(args_temp, args);
+                    for (long i = 0; i < spec.argpos; ++i) {
+                        out = va_arg(args_temp, void*);
+                    }
+                    va_end(args_temp);
+                } else {
+                    out = va_arg(args, void*);
+                }
+
                 switch (spec.flags & FSF_ARG_TYPE) {
                 case FSF_ARG_DEFAULT:
-                    *va_arg(args, int*) = s - s_start;
+                    *(int*)out = s - s_start;
                     break;
                 case FSF_ARG_CHAR:
-                    *va_arg(args, signed char*) = s - s_start;
+                    *(signed char*)out = s - s_start;
                     break;
                 case FSF_ARG_SHORT:
-                    *va_arg(args, short int*) = s - s_start;
+                    *(short*)out = s - s_start;
                     break;
                 case FSF_ARG_LONG:
-                    *va_arg(args, long int*) = s - s_start;
+                    *(long*)out = s - s_start;
                     break;
                 case FSF_ARG_LONG_LONG:
-                    *va_arg(args, long long int*) = s - s_start;
+                    *(long long*)out = s - s_start;
                     break;
                 case FSF_ARG_INTMAX_T:
-                    *va_arg(args, intmax_t*) = s - s_start;
+                    *(intmax_t*)out = s - s_start;
                     break;
                 case FSF_ARG_SIZE_T:
-                    *va_arg(args, size_t*) = s - s_start;
+                    *(size_t*)out = s - s_start;
                     break;
                 case FSF_ARG_PTRDIFF_T:
-                    *va_arg(args, ptrdiff_t*) = s - s_start;
+                    *(ptrdiff_t*)out = s - s_start;
                     break;
                 default:
                     goto matching_break;
@@ -1223,14 +1390,28 @@ void perror(const char* s) {
  * `spec`: A FormatSpec object to be initialized according to the format specification.
  *
  * Returns:
- * 0 on success, nonzero if the format string is malformed.
+ * 0 on success, nonzero if the format string is malformed. If a nonzero value is returned,
+ * `format` is unchanged.
  */
-static int parse_format_spec(const char* restrict* restrict format, FormatSpec* restrict spec) {
+static int parse_format_spec(const char* restrict* format, FormatSpec* restrict spec) {
+    const char* restrict* orig_format = format;
+
+    spec->argpos = 0;
     spec->flags = 0;
+
+    /* Argument position */
+    if (isdigit(**format) && **format != '0') {
+        spec->argpos = strtol(*format, (char**)format, 10);
+        if (spec->argpos > NL_ARGMAX) goto fail;
+        if (*(*format)++ != '$') goto fail;
+    }
 
     /* Flags */
     for (; **format; ++*format) {
         switch (**format) {
+        case '\'':
+            spec->flags |= FSF_THOUSANDS;
+            break;
         case '-':
             spec->flags |= FSF_JUSTIFY_LEFT;
             break;
@@ -1257,12 +1438,10 @@ flags_break:
     if (**format == '*') {
         ++*format;
         spec->flags |= FSF_HAS_WIDTH | FSF_WIDTH_FROM_ARG;
-    } else if (**format >= '0' && **format <= '9') {
+    } else if (isdigit(**format)) {
         spec->flags |= FSF_HAS_WIDTH;
-        spec->width = 0;
-        do {
-            spec->width = 10 * spec->width + (*(*format++) - '0');
-        } while (**format >= '0' && **format <= '9');
+        unsigned long width = strtoul(*format, (char**)format, 10); /* Always positive because we handled the '-' flag above */
+        spec->width = width > SIZE_MAX ? SIZE_MAX : (size_t)width;
     }
 
     /* Precision */
@@ -1270,11 +1449,18 @@ flags_break:
         spec->flags |= FSF_HAS_PRECISION;
         if (*(++*format) == '*') {
             spec->flags |= FSF_PRECISION_FROM_ARG;
-        } else {
-            spec->precision = 0;
-            while (**format >= '0' && **format <= '9') {
-                spec->precision = 10 * spec->precision + (*(*format++) - '0');
+
+            if (isdigit(**format)) {
+                spec->precision_argpos = strtol(*format, (char**)format, 10);
+                if (spec->precision_argpos > NL_ARGMAX) goto fail;
+                if (*(*format)++ != '$') goto fail;
+            } else {
+                spec->precision_argpos = 0;
             }
+        } else {
+            long precision = strtol(*format, (char**)format, 10);
+            if (precision < 0) spec->flags &= ~FSF_HAS_PRECISION;
+            else spec->precision = (unsigned long)precision > SIZE_MAX ? SIZE_MAX : (size_t)precision;
         }
     }
 
@@ -1319,127 +1505,103 @@ flags_break:
     }
 
     /* Specifier */
-    switch (*(*format++)) {
-    case 'i':
-        spec->flags |= FSF_SIGNED | FSF_ANY_RADIX | FSF_TEXT_INTEGER;
-        if (!(spec->flags & FSF_HAS_PRECISION)) {
-            spec->precision = 1;
-        }
-        return 0;
-    case 'u':
-        spec->flags |= FSF_UNSIGNED | FSF_DECIMAL | FSF_TEXT_INTEGER;
-        if (!(spec->flags & FSF_HAS_PRECISION)) {
-            spec->precision = 1;
-        }
-        return 0;
+    switch (*(*format)++) {
     case 'd':
         spec->flags |= FSF_SIGNED | FSF_DECIMAL | FSF_TEXT_INTEGER;
-        if (!(spec->flags & FSF_HAS_PRECISION)) {
-            spec->precision = 1;
-        }
+        if (!(spec->flags & FSF_HAS_PRECISION)) spec->precision = 1;
+        return 0;
+    case 'i':
+        spec->flags |= FSF_SIGNED | FSF_ANY_RADIX | FSF_TEXT_INTEGER;
+        if (!(spec->flags & FSF_HAS_PRECISION)) spec->precision = 1;
         return 0;
     case 'o':
         spec->flags |= FSF_UNSIGNED | FSF_OCTAL | FSF_TEXT_INTEGER;
-        if (!(spec->flags & FSF_HAS_PRECISION)) {
-            spec->precision = 1;
-        }
+        if (!(spec->flags & FSF_HAS_PRECISION)) spec->precision = 1;
+        return 0;
+    case 'u':
+        spec->flags |= FSF_UNSIGNED | FSF_DECIMAL | FSF_TEXT_INTEGER;
+        if (!(spec->flags & FSF_HAS_PRECISION)) spec->precision = 1;
         return 0;
     case 'x':
         spec->flags |= FSF_UNSIGNED | FSF_HEX_LOWER | FSF_TEXT_INTEGER;
-        if (!(spec->flags & FSF_HAS_PRECISION)) {
-            spec->precision = 1;
-        }
+        if (!(spec->flags & FSF_HAS_PRECISION)) spec->precision = 1;
         return 0;
     case 'X':
         spec->flags |= FSF_UNSIGNED | FSF_HEX_UPPER | FSF_TEXT_INTEGER;
-        if (!(spec->flags & FSF_HAS_PRECISION)) {
-            spec->precision = 1;
-        }
+        if (!(spec->flags & FSF_HAS_PRECISION)) spec->precision = 1;
         return 0;
     case 'f':
+        spec->flags |= FSF_SIGNED | FSF_DECIMAL | FSF_TEXT_FLOAT_LOWER;
+        if (!(spec->flags & FSF_HAS_PRECISION)) spec->precision = 6;
+        return 0;
     case 'F':
-        spec->flags |= FSF_SIGNED | FSF_DECIMAL | FSF_TEXT_FLOAT;
-        if (!(spec->flags & FSF_HAS_PRECISION)) {
-            spec->precision = 6;
-        }
+        spec->flags |= FSF_SIGNED | FSF_DECIMAL | FSF_TEXT_FLOAT_UPPER;
+        if (!(spec->flags & FSF_HAS_PRECISION)) spec->precision = 6;
         return 0;
     case 'e':
         spec->flags |= FSF_SIGNED | FSF_DECIMAL | FSF_TEXT_FLOAT_SCI_LOWER;
-        if (!(spec->flags & FSF_HAS_PRECISION)) {
-            spec->precision = 6;
-        }
+        if (!(spec->flags & FSF_HAS_PRECISION)) spec->precision = 6;
         return 0;
     case 'E':
         spec->flags |= FSF_SIGNED | FSF_DECIMAL | FSF_TEXT_FLOAT_SCI_UPPER;
-        if (!(spec->flags & FSF_HAS_PRECISION)) {
-            spec->precision = 6;
-        }
+        if (!(spec->flags & FSF_HAS_PRECISION)) spec->precision = 6;
         return 0;
     case 'g':
-        spec->flags |= FSF_SIGNED | FSF_DECIMAL | FSF_TEXT_FLOAT_SHORT_LOWER;
-        if (!(spec->flags & FSF_HAS_PRECISION)) {
-            spec->precision = 6;
-        }
+        spec->flags |= FSF_SIGNED | FSF_DECIMAL | FSF_TEXT_FLOAT_FLEX_LOWER;
+        if (!(spec->flags & FSF_HAS_PRECISION)) spec->precision = 6;
         return 0;
     case 'G':
-        spec->flags |= FSF_SIGNED | FSF_DECIMAL | FSF_TEXT_FLOAT_SHORT_UPPER;
-        if (!(spec->flags & FSF_HAS_PRECISION)) {
-            spec->precision = 6;
-        }
+        spec->flags |= FSF_SIGNED | FSF_DECIMAL | FSF_TEXT_FLOAT_FLEX_UPPER;
+        if (!(spec->flags & FSF_HAS_PRECISION)) spec->precision = 6;
         return 0;
     case 'a':
         spec->flags |= FSF_SIGNED | FSF_HEX_LOWER | FSF_TEXT_FLOAT_SCI_LOWER;
-        if (!(spec->flags & FSF_HAS_PRECISION)) {
-            spec->precision = 6;
-        }
+        if (!(spec->flags & FSF_HAS_PRECISION)) spec->precision = 6;
         return 0;
     case 'A':
         spec->flags |= FSF_SIGNED | FSF_HEX_UPPER | FSF_TEXT_FLOAT_SCI_UPPER;
-        if (!(spec->flags & FSF_HAS_PRECISION)) {
-            spec->precision = 6;
-        }
+        if (!(spec->flags & FSF_HAS_PRECISION)) spec->precision = 6;
         return 0;
     case 'c':
         spec->flags |= FSF_UNSIGNED | FSF_TEXT_CHAR;
-        if (!(spec->flags & FSF_HAS_PRECISION)) {
-            spec->precision = 1;
-        }
+        if (!(spec->flags & FSF_HAS_PRECISION)) spec->precision = 1;
+        return 0;
+    case 'C':
+        spec->flags |= FSF_UNSIGNED | FSF_TEXT_CHAR;
+        if (!(spec->flags & FSF_HAS_PRECISION)) spec->precision = 1;
+        if (!(spec->flags & FSF_ARG_TYPE)) spec->flags |= FSF_ARG_LONG;
         return 0;
     case 's':
         spec->flags |= FSF_UNSIGNED | FSF_TEXT_STRING;
-        if (!(spec->flags & FSF_HAS_PRECISION)) {
-            spec->precision = SIZE_MAX;
-        }
+        if (!(spec->flags & FSF_HAS_PRECISION)) spec->precision = SIZE_MAX;
         return 0;
-    case 'p':
-        spec->flags |= FSF_UNSIGNED | FSF_HEX_LOWER | FSF_TEXT_POINTER;
-        if (!(spec->flags & FSF_HAS_PRECISION)) {
-            spec->precision = 1;
-        }
+    case 'S':
+        spec->flags |= FSF_UNSIGNED | FSF_TEXT_STRING;
+        if (!(spec->flags & FSF_HAS_PRECISION)) spec->precision = SIZE_MAX;
+        if (!(spec->flags & FSF_ARG_TYPE)) spec->flags |= FSF_ARG_LONG;
         return 0;
     case '[':
         spec->flags |= FSF_UNSIGNED | FSF_TEXT_SCANSET;
-        if (!(spec->flags & FSF_HAS_PRECISION)) {
-            spec->precision = 1;
-        }
+        if (!(spec->flags & FSF_HAS_PRECISION)) spec->precision = 1;
         return parse_scanset(format, spec);
+    case 'p':
+        spec->flags |= FSF_UNSIGNED | FSF_HEX_LOWER | FSF_TEXT_POINTER;
+        if (!(spec->flags & FSF_HAS_PRECISION)) spec->precision = 1;
+        return 0;
     case 'n':
         spec->flags |= FSF_UNSIGNED | FSF_TEXT_COUNT;
-        if (!(spec->flags & FSF_HAS_PRECISION)) {
-            spec->precision = 0;
-        }
+        if (!(spec->flags & FSF_HAS_PRECISION)) spec->precision = 0;
         return 0;
     case '%':
         spec->flags |= FSF_UNSIGNED | FSF_TEXT_PERCENT;
-        if (!(spec->flags & FSF_HAS_PRECISION)) {
-            spec->precision = 1;
-        }
+        if (!(spec->flags & FSF_HAS_PRECISION)) spec->precision = 1;
         return 0;
-    
-    default:
-        /* Invalid format specification */
-        return 1;
     }
+
+fail:
+    /* Invalid format specification */
+    format = orig_format;
+    return -1;
 }
 
 /*
@@ -1470,6 +1632,149 @@ static int parse_scanset(const char* restrict* restrict format, FormatSpec* rest
         }
     }
     return -1;
+}
+
+/*
+ * If the given format string contains references to positional arguments, fills the given
+ * array with `va_list` objects that can be used to access them. This only works for the
+ * printf() family of functions, since the arguments to the scanf() family are all pointers.
+ *
+ * Returns:
+ * The number of elements initialized on success, or a negative value if the format string is
+ * unusable.
+ */
+long find_positioned_args(const char* restrict format, va_list args, va_list positioned_args[NL_ARGMAX]) {
+    enum Type {
+        TYPE_UNKNOWN,
+        TYPE_INT,
+        TYPE_DOUBLE,
+        TYPE_POINTER,
+        TYPE_LONG,
+        TYPE_WINT,
+        TYPE_LONGLONG,
+        TYPE_INTMAX,
+        TYPE_SIZE,
+        TYPE_PTRDIFF,
+        TYPE_LONGDOUBLE,
+    };
+
+    enum Type positioned_arg_types[NL_ARGMAX];
+    for (size_t i = 0; i < NL_ARGMAX; ++i) {
+        positioned_arg_types[i] = TYPE_UNKNOWN;
+    }
+
+    long last_positioned_argpos = 0; /* 1-based. 0 means no positioned arguments found. */
+    long next_unpositioned_argpos = 0; /* POSIX says mixing positioned and unpositioned arguments is UB. We handle it anyway. */
+
+    /* Determine the type of each positioned argument. */
+    char c;
+    while ((c = *format++)) {
+        if (c != '%') continue;
+
+        FormatSpec spec;
+        if (parse_format_spec(&format, &spec)) continue; /* Try to continue despite the invalid format spec. */
+
+        enum Type type = TYPE_UNKNOWN;
+        switch (spec.flags & FSF_TEXT_TYPE) {
+        case FSF_TEXT_INTEGER:
+            switch (spec.flags & FSF_ARG_TYPE) {
+            case FSF_ARG_LONG:
+                type = TYPE_LONG;
+                break;
+            case FSF_ARG_LONG_LONG:
+                type = TYPE_LONGLONG;
+                break;
+            case FSF_ARG_INTMAX_T:
+                type = TYPE_INTMAX;
+                break;
+            case FSF_ARG_SIZE_T:
+                type = TYPE_SIZE;
+                break;
+            case FSF_ARG_PTRDIFF_T:
+                type = TYPE_PTRDIFF;
+                break;
+            default:
+                type = TYPE_INT;
+                break;
+            }
+            break;
+        case FSF_TEXT_FLOAT_LOWER:
+        case FSF_TEXT_FLOAT_UPPER:
+        case FSF_TEXT_FLOAT_SCI_LOWER:
+        case FSF_TEXT_FLOAT_SCI_UPPER:
+        case FSF_TEXT_FLOAT_FLEX_LOWER:
+        case FSF_TEXT_FLOAT_FLEX_UPPER:
+            type = ((spec.flags & FSF_ARG_TYPE) == FSF_ARG_LONG_DOUBLE) ? TYPE_LONGDOUBLE : TYPE_DOUBLE;
+            break;
+        case FSF_TEXT_CHAR:
+            type = ((spec.flags & FSF_ARG_TYPE) == FSF_ARG_LONG) ? TYPE_WINT : TYPE_INT;
+            break;
+        case FSF_TEXT_STRING:
+        case FSF_TEXT_POINTER:
+        case FSF_TEXT_COUNT:
+            type = TYPE_POINTER;
+            break;
+        case FSF_TEXT_SCANSET:
+        case FSF_TEXT_PERCENT:
+            continue;
+        }
+
+        if (spec.argpos) {
+            positioned_arg_types[spec.argpos - 1] = type;
+            last_positioned_argpos = spec.argpos > last_positioned_argpos ? spec.argpos : last_positioned_argpos;
+        } else {
+            positioned_arg_types[next_unpositioned_argpos++] = type;
+        }
+    }
+
+    if (!last_positioned_argpos) return 0;
+
+    /* Check that we have a type for every positioned argument. */
+    for (long i = 0; i < last_positioned_argpos; ++i) {
+        if (positioned_arg_types[i] == TYPE_UNKNOWN) return -1;
+    }
+
+    /* Make the `va_list` object for each positioned argument. */
+    va_copy(positioned_args[0], args);
+    for (long i = 1; i < last_positioned_argpos; ++i) {
+        va_copy(positioned_args[i], positioned_args[i - 1]);
+        switch (positioned_arg_types[i - 1]) {
+        case TYPE_INT:
+            (void)va_arg(positioned_args[i], int);
+            break;
+        case TYPE_DOUBLE:
+            (void)va_arg(positioned_args[i], double);
+            break;
+        case TYPE_POINTER:
+            (void)va_arg(positioned_args[i], void*);
+            break;
+        case TYPE_LONG:
+            (void)va_arg(positioned_args[i], long);
+            break;
+        case TYPE_WINT:
+            (void)va_arg(positioned_args[i], wint_t);
+            break;
+        case TYPE_LONGLONG:
+            (void)va_arg(positioned_args[i], long long);
+            break;
+        case TYPE_INTMAX:
+            (void)va_arg(positioned_args[i], intmax_t);
+            break;
+        case TYPE_SIZE:
+            (void)va_arg(positioned_args[i], size_t);
+            break;
+        case TYPE_PTRDIFF:
+            (void)va_arg(positioned_args[i], ptrdiff_t);
+            break;
+        case TYPE_LONGDOUBLE:
+            (void)va_arg(positioned_args[i], long double);
+            break;
+        case TYPE_UNKNOWN: /* Unreachable */
+            break;
+        }
+    }
+
+    return last_positioned_argpos;
 }
 
 /*

@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2022 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2019-2024 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -81,6 +81,7 @@ int scanf(const char* format, ...);
 int snprintf(char* _PHOENIX_restrict s, size_t n, const char* _PHOENIX_restrict format, ...);
 int sprintf(char* _PHOENIX_restrict s, const char* _PHOENIX_restrict format, ...);
 int sscanf(const char* _PHOENIX_restrict s, const char* _PHOENIX_restrict format, ...);
+int vdprintf(int fildes, const char* _PHOENIX_restrict format, va_list args);
 int vfprintf(FILE* _PHOENIX_restrict stream, const char* _PHOENIX_restrict format, va_list args);
 int vfscanf(FILE* _PHOENIX_restrict stream, const char* _PHOENIX_restrict format, va_list args);
 int vprintf(const char* format, va_list args);
