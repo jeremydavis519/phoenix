@@ -1,4 +1,4 @@
-/* Copyright (c) 2021-2023 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2021-2024 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -156,6 +156,9 @@ FILE* stdout = &files[1];
 FILE* stderr = &files[2];
 
 
+#define EFAIL(e) do { errno = (e); goto fail; } while (0)
+
+
 /* Operations on files */
 /* TODO 
 int remove(const char* path);
@@ -196,10 +199,7 @@ FILE* fopen(const char* restrict path, const char* restrict mode) {
             if (!files[i].is_open) break;
         }
 
-        if (i == FOPEN_MAX) { /* NB: STREAM_MAX is defined to be equal to FOPEN_MAX. */
-            errno = EMFILE;
-            return NULL;
-        }
+        if (i == FOPEN_MAX) EFAIL(EMFILE); /* NB: STREAM_MAX is defined to be equal to FOPEN_MAX. */
 
         /* Try to claim it before another thread does. */
         if (try_lock_file(files + i)) break;
@@ -210,10 +210,12 @@ FILE* fopen(const char* restrict path, const char* restrict mode) {
 
     unlock_file(files + i);
     return result;
+
+fail:
+    return NULL;
 }
 
 FILE* freopen(const char* restrict path, const char* restrict mode, FILE* restrict stream) {
-#define FAIL(e) do { errno = (e); stream = NULL; goto end; } while (0)
     lock_file(stream);
 
     /* TODO: If a signal is caught during this function, then FAIL(EINTR). */
@@ -224,12 +226,12 @@ FILE* freopen(const char* restrict path, const char* restrict mode, FILE* restri
         errno = 0;
         if (fflush_locked(stream) == EOF && (errno == EINTR || (!path && errno == EBADF))) {
             stream->error = 0;
-            FAIL(errno);
+            EFAIL(errno);
         }
         stream->error = 0;
         stream->eof = 0;
         if (close(stream->fildes) == -1 && (errno == EINTR || (!path && errno == EBADF))) {
-            FAIL(errno);
+            EFAIL(errno);
         }
         errno = old_errno;
     }
@@ -251,7 +253,7 @@ FILE* freopen(const char* restrict path, const char* restrict mode, FILE* restri
             stream->io_mode = IO_WRITE;
             break;
         default:
-            FAIL(EINVAL);
+            EFAIL(EINVAL);
     }
     switch (mode[1]) {
         case '\0':
@@ -266,7 +268,7 @@ FILE* freopen(const char* restrict path, const char* restrict mode, FILE* restri
                     if (mode[3] == '\0') break;
                     /* Intentional fall-through */
                 default:
-                    FAIL(EINVAL);
+                    EFAIL(EINVAL);
             }
             break;
         case '+':
@@ -279,14 +281,14 @@ FILE* freopen(const char* restrict path, const char* restrict mode, FILE* restri
                     if (mode[3] == '\0') break;
                     /* Intentional fall-through */
                 default:
-                    FAIL(EINVAL);
+                    EFAIL(EINVAL);
             }
             break;
         default:
-            FAIL(EINVAL);
+            EFAIL(EINVAL);
     }
 
-    if ((stream->fildes = open(path, oflag)) == -1) goto end;
+    if ((stream->fildes = open(path, oflag)) == -1) goto fail;
     stream->is_open = -1;
 
     stream->path = path;
@@ -300,9 +302,12 @@ FILE* freopen(const char* restrict path, const char* restrict mode, FILE* restri
     stream->buffer_index = 0;
     stream->pushback_index = 0;
 
-end:
     unlock_file(stream);
     return stream;
+
+fail:
+    unlock_file(stream);
+    return NULL;
 }
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/setbuf.html */
@@ -540,7 +545,7 @@ int vsscanf(const char* restrict s, const char* restrict format, va_list args) {
                 }
                 break;
             default: /* Should be unreachable */
-                goto matching_break;
+                EFAIL(EINTERNAL);
             }
             if (radix <= 10) {
                 dec_digits = radix;
@@ -797,6 +802,9 @@ scanset_break:
     }
 matching_break:
     return args_filled; /* TODO: If EOF is reached before any data can be read, return EOF. */
+
+fail:
+    return EOF;
 }
 
 
@@ -830,18 +838,17 @@ int getchar(void) {
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fgets.html */
 char* fgets(char* restrict str, int num, FILE* restrict stream) {
-    if (num == 0) {
-        /* No room in the buffer for even the null terminator */
-        errno = EINVAL;
-        return NULL;
-    }
+    if (num == 0) EFAIL(EINVAL); /* No room in the buffer for even the null terminator */
 
     lock_file(stream);
 
     char* result = str;
 
     /* "If the end-of-file condition is encountered before any bytes are read, the contents of the array pointed to by s shall not be changed." */
-    if (stream->eof) return NULL;
+    if (stream->eof) {
+        result = NULL;
+        goto end;
+    }
 
     while (--num) {
         if (stream->eof) break;
@@ -855,8 +862,12 @@ char* fgets(char* restrict str, int num, FILE* restrict stream) {
     }
     *str = '\0';
 
+end:
     unlock_file(stream);
     return result;
+
+fail:
+    return NULL;
 }
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fputc.html */
@@ -1012,18 +1023,10 @@ int fgetpos(FILE* restrict stream, fpos_t* restrict pos) {
     lock_file(stream);
 
     /* FIXME: If "The file descriptor underlying stream is not valid." */
-    if (false) {
-        unlock_file(stream);
-        errno = EBADF;
-        return -1;
-    }
+    if (false) EFAIL(EBADF);
 
     /* FIXME: If "The file descriptor underlying stream is associated with a pipe, FIFO, or socket." */
-    if (false) {
-        unlock_file(stream);
-        errno = ESPIPE;
-        return -1;
-    }
+    if (false) EFAIL(ESPIPE);
 
     *pos = stream->position;
 
@@ -1033,16 +1036,17 @@ int fgetpos(FILE* restrict stream, fpos_t* restrict pos) {
 
     unlock_file(stream);
     return 0;
+
+fail:
+    unlock_file(stream);
+    return -1;
 }
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fsetpos.html */
 int fsetpos(FILE* stream, const fpos_t* pos) {
     lock_file(stream);
 
-    if (fflush_locked(stream)) {
-        unlock_file(stream);
-        return -1;
-    }
+    if (fflush_locked(stream)) goto fail;
 
     stream->position = *pos;
     stream->pushback_buffer.wc = WEOF;
@@ -1051,6 +1055,10 @@ int fsetpos(FILE* stream, const fpos_t* pos) {
 
     unlock_file(stream);
     return 0;
+
+fail:
+    unlock_file(stream);
+    return -1;
 }
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fseek.html */
@@ -1072,14 +1080,9 @@ int fseeko(FILE* stream, off_t offset, int whence) {
 #define FSEEK_GENERIC(fn_name, offset_t, offset_t_max, offset_t_min) \
 static int fn_name(FILE* stream, offset_t offset, int whence) { \
     /* FIXME: If "The file descriptor underlying `stream` is associated with a pipe, FIFO, or socket." */ \
-    if (false) { \
-        errno = ESPIPE; \
-        return -1; \
-    } \
+    if (false) EFAIL(ESPIPE); \
 \
-    if (fflush_locked(stream)) { \
-        return -1; \
-    } \
+    if (fflush_locked(stream)) goto fail; \
 \
     switch (whence) { \
     case SEEK_SET: \
@@ -1091,8 +1094,7 @@ static int fn_name(FILE* stream, offset_t offset, int whence) { \
             stream->position.offset + offset > offset_t_max \
         ) { \
             /* Seeking beyond the range of an `offset_t` */ \
-            errno = EOVERFLOW; \
-            return -1; \
+            EFAIL(EOVERFLOW); \
         } \
         stream->position.offset += offset; \
         break; \
@@ -1102,15 +1104,13 @@ static int fn_name(FILE* stream, offset_t offset, int whence) { \
             stream->length + offset > offset_t_max \
         ) { \
             /* Seeking beyond the range of a `long` */ \
-            errno = EOVERFLOW; \
-            return -1; \
+            EFAIL(EOVERFLOW); \
         } \
         stream->position.offset = stream->length + offset; \
         break; \
     default: \
         /* Unrecognized seek origin */ \
-        errno = EINVAL; \
-        return -1; \
+        EFAIL(EINVAL); \
     } \
 \
     stream->pushback_buffer.wc = WEOF; \
@@ -1118,6 +1118,9 @@ static int fn_name(FILE* stream, offset_t offset, int whence) { \
     stream->eof = false; \
 \
     return 0; \
+\
+fail: \
+    return -1; \
 }
 
 FSEEK_GENERIC(fseek_locked, long, LONG_MAX, LONG_MIN)
@@ -1128,27 +1131,22 @@ offset_t fn_name(FILE* stream) { \
     lock_file(stream); \
 \
     /* FIXME: If "The file descriptor underlying `stream` is not an open file descriptor." */ \
-    if (false) { \
-        errno = EBADF; \
-        return -1L; \
-    } \
+    if (false) EFAIL(EBADF); \
 \
     /* FIXME: If "The file descriptor underlying `stream` is associated with a pipe, FIFO, or socket." */ \
-    if (false) { \
-        errno = ESPIPE; \
-        return -1L; \
-    } \
+    if (false) EFAIL(ESPIPE); \
 \
     /* Calculate current offset, including buffered writes and calls to unget. */ \
     offset_t offset = stream->position.offset + stream->buffer_index - stream->pushback_index; \
 \
-    if (offset > offset_t_max) { \
-        errno = EOVERFLOW; \
-        return -1L; \
-    } \
+    if (offset > offset_t_max) EFAIL(EOVERFLOW); \
 \
     unlock_file(stream); \
     return offset; \
+\
+fail: \
+    unlock_file(stream); \
+    return -1L; \
 }
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/ftell.html */
