@@ -167,16 +167,16 @@
 #define WORD_BIT                                __INT_WIDTH__
 #define INT_MAX                                 __INT_MAX__
 #define INT_MIN                                 (-INT_MAX - 1)
-#define UINT_MAX                                ((1 << WORD_BIT) - 1)
+#define UINT_MAX                                (-1U)
 
 #define LONG_BIT                                __LONG_WIDTH__
 #define LONG_MAX                                __LONG_MAX__
 #define LONG_MIN                                (-LONG_MAX - 1)
-#define ULONG_MAX                               ((1 << LONG_BIT) - 1)
+#define ULONG_MAX                               (-1UL)
 
 #define LLONG_MAX                               __LONG_LONG_MAX__
 #define LLONG_MIN                               (-LLONG_MAX - 1)
-#define ULLONG_MAX                              ((1 << __LONG_LONG_WIDTH__) - 1)
+#define ULLONG_MAX                              (-1ULL)
 
 #else
 
