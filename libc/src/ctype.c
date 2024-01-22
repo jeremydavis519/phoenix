@@ -1,4 +1,4 @@
-/* Copyright (c) 2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2021-2024 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -16,48 +16,88 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#include <ctype.h>
+#include <locale.h>
+
 /* Character classification functions */
-/* TODO
-int isalnum(int c);
-int isalpha(int c);
-int isblank(int c);
-int iscntrl(int c);
-int isdigit(int c);
-int isgraph(int c); */
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isalnum.html */
+int isalnum(int c) {
+    return isalnum_l(c, uselocale((locale_t)0));
+}
 
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isalpha.html */
+int isalpha(int c) {
+    return isalpha_l(c, uselocale((locale_t)0));
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isascii.html */
+int isascii(int c) {
+    return c >= 0 && c <= 0x7f;
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isblank.html */
+int isblank(int c) {
+    return isblank_l(c, uselocale((locale_t)0));
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/iscntrl.html */
+int iscntrl(int c) {
+    return iscntrl_l(c, uselocale((locale_t)0));
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isdigit.html */
+int isdigit(int c) {
+    return isdigit_l(c, uselocale((locale_t)0));
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isgraph.html */
+int isgraph(int c) {
+    return isgraph_l(c, uselocale((locale_t)0));
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/islower.html */
 int islower(int c) {
-    /* FIXME: This is correct for the default "C" locale, but other locales may differ. */
-    return c >= 'a' && c <= 'z';
+    return islower_l(c, uselocale((locale_t)0));
 }
 
-/* TODO
-int isprint(int c);
-int ispunct(int c); */
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isprint.html */
+int isprint(int c) {
+    return isprint_l(c, uselocale((locale_t)0));
+}
 
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/ispunct.html */
+int ispunct(int c) {
+    return ispunct_l(c, uselocale((locale_t)0));
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isspace.html */
 int isspace(int c) {
-    /* FIXME: This is correct for the default "C" locale, but other locales may differ. */
-    /* ASCII codes 0x20 and 0x09 through 0x0d */
-    return c == ' ' || (c >= '\t' && c <= '\r');
+    return isspace_l(c, uselocale((locale_t)0));
 }
 
-/* TODO
-int isupper(int c);
-int isxdigit(int c); */
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isupper.html */
+int isupper(int c) {
+    return isupper_l(c, uselocale((locale_t)0));
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isxdigit.html */
+int isxdigit(int c) {
+    return isxdigit_l(c, uselocale((locale_t)0));
+}
 
 
 /* Character conversion functions */
-int tolower(int c) {
-    /* FIXME: This is correct for the default "C" locale, but other locales may differ. */
-    if (islower(c)) {
-        return c + ('a' - 'A');
-    }
-    return c;
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/toascii.html */
+int toascii(int c) {
+    return c & 0x7f;
 }
 
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/tolower.html */
+int tolower(int c) {
+    return tolower_l(c, uselocale((locale_t)0));
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/toupper.html */
 int toupper(int c) {
-    /* FIXME: This is correct for the default "C" locale, but other locales may differ. */
-    if (islower(c)) {
-        return c - ('a' - 'A');
-    }
-    return c;
+    return toupper_l(c, uselocale((locale_t)0));
 }
