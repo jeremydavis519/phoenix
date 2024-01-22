@@ -1,4 +1,4 @@
-/* Copyright (c) 2022 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2022-2024 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -75,8 +75,8 @@ typedef void* locale_t;
 
 const locale_t LC_GLOBAL_LOCALE;
 
-locale_t        duplocale(locale_t);
-void            freelocale(locale_t);
+locale_t        duplocale(locale_t locale);
+void            freelocale(locale_t locale);
 struct lconv*   localeconv(void);
 locale_t        newlocale(int category_mask, const char* locale, locale_t base);
 char*           setlocale(int category, const char* locale);
