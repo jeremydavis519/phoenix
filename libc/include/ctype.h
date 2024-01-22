@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2021 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2019-2024 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -23,27 +23,48 @@
 #ifndef __PHOENIX_CTYPE_H
 #define __PHOENIX_CTYPE_H
 
+#include <locale.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /* Character classification functions */
 int isalnum(int c);
+int isalnum_l(int c, locale_t locale);
 int isalpha(int c);
+int isalpha_l(int c, locale_t locale);
+int isascii(int c);
 int isblank(int c);
+int isblank_l(int c, locale_t locale);
 int iscntrl(int c);
+int iscntrl_l(int c, locale_t locale);
 int isdigit(int c);
+int isdigit_l(int c, locale_t locale);
 int isgraph(int c);
+int isgraph_l(int c, locale_t locale);
 int islower(int c);
+int islower_l(int c, locale_t locale);
 int isprint(int c);
+int isprint_l(int c, locale_t locale);
 int ispunct(int c);
+int ispunct_l(int c, locale_t locale);
 int isspace(int c);
+int isspace_l(int c, locale_t locale);
 int isupper(int c);
+int isupper_l(int c, locale_t locale);
 int isxdigit(int c);
+int isxdigit_l(int c, locale_t locale);
 
 /* Character conversion functions */
+int toascii(int c);
 int tolower(int c);
+int tolower_l(int c, locale_t locale);
 int toupper(int c);
+int toupper_l(int c, locale_t locale);
+
+#define _tolower(c) tolower(c)
+#define _toupper(c) toupper(c)
 
 #ifdef __cplusplus
 }
