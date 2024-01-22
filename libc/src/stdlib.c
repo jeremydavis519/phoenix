@@ -1,4 +1,4 @@
-/* Copyright (c) 2021-2022 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2021-2024 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -16,20 +16,162 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#include <ctype.h>
+#include <errno.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <stdnoreturn.h>
 #include <phoenix.h>
 
 /* String conversion */
+static unsigned long long parse_ull(const char* restrict str, size_t i, char** restrict endptr, int base);
+
 /* TODO
+long a64l(const char* s);
+char* l64a(long value);
 double atof(const char* str);
-int atoi(const char* str);
-long int atol(const char* str);
 float strtof(const char* restrict str, char** restrict endptr);
 double strtod(const char* restrict str, char** restrict endptr);
-long strtol(const char* restrict str, char** restrict endptr, int base);
-unsigned long strtoul(const char* restrict str, char** restrict endptr, int base);
-unsigned long long strtoull(const char* restrict str, char** restrict endptr, int base); */
+long double strtold(const char* restrict str, char** restrict endptr); */
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/atoi.html */
+int atoi(const char* str) {
+    return (int)strtol(str, NULL, 10);
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/atol.html */
+long int atol(const char* str) {
+    return strtol(str, NULL, 10);
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/atol.html */
+long long atoll(const char* str) {
+    return strtoll(str, NULL, 10);
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/strtol.html */
+long strtol(const char* restrict str, char** restrict endptr, int base) {
+    long long result = strtoll(str, endptr, base);
+    if (result > (long long)LONG_MAX) {
+        errno = ERANGE;
+        return LONG_MAX;
+    }
+    if (result < (long long)LONG_MIN) {
+        errno = ERANGE;
+        return LONG_MIN;
+    }
+    return (long)result;
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/strtoll.html */
+long long strtoll(const char* restrict str, char** restrict endptr, int base) {
+    size_t i = 0;
+    while (isspace(str[i])) ++i;
+
+    long long sign = 1;
+
+    if (str[i] == '+') ++i;
+    else if (str[i] == '-') {
+        ++i;
+        sign = -1;
+    }
+
+    unsigned long long magnitude = parse_ull(str, i, endptr, base);
+    if (sign == 1 && magnitude > (unsigned long long)LLONG_MAX) {
+        errno = ERANGE;
+        return LLONG_MAX;
+    }
+    /* sign = -1 && magnitude > (unsigned long long)-LLONG_MIN, but guaranteed to work with any signed integer
+     * representation as long as -LLONG_MAX is representable */
+    if (sign == -1 && magnitude > (unsigned long long)LLONG_MAX + (unsigned long long)(-LLONG_MAX - LLONG_MIN)) {
+        errno = ERANGE;
+        return LLONG_MIN;
+    }
+    return sign * magnitude;
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/strtoul.html */
+unsigned long strtoul(const char* restrict str, char** restrict endptr, int base) {
+    unsigned long long result = strtoull(str, endptr, base);
+    if (result > (unsigned long long)ULONG_MAX) {
+        errno = ERANGE;
+        return ULONG_MAX;
+    }
+    return (unsigned long)result;
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/strtoull.html */
+unsigned long long strtoull(const char* restrict str, char** restrict endptr, int base) {
+    size_t i = 0;
+    while (isspace(str[i])) ++i;
+
+    if (str[i] == '+') ++i;
+    else if (str[i] == '-') {
+        ++i;
+        errno = ERANGE; /* This will be overwritten with EINVAL if the parsing fails. */
+        unsigned long long result = parse_ull(str, i, endptr, base);
+        if (errno == ERANGE) return ULLONG_MAX;
+        return result;
+    }
+
+    return parse_ull(str, i, endptr, base);
+}
+
+/* Implements strtoull, except that leading whitespace, '+', or '-' is an error. */
+static unsigned long long parse_ull(const char* restrict str, size_t i, char** restrict endptr, int base) {
+    if (base == 1 || base > 36) {
+        errno = EINVAL;
+        return 0;
+    }
+
+    if (base == 0) {
+        if (str[i] == '0') {
+            if (str[i + 1] == 'x' || str[i + 1] == 'X') {
+                base = 16;
+                i += 2;
+            } else {
+                base = 8;
+            }
+        } else {
+            base = 10;
+        }
+    } else if (base == 16 && str[i] == '0' && (str[i + 1] == 'x' || str[i + 1] == 'X')) {
+        i += 2;
+    }
+
+    unsigned long long value = ULLONG_MAX;
+    if (str[i] >= '0' && str[i] <= '9') value = str[i] - '0';
+    else if (str[i] >= 'A' && str[i] <= 'Z') value = str[i] - 'A' + 10;
+    else if (str[i] >= 'a' && str[i] <= 'z') value = str[i] - 'a' + 10;
+    ++i;
+
+    if ((int)value >= base) {
+        /* The first character in the number is invalid.
+         * "If the subject sequence is empty or does not have the expected form, no conversion shall be performed;
+         * The value of str shall be stored in the object pointed to by endptr, provided that endptr is not a null pointer." */
+        if (endptr) *endptr = (char*)str;
+        errno = EINVAL;
+        return 0;
+    }
+
+    for (;; ++i) {
+        int digit = INT_MAX;
+        if (str[i] >= '0' && str[i] <= '9') digit = str[i] - '0';
+        else if (str[i] >= 'A' && str[i] <= 'Z') value = str[i] - 'A' + 10;
+        else if (str[i] >= 'a' && str[i] <= 'z') value = str[i] - 'a' + 10;
+
+        if (digit >= base) break;
+
+        unsigned long long new_value = value * base + digit;
+
+        /* Saturate at ULLONG_MAX instead of wrapping. */
+        if (new_value >= value) value = new_value;
+        else value = ULLONG_MAX;
+    }
+
+    if (endptr) *endptr = (char*)str + i;
+    return value;
+}
 
 
 /* Pseudorandom number generation */
