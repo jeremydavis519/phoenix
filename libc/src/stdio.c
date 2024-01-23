@@ -136,17 +136,15 @@ struct FILE {
     uint8_t      pushback_index;
 };
 
-static size_t fread_locked(void* restrict buffer, size_t size, size_t count, FILE* restrict stream);
-static int fflush_locked(FILE* stream);
-static int fseek_locked(FILE* stream, long offset, int whence);
-static int fseeko_locked(FILE* stream, off_t offset, int whence);
+static size_t fread_unlocked(void* restrict buffer, size_t size, size_t count, FILE* restrict stream);
+static size_t fwrite_unlocked(const void* restrict buffer, size_t size, size_t count, FILE* restrict stream);
+static int fflush_unlocked(FILE* stream);
+static int fseek_unlocked(FILE* stream, long offset, int whence);
+static int fseeko_unlocked(FILE* stream, off_t offset, int whence);
 
 static int parse_format_spec(const char* restrict* restrict format, FormatSpec* restrict spec);
 static int parse_scanset(const char* restrict* restrict format, FormatSpec* restrict spec);
 static long find_positioned_args(const char* restrict format, va_list args, va_list positioned_args[NL_ARGMAX]);
-static bool try_lock_file(FILE* stream);
-static void lock_file(FILE* stream);
-static void unlock_file(FILE* stream);
 
 static FILE files[FOPEN_MAX] = {0};
 
@@ -161,6 +159,7 @@ FILE* stderr = &files[2];
 
 
 #define EFAIL(e) do { errno = (e); goto fail; } while (0)
+#define UCHAR_TO_CHAR(c) ((int)(c) > CHAR_MAX ? (char)((int)(c) - ((int)UCHAR_MAX + 1)) : (char)(c))
 
 
 /* Operations on files */
@@ -182,13 +181,13 @@ int fflush(FILE* stream) {
         return EOF;
     }
 
-    lock_file(stream);
-    int result = fflush_locked(stream);
-    unlock_file(stream);
+    flockfile(stream);
+    int result = fflush_unlocked(stream);
+    funlockfile(stream);
     return result;
 }
 
-int fflush_locked(FILE* stream) {
+int fflush_unlocked(FILE* stream) {
     /* TODO */
     stream->error = -1;
     return EOF;
@@ -206,13 +205,13 @@ FILE* fopen(const char* restrict path, const char* restrict mode) {
         if (i == FOPEN_MAX) EFAIL(EMFILE); /* NB: STREAM_MAX is defined to be equal to FOPEN_MAX. */
 
         /* Try to claim it before another thread does. */
-        if (try_lock_file(files + i)) break;
+        if (!ftrylockfile(files + i)) break;
     }
 
     /* Open the file. */
     FILE* result = freopen(path, mode, files + i);
 
-    unlock_file(files + i);
+    funlockfile(files + i);
     return result;
 
 fail:
@@ -220,7 +219,7 @@ fail:
 }
 
 FILE* freopen(const char* restrict path, const char* restrict mode, FILE* restrict stream) {
-    lock_file(stream);
+    flockfile(stream);
 
     /* TODO: If a signal is caught during this function, then FAIL(EINTR). */
 
@@ -228,7 +227,7 @@ FILE* freopen(const char* restrict path, const char* restrict mode, FILE* restri
         /* Ignore errors while flushing and closing, except EINTR and (when no path is given) EBADF. */
         int old_errno = errno;
         errno = 0;
-        if (fflush_locked(stream) == EOF && (errno == EINTR || (!path && errno == EBADF))) {
+        if (fflush_unlocked(stream) == EOF && (errno == EINTR || (!path && errno == EBADF))) {
             stream->error = 0;
             EFAIL(errno);
         }
@@ -306,13 +305,18 @@ FILE* freopen(const char* restrict path, const char* restrict mode, FILE* restri
     stream->buffer_index = 0;
     stream->pushback_index = 0;
 
-    unlock_file(stream);
+    funlockfile(stream);
     return stream;
 
 fail:
-    unlock_file(stream);
+    funlockfile(stream);
     return NULL;
 }
+
+/* TODO
+FILE* fdopen(int fildes, const char* mode);
+FILE* fmemopen(void* restrict buf, size_t size, const char* restrict mode);
+FILE* open_memstream(char** bufp, size_t* sizep); */
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/setbuf.html */
 void setbuf(FILE* restrict stream, char* restrict buffer) {
@@ -341,7 +345,7 @@ int setvbuf(FILE* restrict stream, char* restrict buffer, int mode, size_t size)
         }
     }
 
-    lock_file(stream);
+    flockfile(stream);
 
     /* "The setvbuf() function may be used after the stream pointed to by stream is associated with an open file
        but before any other operation (other than an unsuccessful call to setvbuf()) is performed on the stream."
@@ -357,13 +361,44 @@ int setvbuf(FILE* restrict stream, char* restrict buffer, int mode, size_t size)
     stream->buffer_size = size;
     stream->buffer_index = 0;
 
-    unlock_file(stream);
+    funlockfile(stream);
 
     return 0;
 }
 
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fileno.html */
+int fileno(FILE* stream) {
+    flockfile(stream); /* Required by https://pubs.opengroup.org/onlinepubs/9699919799/functions/flockfile.html */
+    int fildes = stream->fildes;
+    funlockfile(stream);
+    if (fildes < 0) EFAIL(EBADF);
+    return fildes;
+
+fail:
+    return -1;
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/flockfile.html */
+void flockfile(FILE* stream) {
+    /* FIXME: POSIX requires this to be a re-entrant lock. */
+    while (atomic_flag_test_and_set_explicit(&stream->lock, memory_order_acq_rel)) {
+        sleep(0);
+    }
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/ftrylockfile.html */
+int ftrylockfile(FILE* stream) {
+    return atomic_flag_test_and_set_explicit(&stream->lock, memory_order_acq_rel);
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/funlockfile.html */
+void funlockfile(FILE* stream) {
+    atomic_flag_clear_explicit(&stream->lock, memory_order_release);
+}
+
 
 /* Formatted input/output */
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/dprintf.html */
 int dprintf(int fildes, const char* restrict format, ...) {
     va_list args;
     va_start(args, format);
@@ -985,9 +1020,10 @@ int fgetc(FILE* stream) {
     return buf[0];
 }
 
-static int fgetc_locked(FILE* stream) {
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/getc_unlocked.html */
+int getc_unlocked(FILE* stream) {
     unsigned char buf[1];
-    if (fread_locked(&buf, 1, 1, stream) < 1) {
+    if (fread_unlocked(&buf, 1, 1, stream) < 1) {
         return EOF;
     }
     return buf[0];
@@ -1003,38 +1039,118 @@ int getchar(void) {
     return fgetc(stdin);
 }
 
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/getchar_unlocked.html */
+int getchar_unlocked(void) {
+    return getc_unlocked(stdin);
+}
+
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fgets.html */
 char* fgets(char* restrict str, int num, FILE* restrict stream) {
     if (num == 0) EFAIL(EINVAL); /* No room in the buffer for even the null terminator */
 
-    lock_file(stream);
-
-    char* result = str;
+    flockfile(stream);
 
     /* "If the end-of-file condition is encountered before any bytes are read, the contents of the array pointed to by s shall not be changed." */
     if (stream->eof) {
-        result = NULL;
+        str = NULL;
         goto end;
     }
 
-    while (--num) {
+    int i = 0;
+    while (i < num - 1) {
         if (stream->eof) break;
-        int c = fgetc_locked(stream);
+        int c = getc_unlocked(stream);
         if (c == EOF) {
-            if (stream->error) result = NULL;
+            if (stream->error || i == 0) {
+                str = NULL;
+                goto end;
+            }
             break;
         }
-        *str++ = (char)c;
+        str[i++] = UCHAR_TO_CHAR(c);
         if (c == '\n') break;
     }
-    *str = '\0';
+    str[i] = '\0';
 
 end:
-    unlock_file(stream);
-    return result;
+    funlockfile(stream);
+    return str;
 
 fail:
     return NULL;
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/gets.html */
+char* gets(char* str) {
+    flockfile(stdin);
+
+    if (stdin->eof) {
+        str = NULL;
+        goto end;
+    }
+
+    int i = 0;
+    for (;;) {
+        if (stdin->eof) break;
+        int c = getchar_unlocked();
+        if (c == EOF) {
+            if (stdin->error || i == 0) {
+                str = NULL;
+                goto end;
+            }
+            break;
+        }
+        if (c == '\n') break;
+        str[i++] = UCHAR_TO_CHAR(c);
+    }
+    str[i] = '\0';
+
+end:
+    funlockfile(stdin);
+    return str;
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/getdelim.html */
+ssize_t getdelim(char** restrict lineptr, size_t* restrict size, int delimiter, FILE* restrict stream) {
+    flockfile(stream);
+
+    if (!lineptr || !size) EFAIL(EINVAL);
+    if (stream->eof) goto eof;
+
+    if (!*size) {
+        *size = 16;
+        if (*lineptr) *lineptr = realloc(*lineptr, *size);
+    }
+    if (!*lineptr) *lineptr = malloc(*size);
+
+    size_t bytes_read = 0;
+    int c;
+    while ((c = getc_unlocked(stream)) != EOF) {
+        if (++bytes_read == *size) {
+            *size *= 2;
+            *lineptr = realloc(*lineptr, *size);
+        }
+        (*lineptr)[bytes_read - 1] = UCHAR_TO_CHAR(c);
+        if (c == delimiter) break;
+    }
+
+    if (c == EOF && (stream->error || (stream->eof && bytes_read == 0))) goto eof;
+
+    (*lineptr)[bytes_read] = '\0';
+
+    funlockfile(stream);
+    return bytes_read;
+
+fail:
+    stream->error = -1;
+eof:
+    funlockfile(stream);
+    return -1;
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/getline.html */
+ssize_t getline(char** restrict lineptr, size_t* restrict size, FILE* restrict stream) {
+    return getdelim(lineptr, size, '\n', stream);
 }
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fputc.html */
@@ -1048,16 +1164,34 @@ int putc(int ch, FILE* stream) {
     return fputc(ch, stream);
 }
 
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/putc_unlocked.html */
+int putc_unlocked(int ch, FILE* stream) {
+    if (fwrite_unlocked(&ch, 1, 1, stream) < 1) return EOF;
+    return ch;
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/putchar.html */
+int putchar(int ch) {
+    return fputc(ch, stdout);
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/putchar_unlocked.html */
+int putchar_unlocked(int ch) {
+    return putc_unlocked(ch, stdout);
+}
+
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fputs.html */
 int fputs(const char* str, FILE* stream) {
-    lock_file(stream);
+    int result = 0;
+
+    flockfile(stream);
 
     if (!stream->buffer_size || stream->buffer_mode == _IONBF) {
         /* The stream is unbuffered, so just send the string. */
-        /* TODO: Implement this, ideally by sending the whole string at once. */
-        unlock_file(stream);
+        /* FIXME: Implement this, ideally by sending the whole string at once. */
         stream->error = -1;
-        return EOF;
+        result = EOF;
+        goto done;
     }
 
     while (*str) {
@@ -1068,33 +1202,32 @@ int fputs(const char* str, FILE* stream) {
         }
 
         /* Flush the buffer before continuing. */
-        if (fflush_locked(stream)) {
-            unlock_file(stream);
-            return EOF;
+        if (fflush_unlocked(stream)) {
+            result = EOF;
+            goto done;
         }
     }
 
 done:
-    unlock_file(stream);
-    return 0;
-}
-
-/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/putchar.html */
-int putchar(int ch) {
-    return fputc(ch, stdout);
+    funlockfile(stream);
+    return result;
 }
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/puts.html */
 int puts(const char* str) {
-    if (fputs(str, stdout) < 0) return EOF;
-    return putchar('\n');
+    flockfile(stdout);
+    int result;
+    if (fputs(str, stdout) < 0) result = EOF;
+    else result = putchar('\n');
+    funlockfile(stdout);
+    return result;
 }
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/ungetc.html */
 int ungetc(int ch, FILE* stream) {
     if (ch == EOF) return EOF; /* Ungetting nothing */
 
-    lock_file(stream);
+    flockfile(stream);
     int result = EOF;
     if (stream->pushback_index == sizeof(stream->pushback_buffer.c)) goto end; /* Buffer already full */
 
@@ -1103,7 +1236,7 @@ int ungetc(int ch, FILE* stream) {
     result = ch;
 
 end:
-    unlock_file(stream);
+    funlockfile(stream);
     return result;
 }
 
@@ -1112,13 +1245,13 @@ end:
 size_t fread(void* restrict buffer, size_t size, size_t count, FILE* restrict stream) {
     if (size == 0 || count == 0) return 0;
 
-    lock_file(stream);
-    size_t result = fread_locked(buffer, size, count, stream);
-    unlock_file(stream);
+    flockfile(stream);
+    size_t result = fread_unlocked(buffer, size, count, stream);
+    funlockfile(stream);
     return result;
 }
 
-size_t fread_locked(void* restrict buffer, size_t size, size_t count, FILE* restrict stream) {
+static size_t fread_unlocked(void* restrict buffer, size_t size, size_t count, FILE* restrict stream) {
     if (size == 0 || count == 0) return 0;
     if (!stream->is_open || !(stream->io_mode & IO_READ)) {
         stream->error = -1;
@@ -1142,9 +1275,14 @@ size_t fread_locked(void* restrict buffer, size_t size, size_t count, FILE* rest
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fwrite.html */
 size_t fwrite(const void* restrict buffer, size_t size, size_t count, FILE* restrict stream) {
-    if (size == 0 || count == 0) return 0;
+    flockfile(stream);
+    size_t result = fwrite_unlocked(buffer, size, count, stream);
+    funlockfile(stream);
+    return result;
+}
 
-    lock_file(stream);
+static size_t fwrite_unlocked(const void* restrict buffer, size_t size, size_t count, FILE* restrict stream) {
+    if (size == 0 || count == 0) return 0;
 
     size_t bytes_remaining = size * count;
     size_t obj_buffer_index = 0;
@@ -1157,7 +1295,7 @@ size_t fwrite(const void* restrict buffer, size_t size, size_t count, FILE* rest
         }
 
         /* Flush the buffer if it's full. */
-        if (stream->buffer_index >= stream->buffer_size && fflush_locked(stream)) {
+        if (stream->buffer_index >= stream->buffer_size && fflush_unlocked(stream)) {
             /* The stream's error flag is already set. */
             break;
         }
@@ -1179,7 +1317,6 @@ size_t fwrite(const void* restrict buffer, size_t size, size_t count, FILE* rest
         bytes_remaining -= bytes_to_write;
     }
 
-    unlock_file(stream);
     return (size * count - bytes_remaining) / size;
 }
 
@@ -1187,7 +1324,7 @@ size_t fwrite(const void* restrict buffer, size_t size, size_t count, FILE* rest
 /* File positioning */
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fgetpos.html */
 int fgetpos(FILE* restrict stream, fpos_t* restrict pos) {
-    lock_file(stream);
+    flockfile(stream);
 
     /* FIXME: If "The file descriptor underlying stream is not valid." */
     if (false) EFAIL(EBADF);
@@ -1201,46 +1338,46 @@ int fgetpos(FILE* restrict stream, fpos_t* restrict pos) {
     pos->offset += stream->buffer_index;
     pos->offset -= stream->pushback_index;
 
-    unlock_file(stream);
+    funlockfile(stream);
     return 0;
 
 fail:
-    unlock_file(stream);
+    funlockfile(stream);
     return -1;
 }
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fsetpos.html */
 int fsetpos(FILE* stream, const fpos_t* pos) {
-    lock_file(stream);
+    flockfile(stream);
 
-    if (fflush_locked(stream)) goto fail;
+    if (fflush_unlocked(stream)) goto fail;
 
     stream->position = *pos;
     stream->pushback_buffer.wc = WEOF;
     stream->pushback_index = 0;
     stream->eof = false;
 
-    unlock_file(stream);
+    funlockfile(stream);
     return 0;
 
 fail:
-    unlock_file(stream);
+    funlockfile(stream);
     return -1;
 }
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fseek.html */
 int fseek(FILE* stream, long offset, int whence) {
-    lock_file(stream);
-    int result = fseek_locked(stream, offset, whence);
-    unlock_file(stream);
+    flockfile(stream);
+    int result = fseek_unlocked(stream, offset, whence);
+    funlockfile(stream);
     return result;
 }
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fseeko.html */
 int fseeko(FILE* stream, off_t offset, int whence) {
-    lock_file(stream);
-    int result = fseeko_locked(stream, offset, whence);
-    unlock_file(stream);
+    flockfile(stream);
+    int result = fseeko_unlocked(stream, offset, whence);
+    funlockfile(stream);
     return result;
 }
 
@@ -1249,7 +1386,7 @@ static int fn_name(FILE* stream, offset_t offset, int whence) { \
     /* FIXME: If "The file descriptor underlying `stream` is associated with a pipe, FIFO, or socket." */ \
     if (false) EFAIL(ESPIPE); \
 \
-    if (fflush_locked(stream)) goto fail; \
+    if (fflush_unlocked(stream)) goto fail; \
 \
     switch (whence) { \
     case SEEK_SET: \
@@ -1290,12 +1427,12 @@ fail: \
     return -1; \
 }
 
-FSEEK_GENERIC(fseek_locked, long, LONG_MAX, LONG_MIN)
-FSEEK_GENERIC(fseeko_locked, off_t, OFF_MAX, OFF_MIN)
+FSEEK_GENERIC(fseek_unlocked, long, LONG_MAX, LONG_MIN)
+FSEEK_GENERIC(fseeko_unlocked, off_t, OFF_MAX, OFF_MIN)
 
 #define FTELL_GENERIC(fn_name, offset_t, offset_t_max) \
 offset_t fn_name(FILE* stream) { \
-    lock_file(stream); \
+    flockfile(stream); \
 \
     /* FIXME: If "The file descriptor underlying `stream` is not an open file descriptor." */ \
     if (false) EFAIL(EBADF); \
@@ -1308,11 +1445,11 @@ offset_t fn_name(FILE* stream) { \
 \
     if (offset > offset_t_max) EFAIL(EOVERFLOW); \
 \
-    unlock_file(stream); \
+    funlockfile(stream); \
     return offset; \
 \
 fail: \
-    unlock_file(stream); \
+    funlockfile(stream); \
     return -1L; \
 }
 
@@ -1324,37 +1461,37 @@ FTELL_GENERIC(ftello, off_t, OFF_MAX)
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/rewind.html */
 void rewind(FILE* stream) {
-    lock_file(stream);
+    flockfile(stream);
 
-    (void)fseek_locked(stream, 0L, SEEK_SET);
+    (void)fseek_unlocked(stream, 0L, SEEK_SET);
     stream->error = false;
 
-    unlock_file(stream);
+    funlockfile(stream);
 }
 
 
 /* Error-handling */
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/clearerr.html */
 void clearerr(FILE* stream) {
-    lock_file(stream);
+    flockfile(stream);
     stream->eof = false;
     stream->error = false;
-    unlock_file(stream);
+    funlockfile(stream);
 }
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/feof.html */
 int feof(FILE* stream) {
-    lock_file(stream);
+    flockfile(stream);
     int result = stream->eof;
-    unlock_file(stream);
+    funlockfile(stream);
     return result;
 }
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/ferror.html */
 int ferror(FILE* stream) {
-    lock_file(stream);
+    flockfile(stream);
     int result = stream->error;
-    unlock_file(stream);
+    funlockfile(stream);
     return result;
 }
 
@@ -1376,6 +1513,15 @@ void perror(const char* s) {
         break;
     }
 }
+
+/* Terminals */
+/* TODO
+char* ctermid(char* s); */
+
+/* Processes */
+/* TODO
+FILE* popen(const char* command, const char* mode);
+int pclose(FILE* stream); */
 
 
 /*
@@ -1775,39 +1921,4 @@ long find_positioned_args(const char* restrict format, va_list args, va_list pos
     }
 
     return last_positioned_argpos;
-}
-
-/*
- * Tries once to lock a file.
- *
- * Parameters:
- * `stream`: The file to try to lock.
- *
- * Returns:
- * `true` if the attempt was successful; `false` if the file was already locked.
- */
-static bool try_lock_file(FILE* stream) {
-    return !atomic_flag_test_and_set_explicit(&stream->lock, memory_order_acq_rel);
-}
-
-/*
- * Locks a file to avoid data races when accessing its contents and position. Blocks if necessary.
- *
- * Parameters:
- * `stream`: The file to lock.
- */
-static void lock_file(FILE* stream) {
-    while (atomic_flag_test_and_set_explicit(&stream->lock, memory_order_acq_rel)) {
-        sleep(0);
-    }
-}
-
-/*
- * Unlocks a previously locked file.
- *
- * Parameters:
- * `stream`: The file to unlock.
- */
-static void unlock_file(FILE* stream) {
-    atomic_flag_clear_explicit(&stream->lock, memory_order_release);
 }
