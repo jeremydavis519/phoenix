@@ -1,4 +1,4 @@
-/* Copyright (c) 2022-2023 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2022-2024 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -75,6 +75,8 @@ static void free_file_descriptor(int fildes) {
     if (fildes < 0 || fildes >= OPEN_MAX) return;
     atomic_store_explicit(&file_descriptions[fildes].type, FDT_NONE, memory_order_release);
 }
+
+ssize_t write_impl(int fildes, const void* buf, size_t nbyte, int use_o_append);
 
 /* TODO
 int          access(const char*, int);
@@ -236,6 +238,7 @@ fail:
     return -1;
 }
 
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/pread.html */
 ssize_t pread(int fildes, void* buf, size_t nbyte, off_t offset) {
     off_t orig_offset = lseek(fildes, 0, SEEK_CUR);
     if (orig_offset == -1) return -1;
@@ -247,13 +250,23 @@ ssize_t pread(int fildes, void* buf, size_t nbyte, off_t offset) {
     return result;
 }
 
-/* TODO
-ssize_t pwrite(int, const void*, size_t, off_t); */
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/pwrite.html */
+ssize_t pwrite(int fildes, const void* buf, size_t nbyte, off_t offset) {
+    off_t orig_offset = lseek(fildes, 0, SEEK_CUR);
+    if (orig_offset == -1) return -1;
 
+    if (lseek(fildes, offset, SEEK_SET) == -1) return -1;
+    ssize_t result = write_impl(fildes, buf, nbyte, 0);
+    if (lseek(fildes, orig_offset, SEEK_SET) == -1) return -1;
+
+    return result;
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/read.html */
 ssize_t read(int fildes, void* buf, size_t nbyte) {
     if (fildes < 0 || fildes >= OPEN_MAX) EFAIL(EBADF);
 
-    if (nbyte > SSIZE_MAX) EFAIL(EINVAL);
+    if (nbyte > SSIZE_MAX) nbyte = SSIZE_MAX;
 
     FileDescription* file_description = &file_descriptions[fildes];
 
@@ -336,5 +349,58 @@ char*        ttyname(int);
 int          ttyname_r(int, char*, size_t);
 int          unlink(const char*);
 int          unlinkat(int, const char*, int);
-ssize_t      write(int, const void*, size_t);
 */
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/write.html */
+ssize_t write(int fildes, const void* buf, size_t nbyte) {
+    return write_impl(fildes, buf, nbyte, 1);
+}
+
+/* Implements the logic of `write` and `pwrite` in one place. */
+ssize_t write_impl(int fildes, const void* buf, size_t nbyte, int use_o_append) {
+    if (fildes < 0 || fildes >= OPEN_MAX) EFAIL(EBADF);
+
+    if (nbyte > SSIZE_MAX) nbyte = SSIZE_MAX;
+
+    FileDescription* file_description = &file_descriptions[fildes];
+
+    FDPipeWriter* pw;
+
+    /* TODO: "If write() is interrupted by a signal..." */
+    /* TODO: "If the O_DSYNC bit has been set, write I/O operations on the file descriptor shall complete as defined by synchronized I/O data integrity completion." */
+    /* TODO: "If the O_SYNC bit has been set, write I/O operations on the file descriptor shall complete as defined by synchronized I/O file integrity completion." */
+
+    ssize_t bytes_written = 0;
+
+    switch (atomic_load_explicit(&file_description->type, memory_order_acquire)) {
+    case FDT_NONE:
+    case FDT_PIPE_READER:
+        EFAIL(EBADF);
+
+    case FDT_PIPE_WRITER:
+        pw = &file_description->pipe_writer;
+        for (;;) {
+            bytes_written = _PHOENIX_pipe_write(pw->writer, buf, nbyte);
+            if (bytes_written == -1) {
+                /* Pipe has no readers. */
+                /* TODO: "A SIGPIPE signal shall also be sent to the thread." */
+                EFAIL(EPIPE);
+            }
+            if (bytes_written == 0) {
+                /* Pipe has readers but is currently full. */
+                if (pw->file_status_flags & O_NONBLOCK) EFAIL(EAGAIN);
+                _PHOENIX_thread_sleep(0); /* Wait for the pipe to clear. */
+            }
+        };
+        break;
+
+    default:
+        /* Unrecognized file descriptor type. This is almost certainly a bug in libc. */
+        EFAIL(EINTERNAL);
+    }
+
+    return bytes_written;
+
+fail:
+    return -1;
+}

@@ -1,4 +1,4 @@
-/* Copyright (c) 2022-2023 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2022-2024 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -61,6 +61,7 @@ int8_t                _PHOENIX_pipe_new(_PHOENIX_PipeReader** _PHOENIX_restrict 
 void                  _PHOENIX_pipe_free_reader(_PHOENIX_PipeReader* reader);
 void                  _PHOENIX_pipe_free_writer(_PHOENIX_PipeWriter* writer);
 ssize_t               _PHOENIX_pipe_read(_PHOENIX_PipeReader* _PHOENIX_restrict reader, char* _PHOENIX_restrict buf, ssize_t count);
+ssize_t               _PHOENIX_pipe_write(_PHOENIX_PipeWriter* _PHOENIX_restrict writer, const char* _PHOENIX_restrict buf, ssize_t count);
 
 #ifdef __cplusplus
 }

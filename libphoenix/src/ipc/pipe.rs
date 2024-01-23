@@ -111,6 +111,22 @@ mod ffi {
             Err(PipeReadError::PipeClosed) => -1,
         }
     }
+
+    /// Writes data with the given pipe writer as if with `O_NONBLOCK` set on the file description.
+    ///
+    /// # Panics
+    /// If the given count is negative or larger than a `usize`.
+    ///
+    /// # Returns
+    /// The number of bytes written, or -1 if the pipe has no readers.
+    #[export_name = "_PHOENIX_pipe_write"]
+    unsafe extern "C" fn pipe_write(writer: *mut PipeWriter, buf: *const u8, count: i64) -> i64 {
+        let buf = slice::from_raw_parts(buf, count.try_into().expect("pipe_write: count doesn't fit in a usize"));
+        match (*writer).write(buf) {
+            Ok(x) => x.try_into().expect("PipeWriter::write claims to have written more bytes than can be requested"),
+            Err(PipeWriteError::NoReaders) => -1,
+        }
+    }
 }
 
 /// A pipe that can send serialized data from one process to another.
