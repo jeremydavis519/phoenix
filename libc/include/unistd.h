@@ -1,4 +1,4 @@
-/* Copyright (c) 2022 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2022-2024 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -328,10 +328,9 @@ extern "C" {
 #endif /* __cplusplus */
 
 #if !defined(__cplusplus) && __STDC_VERSION__ >= 199901L
-/* Use a prefix allowed by POSIX. */
-#define SEEK_restrict restrict
+#define _PHOENIX_restrict restrict
 #else
-#define SEEK_restrict
+#define _PHOENIX_restrict
 #endif /* __cplusplus and __STDC_VERSION__ */
 
 /* Declarations */
@@ -392,8 +391,8 @@ int          pipe(int fildes[2]);
 ssize_t      pread(int fildes, void* buf, size_t nbyte, off_t offset);
 ssize_t      pwrite(int, const void*, size_t, off_t);
 ssize_t      read(int fildes, void* buf, size_t nbyte);
-ssize_t      readlink(const char* SEEK_restrict, char* SEEK_restrict, size_t);
-ssize_t      readlinkat(int, const char* SEEK_restrict, char* SEEK_restrict, size_t);
+ssize_t      readlink(const char* _PHOENIX_restrict, char* _PHOENIX_restrict, size_t);
+ssize_t      readlinkat(int, const char* _PHOENIX_restrict, char* _PHOENIX_restrict, size_t);
 int          rmdir(const char*);
 int          setegid(gid_t);
 int          seteuid(uid_t);
@@ -405,7 +404,7 @@ int          setreuid(uid_t, uid_t);
 pid_t        setsid(void);
 int          setuid(uid_t);
 unsigned int sleep(unsigned int);
-void         swab(const void* SEEK_restrict, void* SEEK_restrict, ssize_t);
+void         swab(const void* _PHOENIX_restrict, void* _PHOENIX_restrict, ssize_t);
 int          symlink(const char*, const char*);
 int          symlinkat(const char*, int, const char*);
 void         sync(void);

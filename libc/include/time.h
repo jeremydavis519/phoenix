@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2022 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2019-2024 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -40,10 +40,9 @@ extern "C" {
 #endif
 
 #if !defined(__cplusplus) && __STDC_VERSION__ >= 199901L
-/* Use a prefix allowed by POSIX. */
-#define tm_restrict restrict
+#define _PHOENIX_restrict restrict
 #else
-#define tm_restrict
+#define _PHOENIX_restrict
 #endif /* __cplusplus and __STDC_VERSION__ */
 
 struct sigevent;
@@ -79,15 +78,15 @@ int         clock_getcpuclockid(pid_t pid, clockid_t* clock_id);
 int         clock_getres(clockid_t clock_id, struct timespec* res);
 int         clock_gettime(clockid_t clock_id, struct timespec* time);
 int         clock_settime(clockid_t clock_id, struct timespec* time);
-int         timer_create(clockid_t clock_id, struct sigevent* tm_restrict event, timer_t* tm_restrict timer_id);
+int         timer_create(clockid_t clock_id, struct sigevent* _PHOENIX_restrict event, timer_t* _PHOENIX_restrict timer_id);
 int         timer_delete(timer_t timer_id);
 int         timer_getoverrun(timer_t timer_id);
 int         timer_gettime(timer_t timer_id, struct itimerspec* value);
 int         timer_settime(
-                timer_t                              timer_id,
-                int                                  flags,
-                const struct itimerspec* tm_restrict value,
-                struct itimerspec* tm_restrict       ovalue
+                timer_t                                    timer_id,
+                int                                        flags,
+                const struct itimerspec* _PHOENIX_restrict value,
+                struct itimerspec* _PHOENIX_restrict       ovalue
             );
 
 /* Time manipulation */
@@ -101,22 +100,22 @@ int         clock_nanosleep(clockid_t clock_id, int flags, const struct timespec
 
 /* Conversion */
 char*       asctime(const struct tm* time);
-char*       asctime_r(const struct tm* tm_restrict time, char* tm_restrict buf);
+char*       asctime_r(const struct tm* _PHOENIX_restrict time, char* _PHOENIX_restrict buf);
 char*       ctime(const time_t* time);
 char*       ctime_r(const time_t* time, char* buf);
 struct tm*  gmtime(const time_t* time);
-struct tm*  gmtime_r(const time_t* tm_restrict time, struct tm* tm_restrict result);
+struct tm*  gmtime_r(const time_t* _PHOENIX_restrict time, struct tm* _PHOENIX_restrict result);
 struct tm*  localtime(const time_t* time);
-struct tm*  localtime_r(const time_t* tm_restrict time, struct tm* tm_restrict result);
-size_t      strftime(char* tm_restrict s, size_t maxsize, const char* tm_restrict format, const struct tm* tm_restrict time);
+struct tm*  localtime_r(const time_t* _PHOENIX_restrict time, struct tm* _PHOENIX_restrict result);
+size_t      strftime(char* _PHOENIX_restrict s, size_t maxsize, const char* _PHOENIX_restrict format, const struct tm* _PHOENIX_restrict time);
 size_t      strftime_l(
-                char* tm_restrict            s,
-                size_t                       maxsize,
-                const char* tm_restrict      format,
-                const struct tm* tm_restrict time,
-                locale_t                     locale
+                char* _PHOENIX_restrict            s,
+                size_t                             maxsize,
+                const char* _PHOENIX_restrict      format,
+                const struct tm* _PHOENIX_restrict time,
+                locale_t                           locale
             );
-char*       strptime(const char* tm_restrict buf, const char* tm_restrict format, struct tm* tm_restrict time);
+char*       strptime(const char* _PHOENIX_restrict buf, const char* _PHOENIX_restrict format, struct tm* _PHOENIX_restrict time);
 
 /* Time zones */
 extern int      daylight;
