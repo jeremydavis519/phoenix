@@ -22,9 +22,24 @@
 #include <stdio.h>
 #include <wchar.h>
 #include "stdiotyp.h"
+#include "stdiomac.h"
 
 #define EFAIL(e) do { errno = (e); goto fail; } while (0)
 #define UCHAR_TO_CHAR(c) ((int)(c) > CHAR_MAX ? (char)((int)(c) - ((int)UCHAR_MAX + 1)) : (char)(c))
+
+/* FIXME: Use the encoding rules associated with the given streams instead of with the current locale.
+ *        From https://pubs.opengroup.org/onlinepubs/9699919799/functions/V2_chap02.html:
+ *        "The wide-character input functions read characters from the stream and convert them to wide
+ *        characters as if they were read by successive calls to the fgetwc() function. Each conversion
+ *        shall occur as if by a call to the mbrtowc() function, with the conversion state described by
+ *        the stream's own mbstate_t object, except the encoding rule associated with the stream is used
+ *        instead of the encoding rule implied by the LC_CTYPE category of the current locale.
+ *        "The wide-character output functions convert wide characters to (possibly multi-byte) characters
+ *        and write them to the stream as if they were written by successive calls to the fputwc()
+ *        function. Each conversion shall occur as if by a call to the wcrtomb() function, with the
+ *        conversion state described by the stream's own mbstate_t object, except the encoding rule
+ *        associated with the stream is used instead of the encoding rule implied by the LC_CTYPE category
+ *        of the current locale." */
 
 /* Input/output (mirroring stdio.h) */
 /* TODO
@@ -32,7 +47,7 @@ FILE* open_wmemstream(wchar_t** bufp, size_t* sizep);
 wint_t fgetwc(FILE* stream);
 wint_t getwc(FILE* stream);
 wint_t getwchar(void);
-wchar_t* fgetws(wchar_t* _PHOENIX_restrict ws, int max_chars, FILE* _PHOENIX_restrict stream); */
+wchar_t* fgetws(wchar_t* restrict ws, int max_chars, FILE* restrict stream); */
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fputwc.html */
 wint_t fputwc(wchar_t wc, FILE* stream) {
@@ -43,14 +58,18 @@ wint_t fputwc(wchar_t wc, FILE* stream) {
 }
 
 wint_t _PHOENIX_fputwc_unlocked(wchar_t wc, FILE* stream) {
+    if (stream->char_width == CW_NARROW) EFAIL(EINVAL);
+    stream->char_width = CW_WIDE;
+
     char buffer[MB_LEN_MAX];
     size_t buffer_len = wcrtomb(buffer, wc, &stream->position.mb_parse_state);
-    if (buffer_len == (size_t)-1) {
-        stream->error = -1;
-        return WEOF;
-    }
-    if (_PHOENIX_fwrite_unlocked(buffer, buffer_len, 1, stream) != 1) return WEOF;
+    if (buffer_len == (size_t)-1) goto fail;
+    if (_PHOENIX_fwrite_unlocked(buffer, buffer_len, 1, stream) != 1) goto fail;
     return wc;
+
+fail:
+    stream->error = -1;
+    return WEOF;
 }
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/putwc.html */
@@ -64,7 +83,7 @@ wint_t putwchar(wchar_t wc) {
 }
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fputws.html */
-int fputws(const wchar_t* _PHOENIX_restrict ws, FILE* _PHOENIX_restrict stream) {
+int fputws(const wchar_t* restrict ws, FILE* restrict stream) {
     flockfile(stream);
     wchar_t wc;
     while ((wc = *ws++)) {
@@ -93,17 +112,17 @@ wint_t towupper(wint_t wc); */
 
 /* String conversion (mirroring stdlib.h) */
 /* TODO
-double wcstod(const wchar_t* _PHOENIX_restrict ws, wchar_t** _PHOENIX_restrict endptr);
-long int wcstol(const wchar_t* _PHOENIX_restrict ws, wchar_t** _PHOENIX_restrict endptr, int base);
-unsigned long int wcstoul(const wchar_t* _PHOENIX_restrict ws, wchar_t** _PHOENIX_restrict endptr, int base);
+double wcstod(const wchar_t* restrict ws, wchar_t** restrict endptr);
+long int wcstol(const wchar_t* restrict ws, wchar_t** restrict endptr, int base);
+unsigned long int wcstoul(const wchar_t* restrict ws, wchar_t** restrict endptr, int base);
 wint_t btowc(int c);
-size_t mbrlen(const char* _PHOENIX_restrict mbc, size_t max_bytes, mbstate_t* _PHOENIX_restrict state);
-size_t mbrtowc(wchar_t* _PHOENIX_restrict wc, const char* mbc, size_t max_bytes, mbstate_t* _PHOENIX_restrict state);
+size_t mbrlen(const char* restrict mbc, size_t max_bytes, mbstate_t* restrict state);
+size_t mbrtowc(wchar_t* restrict wc, const char* mbc, size_t max_bytes, mbstate_t* restrict state);
 int mbsinit(const mbstate_t* state);
-size_t mbsnrtowcs(wchar_t* _PHOENIX_restrict dest, const char** _PHOENIX_restrict src, size_t max_bytes, size_t max_chars, mbstate_t* _PHOENIX_restrict state);
-size_t mbsrtowcs(wchar_t* _PHOENIX_restrict dest, const char** _PHOENIX_restrict src, size_t max_chars, mbstate_t* _PHOENIX_restrict state); */
+size_t mbsnrtowcs(wchar_t* restrict dest, const char** restrict src, size_t max_bytes, size_t max_chars, mbstate_t* restrict state);
+size_t mbsrtowcs(wchar_t* restrict dest, const char** restrict src, size_t max_chars, mbstate_t* restrict state); */
 
-size_t wcrtomb(char* _PHOENIX_restrict mbc, wchar_t wc, mbstate_t* _PHOENIX_restrict state) {
+size_t wcrtomb(char* restrict mbc, wchar_t wc, mbstate_t* restrict state) {
     static char buf[MB_LEN_MAX];
 
     if (!mbc) return wcrtomb(buf, L'\0', state);
@@ -125,39 +144,39 @@ fail:
 
 /* TODO
 int wctob(wint_t wc);
-size_t wcsrtombs(char* _PHOENIX_restrict dest, const wchar_t** _PHOENIX_restrict src, size_t max_bytes, mbstate_t* _PHOENIX_restrict state);
-size_t wcsnrtombs(char* _PHOENIX_restrict dest, const wchar_t** _PHOENIX_restrict src, size_t max_chars, size_t max_bytes, mbstate_t* _PHOENIX_restrict state); */
+size_t wcsrtombs(char* restrict dest, const wchar_t** restrict src, size_t max_bytes, mbstate_t* restrict state);
+size_t wcsnrtombs(char* restrict dest, const wchar_t** restrict src, size_t max_chars, size_t max_bytes, mbstate_t* restrict state); */
 
 /* String manipulation (mirroring string.h) */
 /* TODO
-wchar_t* wcscat(wchar_t* _PHOENIX_restrict dest, const wchar_t* _PHOENIX_restrict src);
+wchar_t* wcscat(wchar_t* restrict dest, const wchar_t* restrict src);
 wchar_t* wcschr(const wchar_t* ws, wchar_t wc);
 int wcscmp(const wchar_t* ws1, const wchar_t* ws2);
 int wcscasecmp(const wchar_t* ws1, const wchar_t* ws2);
 int wcscasecmp_l(const wchar_t* ws1, const wchar_t* ws2, locale_t locale);
 int wcscoll(const wchar_t* ws1, const wchar_t* ws2);
 int wcscoll_l(const wchar_t* ws1, const wchar_t* ws2, locale_t locale);
-wchar_t* wcscpy(wchar_t* _PHOENIX_restrict dest, const wchar_t* _PHOENIX_restrict src);
-wchar_t* wcpcpy(wchar_t* _PHOENIX_restrict dest, const wchar_t* _PHOENIX_restrict src);
+wchar_t* wcscpy(wchar_t* restrict dest, const wchar_t* restrict src);
+wchar_t* wcpcpy(wchar_t* restrict dest, const wchar_t* restrict src);
 wchar_t* wcsdup(const wchar_t* ws);
 size_t wcscspn(const wchar_t* ws1, const wchar_t* ws2);
 size_t wcslen(const wchar_t* ws);
-wchar_t* wcsncat(wchar_t* _PHOENIX_restrict dest, const wchar_t* _PHOENIX_restrict src, size_t max_chars);
+wchar_t* wcsncat(wchar_t* restrict dest, const wchar_t* restrict src, size_t max_chars);
 int wcsncmp(const wchar_t* ws1, const wchar_t* ws2, size_t max_chars);
 int wcsncasecmp(const wchar_t* ws1, const wchar_t* ws2, size_t max_chars);
 int wcsncasecmp_l(const wchar_t* ws1, const wchar_t* ws2, size_t max_chars, locale_t locale);
-wchar_t* wcsncpy(wchar_t* _PHOENIX_restrict dest, const wchar_t* _PHOENIX_restrict src, size_t max_chars);
-wchar_t* wcpncpy(wchar_t _PHOENIX_restrict dest, const wchar_t* _PHOENIX_restrict src, size_t max_chars);
+wchar_t* wcsncpy(wchar_t* restrict dest, const wchar_t* restrict src, size_t max_chars);
+wchar_t* wcpncpy(wchar_t restrict dest, const wchar_t* restrict src, size_t max_chars);
 wchar_t* wcspbrk(const wchar_t* ws1, const wchar_t* ws2);
 wchar_t* wcsrchr(const wchar_t* ws, wchar_t wc);
 size_t wcsspn(const wchar_t* ws1, const wchar_t* ws2);
 wchar_t* wcsstr(const wchar_t* ws1, const wchar_t* ws2);
-wchar_t* wcstok(wchar_t* _PHOENIX_restrict ws, const wchar_t* _PHOENIX_restrict delimiters, wchar_t** _PHOENIX_restrict rest);
-size_t wcsxfrm(wchar_t* _PHOENIX_restrict dest, const wchar_t* _PHOENIX_restrict src, size_t max_chars);
-size_t wcsxfrm_l(wchar_t* _PHOENIX_restrict dest, const wchar_t* _PHOENIX_restrict src, size_t max_chars, locale_t locale);
+wchar_t* wcstok(wchar_t* restrict ws, const wchar_t* restrict delimiters, wchar_t** restrict rest);
+size_t wcsxfrm(wchar_t* restrict dest, const wchar_t* restrict src, size_t max_chars);
+size_t wcsxfrm_l(wchar_t* restrict dest, const wchar_t* restrict src, size_t max_chars, locale_t locale);
 wchar_t* wmemchr(const wchar_t* ptr, wchar_t wc, size_t num);
 int wmemcmp(const wchar_t* ptr1, const wchar_t* ptr2, size_t num);
-wchar_t* wmemcpy(wchar_t* _PHOENIX_restrict dest, const wchar_t* _PHOENIX_restrict src, size_t num);
+wchar_t* wmemcpy(wchar_t* restrict dest, const wchar_t* restrict src, size_t num);
 wchar_t* wmemmove(wchar_t* dest, const wchar_t* src, size_t num);
 wchar_t* wmemset(wchar_t* dest, wchar_t wc, size_t num); */
 

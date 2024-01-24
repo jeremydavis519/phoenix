@@ -1064,6 +1064,9 @@ ssize_t getdelim(char** restrict lineptr, size_t* restrict size, int delimiter, 
 
     flockfile(stream);
 
+    if (stream->char_width == CW_WIDE) EFAIL(EINVAL);
+    stream->char_width = CW_NARROW;
+
     if (!lineptr || !size) EFAIL(EINVAL);
     if (stream->eof) goto eof;
 
@@ -1143,6 +1146,12 @@ int fputs(const char* str, FILE* stream) {
 
     flockfile(stream);
 
+    if (stream->char_width == CW_WIDE) {
+        stream->error = -1;
+        EFAIL(EINVAL);
+    }
+    stream->char_width = CW_NARROW;
+
     if (!stream->buffer_size || stream->buffer_mode == _IONBF) {
         /* The stream is unbuffered, so just send the string. */
         /* FIXME: Implement this, ideally by sending the whole string at once. */
@@ -1166,6 +1175,7 @@ int fputs(const char* str, FILE* stream) {
     }
 
 done:
+fail:
     funlockfile(stream);
     return result;
 }
@@ -1175,7 +1185,7 @@ int puts(const char* str) {
     flockfile(stdout);
     int result;
     if (fputs(str, stdout) < 0) result = EOF;
-    else result = putchar('\n');
+    else result = putchar_unlocked('\n');
     funlockfile(stdout);
     return result;
 }
@@ -1185,14 +1195,22 @@ int ungetc(int ch, FILE* stream) {
     if (ch == EOF) return EOF; /* Ungetting nothing */
 
     flockfile(stream);
+
     int result = EOF;
-    if (stream->pushback_index == sizeof(stream->pushback_buffer.c)) goto end; /* Buffer already full */
+
+    if (stream->char_width == CW_WIDE) {
+        stream->error = -1;
+        EFAIL(EINVAL);
+    }
+    stream->char_width = CW_NARROW;
+
+    if (stream->pushback_index == sizeof(stream->pushback_buffer.c)) goto fail; /* Buffer already full */
 
     stream->pushback_buffer.c[stream->pushback_index++] = ch;
     stream->eof = false;
     result = ch;
 
-end:
+fail:
     funlockfile(stream);
     return result;
 }
@@ -1209,15 +1227,21 @@ size_t fread(void* restrict buffer, size_t size, size_t count, FILE* restrict st
 }
 
 size_t _PHOENIX_fread_unlocked(void* restrict buffer, size_t size, size_t count, FILE* restrict stream) {
+    size_t bytes_read = 0;
+
+    if (stream->char_width == CW_WIDE) {
+        stream->error = -1;
+        EFAIL(EINVAL);
+    }
+    stream->char_width = CW_NARROW;
+
     if (size == 0 || count == 0) return 0;
     if (!stream->is_open || !(stream->io_mode & IO_READ)) {
         stream->error = -1;
-        errno = EBADF;
-        return 0;
+        EFAIL(EBADF);
     }
-    if (stream->eof) return 0;
+    if (stream->eof) goto fail;
 
-    size_t bytes_read = 0;
     size_t total_size = size * count;
 
     size_t pushback_bytes = stream->pushback_index < total_size ? stream->pushback_index : total_size;
@@ -1227,6 +1251,7 @@ size_t _PHOENIX_fread_unlocked(void* restrict buffer, size_t size, size_t count,
 
     bytes_read += read(stream->fildes, buffer, total_size - bytes_read);
 
+fail:
     return bytes_read / size;
 }
 
@@ -1239,9 +1264,15 @@ size_t fwrite(const void* restrict buffer, size_t size, size_t count, FILE* rest
 }
 
 size_t _PHOENIX_fwrite_unlocked(const void* restrict buffer, size_t size, size_t count, FILE* restrict stream) {
+    size_t bytes_remaining = size * count;
+
+    if (stream->char_width == CW_WIDE) {
+        stream->error = -1;
+        EFAIL(EINVAL);
+    }
+
     if (size == 0 || count == 0) return 0;
 
-    size_t bytes_remaining = size * count;
     size_t obj_buffer_index = 0;
     while (bytes_remaining) {
         if (!stream->buffer_size || stream->buffer_mode == _IONBF) {
@@ -1274,6 +1305,7 @@ size_t _PHOENIX_fwrite_unlocked(const void* restrict buffer, size_t size, size_t
         bytes_remaining -= bytes_to_write;
     }
 
+fail:
     return (size * count - bytes_remaining) / size;
 }
 
@@ -1454,7 +1486,9 @@ int ferror(FILE* stream) {
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/perror.html */
 void perror(const char* s) {
-    switch (stderr->char_width) {
+    flockfile(stderr);
+    CharWidth width = stderr->char_width;
+    switch (width) {
     case CW_UNSET:
     case CW_NARROW:
         if (s) {
@@ -1469,6 +1503,8 @@ void perror(const char* s) {
         fwprintf(stderr, L"%s\n", strerror(errno));
         break;
     }
+    stderr->char_width = width;
+    funlockfile(stderr);
 }
 
 /* Terminals */
