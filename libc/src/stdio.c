@@ -136,12 +136,6 @@ struct FILE {
     uint8_t      pushback_index;
 };
 
-static size_t fread_unlocked(void* restrict buffer, size_t size, size_t count, FILE* restrict stream);
-static size_t fwrite_unlocked(const void* restrict buffer, size_t size, size_t count, FILE* restrict stream);
-static int fflush_unlocked(FILE* stream);
-static int fseek_unlocked(FILE* stream, long offset, int whence);
-static int fseeko_unlocked(FILE* stream, off_t offset, int whence);
-
 static int parse_format_spec(const char* restrict* restrict format, FormatSpec* restrict spec);
 static int parse_scanset(const char* restrict* restrict format, FormatSpec* restrict spec);
 static long find_positioned_args(const char* restrict format, va_list args, va_list positioned_args[NL_ARGMAX]);
@@ -182,12 +176,12 @@ int fflush(FILE* stream) {
     }
 
     flockfile(stream);
-    int result = fflush_unlocked(stream);
+    int result = _PHOENIX_fflush_unlocked(stream);
     funlockfile(stream);
     return result;
 }
 
-int fflush_unlocked(FILE* stream) {
+int _PHOENIX_fflush_unlocked(FILE* stream) {
     /* TODO */
     stream->error = -1;
     return EOF;
@@ -227,7 +221,7 @@ FILE* freopen(const char* restrict path, const char* restrict mode, FILE* restri
         /* Ignore errors while flushing and closing, except EINTR and (when no path is given) EBADF. */
         int old_errno = errno;
         errno = 0;
-        if (fflush_unlocked(stream) == EOF && (errno == EINTR || (!path && errno == EBADF))) {
+        if (_PHOENIX_fflush_unlocked(stream) == EOF && (errno == EINTR || (!path && errno == EBADF))) {
             stream->error = 0;
             EFAIL(errno);
         }
@@ -1023,7 +1017,7 @@ int fgetc(FILE* stream) {
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/getc_unlocked.html */
 int getc_unlocked(FILE* stream) {
     unsigned char buf[1];
-    if (fread_unlocked(&buf, 1, 1, stream) < 1) {
+    if (_PHOENIX_fread_unlocked(&buf, 1, 1, stream) < 1) {
         return EOF;
     }
     return buf[0];
@@ -1166,7 +1160,7 @@ int putc(int ch, FILE* stream) {
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/putc_unlocked.html */
 int putc_unlocked(int ch, FILE* stream) {
-    if (fwrite_unlocked(&ch, 1, 1, stream) < 1) return EOF;
+    if (_PHOENIX_fwrite_unlocked(&ch, 1, 1, stream) < 1) return EOF;
     return ch;
 }
 
@@ -1202,7 +1196,7 @@ int fputs(const char* str, FILE* stream) {
         }
 
         /* Flush the buffer before continuing. */
-        if (fflush_unlocked(stream)) {
+        if (_PHOENIX_fflush_unlocked(stream)) {
             result = EOF;
             goto done;
         }
@@ -1246,12 +1240,12 @@ size_t fread(void* restrict buffer, size_t size, size_t count, FILE* restrict st
     if (size == 0 || count == 0) return 0;
 
     flockfile(stream);
-    size_t result = fread_unlocked(buffer, size, count, stream);
+    size_t result = _PHOENIX_fread_unlocked(buffer, size, count, stream);
     funlockfile(stream);
     return result;
 }
 
-static size_t fread_unlocked(void* restrict buffer, size_t size, size_t count, FILE* restrict stream) {
+size_t _PHOENIX_fread_unlocked(void* restrict buffer, size_t size, size_t count, FILE* restrict stream) {
     if (size == 0 || count == 0) return 0;
     if (!stream->is_open || !(stream->io_mode & IO_READ)) {
         stream->error = -1;
@@ -1276,12 +1270,12 @@ static size_t fread_unlocked(void* restrict buffer, size_t size, size_t count, F
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fwrite.html */
 size_t fwrite(const void* restrict buffer, size_t size, size_t count, FILE* restrict stream) {
     flockfile(stream);
-    size_t result = fwrite_unlocked(buffer, size, count, stream);
+    size_t result = _PHOENIX_fwrite_unlocked(buffer, size, count, stream);
     funlockfile(stream);
     return result;
 }
 
-static size_t fwrite_unlocked(const void* restrict buffer, size_t size, size_t count, FILE* restrict stream) {
+size_t _PHOENIX_fwrite_unlocked(const void* restrict buffer, size_t size, size_t count, FILE* restrict stream) {
     if (size == 0 || count == 0) return 0;
 
     size_t bytes_remaining = size * count;
@@ -1295,7 +1289,7 @@ static size_t fwrite_unlocked(const void* restrict buffer, size_t size, size_t c
         }
 
         /* Flush the buffer if it's full. */
-        if (stream->buffer_index >= stream->buffer_size && fflush_unlocked(stream)) {
+        if (stream->buffer_index >= stream->buffer_size && _PHOENIX_fflush_unlocked(stream)) {
             /* The stream's error flag is already set. */
             break;
         }
@@ -1350,7 +1344,7 @@ fail:
 int fsetpos(FILE* stream, const fpos_t* pos) {
     flockfile(stream);
 
-    if (fflush_unlocked(stream)) goto fail;
+    if (_PHOENIX_fflush_unlocked(stream)) goto fail;
 
     stream->position = *pos;
     stream->pushback_buffer.wc = WEOF;
@@ -1368,7 +1362,7 @@ fail:
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fseek.html */
 int fseek(FILE* stream, long offset, int whence) {
     flockfile(stream);
-    int result = fseek_unlocked(stream, offset, whence);
+    int result = _PHOENIX_fseek_unlocked(stream, offset, whence);
     funlockfile(stream);
     return result;
 }
@@ -1376,17 +1370,17 @@ int fseek(FILE* stream, long offset, int whence) {
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fseeko.html */
 int fseeko(FILE* stream, off_t offset, int whence) {
     flockfile(stream);
-    int result = fseeko_unlocked(stream, offset, whence);
+    int result = _PHOENIX_fseeko_unlocked(stream, offset, whence);
     funlockfile(stream);
     return result;
 }
 
 #define FSEEK_GENERIC(fn_name, offset_t, offset_t_max, offset_t_min) \
-static int fn_name(FILE* stream, offset_t offset, int whence) { \
+int fn_name(FILE* stream, offset_t offset, int whence) { \
     /* FIXME: If "The file descriptor underlying `stream` is associated with a pipe, FIFO, or socket." */ \
     if (false) EFAIL(ESPIPE); \
 \
-    if (fflush_unlocked(stream)) goto fail; \
+    if (_PHOENIX_fflush_unlocked(stream)) goto fail; \
 \
     switch (whence) { \
     case SEEK_SET: \
@@ -1427,8 +1421,8 @@ fail: \
     return -1; \
 }
 
-FSEEK_GENERIC(fseek_unlocked, long, LONG_MAX, LONG_MIN)
-FSEEK_GENERIC(fseeko_unlocked, off_t, OFF_MAX, OFF_MIN)
+FSEEK_GENERIC(_PHOENIX_fseek_unlocked, long, LONG_MAX, LONG_MIN)
+FSEEK_GENERIC(_PHOENIX_fseeko_unlocked, off_t, OFF_MAX, OFF_MIN)
 
 #define FTELL_GENERIC(fn_name, offset_t, offset_t_max) \
 offset_t fn_name(FILE* stream) { \
@@ -1463,7 +1457,7 @@ FTELL_GENERIC(ftello, off_t, OFF_MAX)
 void rewind(FILE* stream) {
     flockfile(stream);
 
-    (void)fseek_unlocked(stream, 0L, SEEK_SET);
+    (void)_PHOENIX_fseek_unlocked(stream, 0L, SEEK_SET);
     stream->error = false;
 
     funlockfile(stream);

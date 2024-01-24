@@ -74,6 +74,7 @@ char* tempnam(const char* dir, const char* prefix);
 /* File access */
 int fclose(FILE* stream);
 int fflush(FILE* stream);
+int _PHOENIX_fflush_unlocked(FILE* stream); /* Nonstandard extension */
 FILE* fopen(const char* _PHOENIX_restrict path, const char* _PHOENIX_restrict mode);
 FILE* freopen(const char* _PHOENIX_restrict path, const char* _PHOENIX_restrict mode, FILE* _PHOENIX_restrict stream);
 FILE* fdopen(int fildes, const char* mode);
@@ -125,13 +126,17 @@ int ungetc(int ch, FILE* stream);
 
 /* Direct input/output */
 size_t fread(void* _PHOENIX_restrict buffer, size_t size, size_t count, FILE* _PHOENIX_restrict stream);
+size_t _PHOENIX_fread_unlocked(void* restrict buffer, size_t size, size_t count, FILE* restrict stream); /* Nonstandard extension */
 size_t fwrite(const void* _PHOENIX_restrict buffer, size_t size, size_t count, FILE* _PHOENIX_restrict stream);
+size_t _PHOENIX_fwrite_unlocked(const void* restrict buffer, size_t size, size_t count, FILE* restrict stream); /* Nonstandard extension */
 
 /* File positioning */
 int fgetpos(FILE* _PHOENIX_restrict stream, fpos_t* _PHOENIX_restrict pos);
 int fsetpos(FILE* stream, const fpos_t* pos);
 int fseek(FILE* stream, long offset, int whence);
+int _PHOENIX_fseek_unlocked(FILE* stream, long offset, int whence); /* Nonstandard extension */
 int fseeko(FILE* stream, off_t offset, int whence);
+int _PHOENIX_fseeko_unlocked(FILE* stream, off_t offset, int whence); /* Nonstandard extension */
 long ftell(FILE* stream);
 off_t ftello(FILE* stream);
 void rewind(FILE* stream);
