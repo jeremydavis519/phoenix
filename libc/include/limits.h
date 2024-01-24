@@ -186,7 +186,7 @@
 
 #define SSIZE_MAX                               INT64_MAX
 
-#define MB_LEN_MAX                              4 /* Enough for UTF-8 */
+#define MB_LEN_MAX                              6 /* Enough for UTF-8 */
 
 /* Other invariant values */
 #define NL_ARGMAX                               16

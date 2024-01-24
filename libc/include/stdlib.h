@@ -1,4 +1,4 @@
-/* Copyright (c) 2021-2022 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2021-2024 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -29,7 +29,7 @@
 
 #define EXIT_FAILURE -1
 #define EXIT_SUCCESS 0
-/* TODO: #define MB_CUR_MAX ... (should be the maximum size of a multibyte character in the current locale) */
+#define MB_CUR_MAX 1 /* FIXME: should be the maximum size of a multibyte character in the current locale (e.g. 6 for UTF-8) */
 #define RAND_MAX 65535
 
 #ifdef __cplusplus

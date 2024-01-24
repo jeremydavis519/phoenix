@@ -58,12 +58,15 @@ typedef __UINTPTR_TYPE__        uintptr_t;
 
 /* Limits */
 #define WCHAR_MAX               __WCHAR_MAX__
+#define WCHAR_MIN               __WCHAR_MIN__
 #define WINT_MAX                __WINT_MAX__
+#define WINT_MIN                __WINT_MIN__
 #define SIZE_MAX                __SIZE_MAX__
 #define PTRDIFF_MAX             __PTRDIFF_MAX__
 #define INTMAX_MAX              __INTMAX_MAX__
 #define UINTMAX_MAX             __UINTMAX_MAX__
 #define SIG_ATOMIC_MAX          __SIG_ATOMIC_MAX__
+#define SIG_ATOMIC_MIN          __SIG_ATOMIC_MIN__
 #define INT8_MAX                __INT8_MAX__
 #define INT16_MAX               __INT16_MAX__
 #define INT32_MAX               __INT32_MAX__
@@ -90,9 +93,6 @@ typedef __UINTPTR_TYPE__        uintptr_t;
 #define UINT_FAST64_MAX         __UINT_FAST64_MAX__
 #define INTPTR_MAX              __INTPTR_MAX__
 #define UINTPTR_MAX             __UINTPTR_MAX__
-#define WCHAR_MIN               __WCHAR_MIN__
-#define WINT_MIN                __WINT_MIN__
-#define SIG_ATOMIC_MIN          __SIG_ATOMIC_MIN__
 
 /* Constant initializers */
 #define INT8_C      __INT8_C

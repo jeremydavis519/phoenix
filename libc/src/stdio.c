@@ -21,7 +21,6 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <stdarg.h>
-#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -29,6 +28,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <wchar.h>
+#include "stdiotyp.h"
 
 typedef uint32_t FormatSpecFlags;
 #define FSF_SIGN      0x00001
@@ -89,52 +89,6 @@ typedef struct FormatSpec {
     size_t          width;
     const char*     scanner;
 } FormatSpec;
-
-typedef unsigned int CharWidth;
-#define CW_UNSET    0
-#define CW_NARROW   1
-#define CW_WIDE     2
-
-typedef unsigned int BufferMode;
-/* The variants are _IOFBF, _IOLBF, and _IONBF. */
-
-typedef unsigned int IOMode;
-#define IO_READ    1
-#define IO_WRITE   2
-#define IO_RW      IO_READ | IO_WRITE
-
-struct mbstate_t {
-    /* TODO */
-};
-
-/* FIXME: This has to be defined in stdio.h, or else it'll be an incomplete type in client code. */
-struct fpos_t {
-    off_t     offset;         /* Number of bytes into the file */
-    mbstate_t mb_parse_state; /* State of the multibyte character parser */
-};
-
-struct FILE {
-    int          is_open         : 1;
-    CharWidth    char_width      : 2;
-    BufferMode   buffer_mode     : 2;
-    IOMode       io_mode         : 2;
-    int          eof             : 1;
-    int          error           : 1;
-    int          malloced_buffer : 1;
-    const char*  path;
-    int          fildes;       /* File descriptor */
-    fpos_t       position;
-    off_t        length;
-    char*        buffer;       /* Pointer to buffer being used, or NULL */
-    size_t       buffer_size;
-    size_t       buffer_index; /* Index of next byte to set in the buffer */
-    atomic_flag  lock;
-    union {
-        wint_t wc;
-        char   c[sizeof(wint_t)];
-    }            pushback_buffer;
-    uint8_t      pushback_index;
-};
 
 static int parse_format_spec(const char* restrict* restrict format, FormatSpec* restrict spec);
 static int parse_scanset(const char* restrict* restrict format, FormatSpec* restrict spec);
