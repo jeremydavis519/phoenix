@@ -1060,6 +1060,8 @@ end:
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/getdelim.html */
 ssize_t getdelim(char** restrict lineptr, size_t* restrict size, int delimiter, FILE* restrict stream) {
+    int allocated = 0;
+
     flockfile(stream);
 
     if (!lineptr || !size) EFAIL(EINVAL);
@@ -1067,9 +1069,15 @@ ssize_t getdelim(char** restrict lineptr, size_t* restrict size, int delimiter, 
 
     if (!*size) {
         *size = 16;
-        if (*lineptr) *lineptr = realloc(*lineptr, *size);
+        if (*lineptr) {
+            *lineptr = realloc(*lineptr, *size);
+            allocated = 1;
+        }
     }
-    if (!*lineptr) *lineptr = malloc(*size);
+    if (!*lineptr) {
+        *lineptr = malloc(*size);
+        allocated = 1;
+    }
 
     size_t bytes_read = 0;
     int c;
@@ -1093,6 +1101,7 @@ fail:
     stream->error = -1;
 eof:
     funlockfile(stream);
+    if (allocated) free(*lineptr);
     return -1;
 }
 
