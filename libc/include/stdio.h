@@ -89,20 +89,20 @@ void funlockfile(FILE* stream);
 
 /* Formatted input/output */
 int fprintf(FILE* _PHOENIX_restrict stream, const char* _PHOENIX_restrict format, ...);
-int fscanf(FILE* _PHOENIX_restrict stream, const char* _PHOENIX_restrict format, ...);
 int printf(const char* format, ...);
-int scanf(const char* format, ...);
-int snprintf(char* _PHOENIX_restrict s, size_t n, const char* _PHOENIX_restrict format, ...);
-int sprintf(char* _PHOENIX_restrict s, const char* _PHOENIX_restrict format, ...);
-int sscanf(const char* _PHOENIX_restrict s, const char* _PHOENIX_restrict format, ...);
 int dprintf(int fildes, const char* _PHOENIX_restrict format, ...);
-int vdprintf(int fildes, const char* _PHOENIX_restrict format, va_list args);
+int sprintf(char* _PHOENIX_restrict s, const char* _PHOENIX_restrict format, ...);
+int snprintf(char* _PHOENIX_restrict s, size_t n, const char* _PHOENIX_restrict format, ...);
 int vfprintf(FILE* _PHOENIX_restrict stream, const char* _PHOENIX_restrict format, va_list args);
-int vfscanf(FILE* _PHOENIX_restrict stream, const char* _PHOENIX_restrict format, va_list args);
 int vprintf(const char* format, va_list args);
-int vscanf(const char* format, va_list args);
-int vsnprintf(char* _PHOENIX_restrict s, size_t n, const char* _PHOENIX_restrict format, va_list args);
+int vdprintf(int fildes, const char* _PHOENIX_restrict format, va_list args);
 int vsprintf(char* _PHOENIX_restrict s, const char* _PHOENIX_restrict format, va_list args);
+int vsnprintf(char* _PHOENIX_restrict s, size_t n, const char* _PHOENIX_restrict format, va_list args);
+int fscanf(FILE* _PHOENIX_restrict stream, const char* _PHOENIX_restrict format, ...);
+int scanf(const char* format, ...);
+int sscanf(const char* _PHOENIX_restrict s, const char* _PHOENIX_restrict format, ...);
+int vfscanf(FILE* _PHOENIX_restrict stream, const char* _PHOENIX_restrict format, va_list args);
+int vscanf(const char* format, va_list args);
 int vsscanf(const char* _PHOENIX_restrict s, const char* _PHOENIX_restrict format, va_list args);
 
 /* Character input/output */

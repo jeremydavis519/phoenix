@@ -22,7 +22,6 @@
 #include <stdio.h>
 #include <wchar.h>
 #include "stdiotyp.h"
-#include "stdiomac.h"
 
 #define EFAIL(e) do { errno = (e); goto fail; } while (0)
 #define UCHAR_TO_CHAR(c) ((int)(c) > CHAR_MAX ? (char)((int)(c) - ((int)UCHAR_MAX + 1)) : (char)(c))
@@ -93,15 +92,46 @@ int fputws(const wchar_t* restrict ws, FILE* restrict stream) {
     return 0;
 }
 
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fwprintf.html */
+int fwprintf(FILE* restrict stream, const wchar_t* restrict format, ...) {
+    va_list args;
+    va_start(args, format);
+    int result = vfwprintf(stream, format, args);
+    va_end(args);
+    return result;
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/wprintf.html */
+int wprintf(const wchar_t* format, ...) {
+    va_list args;
+    va_start(args, format);
+    int result = vwprintf(format, args);
+    va_end(args);
+    return result;
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/swprintf.html */
+int swprintf(wchar_t* restrict ws, size_t max_chars, const wchar_t* restrict format, ...) {
+    va_list args;
+    va_start(args, format);
+    int result = vswprintf(ws, max_chars, format, args);
+    va_end(args);
+    return result;
+}
+
+/* vfwprintf defined in stdio.c */
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/vwprintf.html */
+int vwprintf(const wchar_t* format, va_list args) {
+    return vfwprintf(stdout, format, args);
+}
+
+/* vswprintf defined in stdio.c */
+
 /* TODO
-int fwprintf(FILE* _PHOENIX_restrict stream, const wchar_t* _PHOENIX_restrict format, ...);
-int wprintf(const wchar_t* format, ...);
-int vfwprintf(FILE* _PHOENIX_restrict stream, const wchar_t* _PHOENIX_restrict format, va_list arg);
-int vwprintf(const wchar_t* format, va_list arg);
-int swprintf(wchar_t* _PHOENIX_restrict ws, size_t max_chars, const wchar_t* _PHOENIX_restrict format, ...);
-int fwscanf(FILE* _PHOENIX_restrict stream, const wchar_t* _PHOENIX_restrict format, ...);
+int fwscanf(FILE* restrict stream, const wchar_t* restrict format, ...);
 int wscanf(const wchar_t* format, ...);
-int swscanf(const wchar_t* _PHOENIX_restrict ws, const wchar_t* _PHOENIX_restrict format, ...);
+int swscanf(const wchar_t* restrict ws, const wchar_t* restrict format, ...);
 wint_t ungetwc(wint_t wc, FILE* stream);
 int fwide(FILE* stream, int mode); */
 
