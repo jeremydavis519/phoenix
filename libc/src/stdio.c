@@ -94,16 +94,16 @@ static int parse_format_spec(const char* restrict* restrict format, FormatSpec* 
 static int parse_scanset(const char* restrict* restrict format, FormatSpec* restrict spec);
 static long find_positioned_args(const char* restrict format, va_list args, va_list positioned_args[NL_ARGMAX]);
 
-static FILE files[FOPEN_MAX] = {0};
+static FILE streams[FOPEN_MAX] = {0};
 
 
 /* Standard input and output */
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/stdin.html */
-FILE* stdin  = &files[0];
+FILE* stdin  = &streams[0];
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/stdout.html */
-FILE* stdout = &files[1];
+FILE* stdout = &streams[1];
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/stderr.html */
-FILE* stderr = &files[2];
+FILE* stderr = &streams[2];
 
 
 #define EFAIL(e) do { errno = (e); goto fail; } while (0)
@@ -145,21 +145,18 @@ int _PHOENIX_fflush_unlocked(FILE* stream) {
 FILE* fopen(const char* restrict path, const char* restrict mode) {
     /* Find an unused `FILE` object. */
     size_t i;
-    while (true) {
-        for (i = 0; i < FOPEN_MAX; ++i) {
-            if (!files[i].is_open) break;
-        }
-
-        if (i == FOPEN_MAX) EFAIL(EMFILE); /* NB: STREAM_MAX is defined to be equal to FOPEN_MAX. */
-
-        /* Try to claim it before another thread does. */
-        if (!ftrylockfile(files + i)) break;
+    for (i = 0; i < FOPEN_MAX; ++i) {
+        if (ftrylockfile(streams + i)) continue;
+        if (!streams[i].is_open) break;
+        funlockfile(streams + i);
     }
 
-    /* Open the file. */
-    FILE* result = freopen(path, mode, files + i);
+    if (i == FOPEN_MAX) EFAIL(EMFILE); /* NB: STREAM_MAX is defined to be equal to FOPEN_MAX. */
 
-    funlockfile(files + i);
+    /* Open the file. */
+    FILE* result = freopen(path, mode, streams + i);
+
+    funlockfile(streams + i);
     return result;
 
 fail:
