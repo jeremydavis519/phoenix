@@ -125,8 +125,24 @@ int fclose(FILE* stream); */
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fflush.html */
 int fflush(FILE* stream) {
     if (!stream) {
-        /* FIXME: Flush all open streams. */
-        return EOF;
+        /* Flush all open streams.
+         * POSIX isn't clear about whether we need to report any errors in this case, so we'll just
+         * make a best effort and suppress most errors. We do forward EAGAIN and EINTR, though,
+         * since those indicate that at least one stream can still be flushed. */
+        int old_errno = errno;
+        int result = 0;
+        for (int i = 0; i < FOPEN_MAX; ++i) {
+            errno = 0;
+            if (fflush(streams + i)) {
+                if (errno == EAGAIN) {
+                    old_errno = EAGAIN;
+                    result = EOF;
+                }
+                if (errno == EINTR) return EOF;
+            }
+        }
+        errno = old_errno;
+        return result;
     }
 
     flockfile(stream);
@@ -136,9 +152,46 @@ int fflush(FILE* stream) {
 }
 
 int _PHOENIX_fflush_unlocked(FILE* stream) {
-    /* TODO */
-    stream->error = -1;
-    return EOF;
+    if (stream->io_mode & IO_WRITE) {
+        if (!stream->buffer) { /* No buffer to flush */
+            /* FIXME: "[T]he last data modification and last file status change timestamps of the underlying file shall be marked for update." */
+            return 0;
+        }
+
+        if (stream->fildes < 0) {
+            /* FIXME: Handle streams without underlying file descriptors (e.g. those created by `open_memstream`) */
+            errno = EINTERNAL;
+            stream->error = -1;
+            return EOF;
+        }
+
+        /* The usual case: flushing an output stream with an underlying file descriptor. */
+        for (size_t i = 0; i < stream->buffer_index;) {
+            ssize_t bytes_written = write(stream->fildes, stream->buffer + i, stream->buffer_index - i);
+            if (bytes_written < 0) {
+                /* An error occurred. Remove the bytes written so far from the buffer and then abort. */
+                memmove(stream->buffer, stream->buffer + i, (stream->buffer_index - i) * sizeof(*stream->buffer));
+                stream->buffer_index -= i;
+                stream->error = -1;
+                return EOF;
+            }
+            i += bytes_written;
+        }
+        return 0;
+    }
+
+    /* The stream is open for reading. */
+    if (stream->fildes < 0) return 0;
+
+    /* And it has an underlying file description. */
+    /* (I'm choosing to ignore "if the file is not already at EOF". This is still spec-compliant because the spec
+     * says nothing about what to do in the other case.) */
+    if (lseek(stream->fildes, stream->position.offset, SEEK_SET) < 0) {
+        stream->error = -1;
+        return EOF;
+    }
+
+    return 0;
 }
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fopen.html */
