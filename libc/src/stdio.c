@@ -381,20 +381,44 @@ fail:
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/flockfile.html */
 void flockfile(FILE* stream) {
-    /* FIXME: POSIX requires this to be a re-entrant lock. */
-    while (atomic_flag_test_and_set_explicit(&stream->lock, memory_order_acq_rel)) {
+    /* stream->lock_count is 0 if unlocked, 1 if newly acquiring the lock, and greater if stream->lock_owner has been set. */
+    pthread_t tid = pthread_self();
+    size_t count;
+    while (count = 0, !atomic_compare_exchange_strong_explicit(&stream->lock_count, &count, 1, memory_order_acq_rel, memory_order_acquire)) {
+        if (count > 1 && pthread_equal(stream->lock_owner, tid)) {
+            /* This thread already owns the lock. */
+            break;
+        }
         sleep(0);
     }
+    stream->lock_owner = tid;
+    atomic_fetch_add_explicit(&stream->lock_count, 1, memory_order_release);
 }
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/ftrylockfile.html */
 int ftrylockfile(FILE* stream) {
-    return atomic_flag_test_and_set_explicit(&stream->lock, memory_order_acq_rel);
+    /* stream->lock_count is 0 if unlocked, 1 if newly acquiring the lock, and greater if stream->lock_owner has been set. */
+    pthread_t tid = pthread_self();
+    size_t expected = 0;
+    if (!atomic_compare_exchange_strong_explicit(&stream->lock_count, &expected, 1, memory_order_acq_rel, memory_order_acquire)) {
+        if (atomic_load_explicit(&stream->lock_count, memory_order_acquire) > 1 && pthread_equal(stream->lock_owner, tid)) {
+            /* This thread already owns the lock. */
+            goto success;
+        }
+        return -1;
+    }
+success:
+    stream->lock_owner = tid;
+    atomic_fetch_add_explicit(&stream->lock_count, 1, memory_order_release);
+    return 0;
 }
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/funlockfile.html */
 void funlockfile(FILE* stream) {
-    atomic_flag_clear_explicit(&stream->lock, memory_order_release);
+    /* stream->lock_count is 0 if unlocked and 2 or greater if stream->lock_owner has been set. It can't be 1 here. */
+    if (atomic_fetch_sub_explicit(&stream->lock_count, 1, memory_order_acq_rel) == 2) {
+        atomic_store_explicit(&stream->lock_count, 0, memory_order_release);
+    }
 }
 
 

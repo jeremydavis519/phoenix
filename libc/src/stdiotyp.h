@@ -20,6 +20,7 @@
 #define __PHOENIX_STDIOTYP_H
 
 #include <stdatomic.h>
+#include <sys/types.h>
 
 typedef unsigned int CharWidth;
 #define CW_UNSET    0
@@ -59,7 +60,8 @@ struct FILE {
     unsigned char* buffer;       /* Pointer to buffer being used, or NULL */
     size_t         buffer_size;
     size_t         buffer_index; /* Index of next byte to set in the buffer */
-    atomic_flag    lock;
+    atomic_size_t  lock_count;
+    pthread_t      lock_owner;
     union {
         wint_t        wc;
         unsigned char c[sizeof(wint_t)];
