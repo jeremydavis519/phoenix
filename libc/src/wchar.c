@@ -58,12 +58,16 @@ wint_t fputwc(wchar_t wc, FILE* stream) {
 
 wint_t _PHOENIX_fputwc_unlocked(wchar_t wc, FILE* stream) {
     if (stream->char_width == CW_NARROW) EFAIL(EINVAL);
-    stream->char_width = CW_WIDE;
 
     char buffer[MB_LEN_MAX];
     size_t buffer_len = wcrtomb(buffer, wc, &stream->position.mb_parse_state);
     if (buffer_len == (size_t)-1) goto fail;
-    if (_PHOENIX_fwrite_unlocked(buffer, buffer_len, 1, stream) != 1) goto fail;
+
+    stream->char_width = CW_NARROW; /* Makes sure `fwrite` can work. Safe as long as we hold `stream`'s lock. */
+    size_t chars_written = _PHOENIX_fwrite_unlocked(buffer, buffer_len, 1, stream);
+    stream->char_width = CW_WIDE;
+    if (!chars_written) goto fail;
+
     return wc;
 
 fail:
