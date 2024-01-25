@@ -1370,9 +1370,11 @@ int fseeko(FILE* stream, off_t offset, int whence) {
 #define FSEEK_GENERIC(fn_name, offset_t, offset_t_max, offset_t_min) \
 int fn_name(FILE* stream, offset_t offset, int whence) { \
     /* FIXME: If "The file descriptor underlying `stream` is associated with a pipe, FIFO, or socket." */ \
-    if (false) EFAIL(ESPIPE); \
+    if (true) EFAIL(ESPIPE); \
 \
     if (_PHOENIX_fflush_unlocked(stream)) goto fail; \
+\
+    fpos_t old_position = stream->position; \
 \
     switch (whence) { \
     case SEEK_SET: \
@@ -1380,7 +1382,7 @@ int fn_name(FILE* stream, offset_t offset, int whence) { \
         break; \
     case SEEK_CUR: \
         if ( \
-            (stream->position.offset <= offset_t_max && offset > offset_t_max - (long)stream->position.offset) || \
+            (stream->position.offset <= offset_t_max && offset > offset_t_max - (offset_t)stream->position.offset) || \
             stream->position.offset + offset > offset_t_max \
         ) { \
             /* Seeking beyond the range of an `offset_t` */ \
@@ -1390,10 +1392,10 @@ int fn_name(FILE* stream, offset_t offset, int whence) { \
         break; \
     case SEEK_END: \
         if ( \
-            (stream->length <= LONG_MAX && offset > offset_t_max - (long)stream->length) || \
+            (stream->length <= offset_t_max && offset > offset_t_max - (offset_t)stream->length) || \
             stream->length + offset > offset_t_max \
         ) { \
-            /* Seeking beyond the range of a `long` */ \
+            /* Seeking beyond the range of an `offset_t` */ \
             EFAIL(EOVERFLOW); \
         } \
         stream->position.offset = stream->length + offset; \
@@ -1401,6 +1403,13 @@ int fn_name(FILE* stream, offset_t offset, int whence) { \
     default: \
         /* Unrecognized seek origin */ \
         EFAIL(EINVAL); \
+    } \
+\
+    if (stream->fildes >= 0) { \
+        if (lseek(stream->fildes, stream->position.offset, SEEK_SET) < 0) { \
+            stream->position = old_position; \
+            goto fail; \
+        } \
     } \
 \
     stream->pushback_buffer.wc = WEOF; \
