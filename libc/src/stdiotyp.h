@@ -45,26 +45,26 @@ struct fpos_t {
 };
 
 struct FILE {
-    int          is_open         : 1;
-    CharWidth    char_width      : 2;
-    BufferMode   buffer_mode     : 2;
-    IOMode       io_mode         : 2;
-    int          eof             : 1;
-    int          error           : 1;
-    int          malloced_buffer : 1;
-    const char*  path;
-    int          fildes;       /* File descriptor */
-    fpos_t       position;
-    off_t        length;
-    char*        buffer;       /* Pointer to buffer being used, or NULL */
-    size_t       buffer_size;
-    size_t       buffer_index; /* Index of next byte to set in the buffer */
-    atomic_flag  lock;
+    int            is_open         : 1;
+    CharWidth      char_width      : 2;
+    BufferMode     buffer_mode     : 2;
+    IOMode         io_mode         : 2;
+    int            eof             : 1;
+    int            error           : 1;
+    int            malloced_buffer : 1;
+    const char*    path;
+    int            fildes;       /* File descriptor */
+    fpos_t         position;
+    off_t          length;
+    unsigned char* buffer;       /* Pointer to buffer being used, or NULL */
+    size_t         buffer_size;
+    size_t         buffer_index; /* Index of next byte to set in the buffer */
+    atomic_flag    lock;
     union {
-        wint_t wc;
-        char   c[sizeof(wint_t)];
-    }            pushback_buffer;
-    uint8_t      pushback_index;
+        wint_t        wc;
+        unsigned char c[sizeof(wint_t)];
+    }              pushback_buffer;
+    uint8_t        pushback_index;
 };
 
 #endif /* __PHOENIX_STDIOTYP_H */

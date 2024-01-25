@@ -301,7 +301,7 @@ int setvbuf(FILE* restrict stream, char* restrict buffer, int mode, size_t size)
     }
 
     stream->malloced_buffer = malloced_buffer;
-    stream->buffer = buffer;
+    stream->buffer = (unsigned char*)buffer;
     stream->buffer_mode = mode;
     stream->buffer_size = size;
     stream->buffer_index = 0;
@@ -1112,8 +1112,9 @@ ssize_t getline(char** restrict lineptr, size_t* restrict size, FILE* restrict s
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fputc.html */
 int fputc(int ch, FILE* stream) {
-    if (fwrite(&ch, 1, 1, stream) < 1) return EOF;
-    return ch;
+    unsigned char c = ch;
+    if (fwrite(&c, 1, 1, stream) < 1) return EOF;
+    return c;
 }
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/putc.html */
