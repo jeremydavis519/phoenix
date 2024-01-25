@@ -1,4 +1,4 @@
-/* Copyright (c) 2023 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2023-2024 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -63,7 +63,7 @@ fn main() {
             let mut words = line_str.split_whitespace();
             let (Some(word0), Some(word1), Some(word2)) = (words.next(), words.next(), words.next()) else { continue };
             if words.next().is_some() { continue; }
-            if word0 == "#define" {
+            if word0 == "#define" && word2.chars().all(|c| c.is_ascii_digit()) {
                 writeln!(out_file, "{} = {},", word1, word2).unwrap();
             }
         } else {

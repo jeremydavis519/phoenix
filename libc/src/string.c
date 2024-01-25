@@ -212,7 +212,9 @@ char* strerror_l(int errnum, locale_t locale) {
     case ETIME:             return "Stream ioctl() timeout";
     case ETIMEDOUT:         return "Connection timed out";
     case ETXTBSY:           return "Text file busy";
+#if EWOULDBLOCK != EAGAIN
     case EWOULDBLOCK:       return "Operation would block";
+#endif
     case EXDEV:             return "Cross-device link";
     default:
         errno = EINVAL;

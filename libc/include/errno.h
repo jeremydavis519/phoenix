@@ -108,8 +108,8 @@ extern __thread int errno;
 #define ETIME           77
 #define ETIMEDOUT       78
 #define ETXTBSY         79
-#define EWOULDBLOCK     80
-#define EXDEV           81
+#define EWOULDBLOCK     EAGAIN
+#define EXDEV           80
 
 #define EINTERNAL       -1 /* Indicates an internal error in a system library. Ideally, client code should never see this. */
 
