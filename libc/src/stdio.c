@@ -1557,10 +1557,18 @@ void perror(const char* s) {
         fprintf(stderr, "%s\n", strerror(errno));
         break;
     case CW_WIDE:
+        /* We could use wide string literals here (e.g. `fwprintf(L"%s: ", s)`), but those are theoretically
+         * non-portable, as the locale used is defined by the compiler. But POSIX says, "The wide-character
+         * value for each member of the portable character set shall equal its value when used as the lone
+         * character in an integer character constant"
+         * (https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap06.html#tag_06_03).
+         * So, for printable ASCII, we can safely cast regular character literals to wide characters. */
         if (s) {
-            fwprintf(stderr, L"%s: ", s);
+            wchar_t format[] = {'%', 's', ':', ' ', '\0'};
+            fwprintf(stderr, format, s);
         }
-        fwprintf(stderr, L"%s\n", strerror(errno));
+        wchar_t format[] = {'%', 's', '\n', '\0'};
+        fwprintf(stderr, format, strerror(errno));
         break;
     }
     stderr->char_width = width;

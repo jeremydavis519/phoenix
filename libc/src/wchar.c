@@ -125,7 +125,7 @@ size_t mbsrtowcs(wchar_t* restrict dest, const char** restrict src, size_t max_c
 size_t wcrtomb(char* restrict mbc, wchar_t wc, mbstate_t* restrict state) {
     static char buf[MB_LEN_MAX];
 
-    if (!mbc) return wcrtomb(buf, L'\0', state);
+    if (!mbc) return wcrtomb(buf, 0, state);
 
     /* FIXME: For non-POSIX locales (e.g. ones that support UTF-8), encode the wide character as a byte stream correctly. */
 
