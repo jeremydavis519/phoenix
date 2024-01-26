@@ -33,9 +33,10 @@ extern "C" {
 #define _PHOENIX_restrict
 #endif /* __cplusplus and __STDC_VERSION__ */
 
-void                  _PHOENIX_thread_exit(int32_t status);
+void                  _PHOENIX_thread_exit(void* result);
 void                  _PHOENIX_thread_sleep(uint64_t nanoseconds);
 size_t                _PHOENIX_thread_spawn(void (*entry_point)(void*), void* argument, uint8_t priority, size_t stack_size);
+size_t                _PHOENIX_thread_id(void);
 
 void                  _PHOENIX_process_exit(int32_t status);
 

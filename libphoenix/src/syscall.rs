@@ -23,7 +23,9 @@ use {
     alloc::vec::Vec,
     core::{
         arch::asm,
+        ffi::c_void,
         mem::{self, MaybeUninit},
+        ptr,
     },
     hashbrown::HashSet,
     crate::{
@@ -42,7 +44,7 @@ const DEFAULT_PRIORITY: u8 = 10;
 #[cfg(not(feature = "kernelspace"))]
 /// Ends the currently running thread with the given status.
 ///
-/// This function is exactly equivalent to [`process_exit`] if the process has only one running
+/// This function is exactly equivalent to `[process_exit](0)` if the process has only one running
 /// thread.
 ///
 /// # Returns
@@ -53,21 +55,21 @@ const DEFAULT_PRIORITY: u8 = 10;
 /// fn main() {
 ///     let child_thread = thread_spawn(do_work, priority, stack_size);
 ///     let status = child_thread.join();
-///     assert_eq!(status, 42);
+///     assert_eq!(status, ptr::null_mut());
 /// }
 ///
 /// fn do_work() {
-///     thread_exit(42);
+///     thread_exit(ptr::null_mut());
 ///     # #[allow(dead_code)]
 ///     panic!("This line will never be reached.");
 /// }
 /// ```
 #[export_name = "_PHOENIX_thread_exit"]
-pub extern "C" fn thread_exit(status: i32) -> ! {
+pub extern "C" fn thread_exit(result: *mut c_void) -> ! {
     unsafe {
         asm!(
             "svc 0x0000",
-            in("x2") status as usize,
+            in("x2") result.addr(),
             options(nomem, nostack, preserves_flags, noreturn),
         );
     }
@@ -106,39 +108,53 @@ pub extern "C" fn thread_sleep(nanoseconds: u64) {
 /// way to call it.
 ///
 /// # Returns
-/// The thread's handle.
+/// The thread's ID.
 pub(crate) fn thread_spawn(entry_point: fn(), priority: u8, stack_size: usize) -> usize {
-    thread_spawn_ffi(call_rust_abi, entry_point as usize, priority, stack_size)
+    thread_spawn_ffi(call_rust_abi, entry_point as *mut c_void, priority, stack_size)
 }
 
 #[cfg(not(feature = "kernelspace"))]
-#[export_name = "thread_spawn"]
+#[export_name = "_PHOENIX_thread_spawn"]
 extern "C" fn thread_spawn_ffi(
-    entry_point: extern "C" fn(usize) -> !,
-    argument: usize,
+    entry_point: extern "C" fn(*mut c_void) -> !,
+    argument: *mut c_void,
     priority: u8,
     stack_size: usize,
 ) -> usize {
-    let handle: usize;
+    let tid: usize;
     unsafe {
         asm!(
             "svc 0x0002",
             in("x2") entry_point as usize,
-            in("x3") argument,
+            in("x3") argument.addr(),
             in("x4") priority,
             in("x5") stack_size,
-            lateout("x0") handle,
+            lateout("x0") tid,
             options(nomem, nostack, preserves_flags),
         );
     }
-    handle
+    tid
 }
 
 #[cfg(not(feature = "kernelspace"))]
-extern "C" fn call_rust_abi(f: usize) -> ! {
+extern "C" fn call_rust_abi(f: *mut c_void) -> ! {
     let f = unsafe { mem::transmute::<_, fn()>(f) };
     f();
-    thread_exit(0);
+    thread_exit(ptr::null_mut());
+}
+
+#[cfg(not(feature = "kernelspace"))]
+#[export_name = "_PHOENIX_thread_id"]
+extern "C" fn thread_id() -> usize {
+    let tid: usize;
+    unsafe {
+        asm!(
+            "svc 0x0003",
+            lateout("x0") tid,
+            options(nomem, nostack, preserves_flags),
+        );
+    }
+    tid
 }
 
 #[cfg(not(feature = "kernelspace"))]
@@ -270,7 +286,7 @@ pub fn device_claim(name: &str) -> usize {
 }
 
 #[cfg(not(feature = "kernelspace"))]
-#[export_name = "device_claim"]
+#[export_name = "_PHOENIX_device_claim"]
 extern "C" fn device_claim_ffi(name: *const u8, len: usize) -> usize {
     let device_addr: usize;
     unsafe {

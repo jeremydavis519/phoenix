@@ -31,7 +31,7 @@ use {
 #[cold]
 fn panic_handler(panic_info: &PanicInfo) -> ! {
     let _ = write!(PanicWriter, "Unexpected error: {}\n", panic_info);
-    syscall::thread_exit(255) // TODO: Use a named constant for the exit status.
+    syscall::process_exit(255) // TODO: Use a named constant for the exit status.
 }
 
 // TODO: Get rid of this temporary writer.

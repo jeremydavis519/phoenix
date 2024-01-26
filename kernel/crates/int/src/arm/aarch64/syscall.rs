@@ -91,6 +91,7 @@ pub(super) fn handle_system_call(
         Ok(SystemCall::Thread_Exit)  => thread_exit(thread, arg1),
         Ok(SystemCall::Thread_Sleep) => thread_sleep(thread, arg1),
         Ok(SystemCall::Thread_Spawn) => thread_spawn(thread, arg1, arg2, arg3, arg4, result1),
+        Ok(SystemCall::Thread_ID) => thread_id(thread, result1),
 
         Ok(SystemCall::Process_Exit) => process_exit(thread, arg1),
         Ok(SystemCall::Process_Spawn) => process_spawn(thread, arg1, arg2, arg3, arg4, result),
@@ -129,6 +130,7 @@ ffi_enum! {
         Thread_Exit             = 0x0000,
         Thread_Sleep            = 0x0001,
         Thread_Spawn            = 0x0002,
+        Thread_ID               = 0x0003,
 
         Process_Exit            = 0x0100,
         Process_Spawn           = 0x0101,
@@ -187,7 +189,7 @@ fn thread_spawn(
         argument:       usize,
         mut priority:   usize,
         max_stack_size: usize,
-        mut handle: Volatile<&mut usize, WriteOnly>,
+        mut tid: Volatile<&mut usize, WriteOnly>,
 ) -> Response {
     profiler_probe!(=> ENTRANCE);
     let parent_thread = thread.expect("attempted to spawn a new kernel thread");
@@ -206,11 +208,22 @@ fn thread_spawn(
         max_stack_size,
         priority.try_into().unwrap_or(u8::max_value()),
     ) else {
-        handle.write(0);
+        tid.write(0);
         return Response::eret();
     };
-    handle.write(thread.id());
+    tid.write(thread.id());
     scheduler::enqueue_thread(thread);
+
+    profiler_probe!(ENTRANCE);
+    Response::eret()
+}
+
+// Returns the calling thread's ID.
+fn thread_id(thread: Option<&mut Thread<File>>, mut tid: Volatile<&mut usize, WriteOnly>) -> Response {
+    profiler_probe!(=> ENTRANCE);
+    let thread = thread.expect("kernel thread attempted to get its ID");
+
+    tid.write(thread.id());
 
     profiler_probe!(ENTRANCE);
     Response::eret()

@@ -54,19 +54,21 @@ typedef uint32_t gid_t;
 typedef uint32_t uid_t;
 typedef int64_t pid_t;
 
-typedef void* pthread_attr_t; /* FIXME: Use a proper type. */
-/* TODO
-typedef  pthread_barrier_t;
-typedef  pthread_barrierattr_t;
-typedef  pthread_cond_t;
-typedef  pthread_condattr_t;
-typedef  pthread_key_t;
-typedef  pthread_mutex_t;
-typedef  pthread_mutexattr_t;
-typedef  pthread_once_t;
-typedef  pthread_rwlock_t;
-typedef  pthread_rwlockattr_t;
-typedef  pthread_spinlock_t; */
-typedef size_t pthread_t;
+typedef struct pthread_attr_t pthread_attr_t;
+typedef struct pthread_barrier_t pthread_barrier_t;
+typedef struct pthread_barrierattr_t pthread_barrierattr_t;
+typedef struct pthread_cond_t pthread_cond_t;
+typedef struct pthread_condattr_t pthread_condattr_t;
+typedef struct pthread_key_t pthread_key_t;
+typedef struct pthread_mutex_t pthread_mutex_t;
+typedef struct pthread_mutexattr_t pthread_mutexattr_t;
+typedef struct pthread_once_t pthread_once_t;
+typedef struct pthread_rwlock_t pthread_rwlock_t;
+typedef struct pthread_rwlockattr_t pthread_rwlockattr_t;
+typedef struct pthread_spinlock_t pthread_spinlock_t;
+typedef struct pthread_t {
+    size_t id;
+} pthread_t;
+
 
 #endif /* __PHOENIX_SYS_TYPES_H */
