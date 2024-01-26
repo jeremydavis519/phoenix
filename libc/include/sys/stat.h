@@ -48,10 +48,10 @@ struct stat {
     blkcnt_t        st_blocks;
 };
 
-/* For compatibility with earlier version of POSIX */
-#define st_atim st_atim.tv_sec
-#define st_mtim st_mtim.tv_sec
-#define st_ctim st_ctim.tv_sec
+/* For compatibility with earlier versions of POSIX */
+#define st_atime st_atim.tv_sec
+#define st_mtime st_mtim.tv_sec
+#define st_ctime st_ctim.tv_sec
 
 /* Values for `mode_t` file types */
 #define S_IFMT   0x7000
