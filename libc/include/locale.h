@@ -81,5 +81,6 @@ struct lconv*   localeconv(void);
 locale_t        newlocale(int category_mask, const char* locale, locale_t base);
 char*           setlocale(int category, const char* locale);
 locale_t        uselocale(locale_t newloc);
+locale_t        _PHOENIX_uselocale(locale_t newloc);
 
 #endif /* __PHOENIX_LOCALE_H */

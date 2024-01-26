@@ -38,8 +38,8 @@ typedef uint16_t mode_t;
 typedef uint64_t nlink_t;
 
 typedef int64_t off_t;
-#define OFF_MIN INT64_MIN
-#define OFF_MAX INT64_MAX
+#define OFF_MIN _PHOENIX_INT64_MIN
+#define OFF_MAX _PHOENIX_INT64_MAX
 
 typedef int64_t ssize_t;
 

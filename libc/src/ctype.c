@@ -93,11 +93,17 @@ int toascii(int c) {
 }
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/tolower.html */
+#undef tolower
 int tolower(int c) {
     return tolower_l(c, uselocale((locale_t)0));
 }
 
+/* to_lower_l defined in locale.c */
+
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/toupper.html */
+#undef toupper
 int toupper(int c) {
     return toupper_l(c, uselocale((locale_t)0));
 }
+
+/* to_upper_l defined in locale.c */

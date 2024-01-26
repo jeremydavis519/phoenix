@@ -150,19 +150,19 @@
 
 #define CHAR_BIT                                __CHAR_BIT__
 #define SCHAR_MAX                               __SCHAR_MAX__
-#define SCHAR_MIN                               (-SCHAR_MAX - 1)
-#define UCHAR_MAX                               ((1 << CHAR_BIT) - 1)
+#define SCHAR_MIN                               (-__SCHAR_MAX__ - 1)
+#define UCHAR_MAX                               ((unsigned char)-1)
 #ifdef __CHAR_UNSIGNED__
-#define CHAR_MAX                                UCHAR_MAX
+#define CHAR_MAX                                ((unsigned char)-1)
 #define CHAR_MIN                                0
 #else
-#define CHAR_MAX                                SCHAR_MAX
-#define CHAR_MIN                                SCHAR_MIN
+#define CHAR_MAX                                __SCHAR_MAX__
+#define CHAR_MIN                                (-__SCHAR_MAX__ - 1)
 #endif
 
 #define SHRT_MAX                                __SHRT_MAX__
-#define SHRT_MIN                                (-SHRT_MAX - 1)
-#define USHRT_MAX                               ((1 << __SHRT_WIDTH__) - 1)
+#define SHRT_MIN                                (-__SHRT_MAX__ - 1)
+#define USHRT_MAX                               ((unsigned short)-1)
 
 #define WORD_BIT                                __INT_WIDTH__
 #define INT_MAX                                 __INT_MAX__
@@ -178,13 +178,13 @@
 #define LLONG_MIN                               (-LLONG_MAX - 1)
 #define ULLONG_MAX                              (-1ULL)
 
+#define SSIZE_MAX                               __INT64_MAX__
+
 #else
 
 #error "limits.h currently requires GCC."
 
 #endif /* __GNUC__ */
-
-#define SSIZE_MAX                               INT64_MAX
 
 #define MB_LEN_MAX                              6 /* Enough for UTF-8 */
 

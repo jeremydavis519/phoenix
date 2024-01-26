@@ -389,6 +389,8 @@ locale_t uselocale(locale_t newloc) {
     return old;
 }
 
+locale_t _PHOENIX_uselocale(locale_t newloc) __attribute__((alias("uselocale")));
+
 
 /* Functions defined in ctype.h */
 #define DEFINE_CTYPE_IS(class) \
@@ -407,7 +409,9 @@ int to##class##_l(int c, locale_t locale) { \
         if ((unsigned char)ctype->to##class##_from[i] == c) return (unsigned char)ctype->to##class##_to[i]; \
     } \
     return c; \
-}
+} \
+\
+int _PHOENIX_to##class##_l(int c, locale_t locale) __attribute__((alias("to" #class "_l")));
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isalnum_l.html */
 int isalnum_l(int c, locale_t locale) {
@@ -448,7 +452,9 @@ DEFINE_CTYPE_IS(upper)
 DEFINE_CTYPE_IS(xdigit)
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/tolower_l.html */
+#undef tolower_l
 DEFINE_CTYPE_TO(lower)
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/toupper_l.html */
+#undef toupper_l
 DEFINE_CTYPE_TO(upper)

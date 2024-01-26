@@ -54,22 +54,30 @@ struct stat {
 #define st_ctime st_ctim.tv_sec
 
 /* Values for `mode_t` file types */
-#define S_IFMT   0x7000
-#define S_IFBLK  0x1000
-#define S_IFCHR  0x2000
-#define S_IFIFO  0x3000
-#define S_IFREG  0x4000
-#define S_IFDIR  0x5000
-#define S_IFLNK  0x6000
-#define S_IFSOCK 0x7000
+#define _PHOENIX_S_IFMT   0x7000
+#define S_IFMT   _PHOENIX_S_IFMT
+#define _PHOENIX_S_IFBLK  0x1000
+#define S_IFBLK  _PHOENIX_S_IFBLK
+#define _PHOENIX_S_IFCHR  0x2000
+#define S_IFCHR  _PHOENIX_S_IFCHR
+#define _PHOENIX_S_IFIFO  0x3000
+#define S_IFIFO  _PHOENIX_S_IFIFO
+#define _PHOENIX_S_IFREG  0x4000
+#define S_IFREG  _PHOENIX_S_IFREG
+#define _PHOENIX_S_IFDIR  0x5000
+#define S_IFDIR  _PHOENIX_S_IFDIR
+#define _PHOENIX_S_IFLNK  0x6000
+#define S_IFLNK  _PHOENIX_S_IFLNK
+#define _PHOENIX_S_IFSOCK 0x7000
+#define S_IFSOCK _PHOENIX_S_IFSOCK
 
-#define S_ISBLK(m)  (((m) & S_IFMT) == S_IFBLK)
-#define S_ISCHR(m)  (((m) & S_IFMT) == S_IFCHR)
-#define S_ISFIFO(m) (((m) & S_IFMT) == S_IFIFO)
-#define S_ISREG(m)  (((m) & S_IFMT) == S_IFREG)
-#define S_ISDIR(m)  (((m) & S_IFMT) == S_IFDIR)
-#define S_ISLNK(m)  (((m) & S_IFMT) == S_IFLNK)
-#define S_ISSOCK(m) (((m) & S_IFMT) == S_IFSOCK)
+#define S_ISBLK(m)  (((m) & _PHOENIX_S_IFMT) == _PHOENIX_S_IFBLK)
+#define S_ISCHR(m)  (((m) & _PHOENIX_S_IFMT) == _PHOENIX_S_IFCHR)
+#define S_ISFIFO(m) (((m) & _PHOENIX_S_IFMT) == _PHOENIX_S_IFIFO)
+#define S_ISREG(m)  (((m) & _PHOENIX_S_IFMT) == _PHOENIX_S_IFREG)
+#define S_ISDIR(m)  (((m) & _PHOENIX_S_IFMT) == _PHOENIX_S_IFDIR)
+#define S_ISLNK(m)  (((m) & _PHOENIX_S_IFMT) == _PHOENIX_S_IFLNK)
+#define S_ISSOCK(m) (((m) & _PHOENIX_S_IFMT) == _PHOENIX_S_IFSOCK)
 
 #define S_TYPEISMQ(buf)  0
 #define S_TYPEISSEM(buf) 0

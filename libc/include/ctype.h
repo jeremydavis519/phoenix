@@ -59,12 +59,17 @@ int isxdigit_l(int c, locale_t locale);
 /* Character conversion functions */
 int toascii(int c);
 int tolower(int c);
+#define tolower(c) (_PHOENIX_tolower_l((c), _PHOENIX_uselocale((locale_t)0)))
+#define _tolower(c) (_PHOENIX_tolower_l((c), _PHOENIX_uselocale((locale_t)0)))
 int tolower_l(int c, locale_t locale);
+#define tolower_l(c, locale) (_PHOENIX_tolower_l((c), (locale)))
+int _PHOENIX_tolower_l(int c, locale_t locale);
 int toupper(int c);
+#define toupper(c) (_PHOENIX_toupper_l((c), _PHOENIX_uselocale((locale_t)0)))
+#define _toupper(c) (_PHOENIX_toupper_l((c), _PHOENIX_uselocale((locale_t)0)))
 int toupper_l(int c, locale_t locale);
-
-#define _tolower(c) tolower(c)
-#define _toupper(c) toupper(c)
+#define toupper_l(c, locale) (_PHOENIX_toupper_l((c), (locale)))
+int _PHOENIX_toupper_l(int c, locale_t locale);
 
 #ifdef __cplusplus
 }
