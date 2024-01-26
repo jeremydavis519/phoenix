@@ -65,7 +65,9 @@ typedef struct pthread_mutexattr_t pthread_mutexattr_t;
 typedef struct pthread_once_t pthread_once_t;
 typedef struct pthread_rwlock_t pthread_rwlock_t;
 typedef struct pthread_rwlockattr_t pthread_rwlockattr_t;
-typedef struct pthread_spinlock_t pthread_spinlock_t;
+typedef struct pthread_spinlock_t {
+    unsigned char lock[sizeof(void*)];
+} pthread_spinlock_t;
 typedef struct pthread_t {
     size_t id;
 } pthread_t;

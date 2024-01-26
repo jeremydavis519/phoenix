@@ -16,8 +16,10 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#include <errno.h>
 #include <pthread.h>
 #include <stdatomic.h>
+#include <stdlib.h>
 #include <phoenix.h>
 
 unsigned char _PHOENIX_unused = 0;
@@ -86,12 +88,66 @@ int pthread_attr_setstacksize(pthread_attr_t* attr, size_t stacksize);
 int pthread_attr_getstacksize(const pthread_attr_t* _PHOENIX_restrict attr, size_t* _PHOENIX_restrict stacksize); */
 
 /* Spinlocks */
-/* TODO
-int pthread_spin_init(pthread_spinlock_t* lock, int pshared);
-int pthread_spin_destroy(pthread_spinlock_t* lock);
-int pthread_spin_lock(pthread_spinlock_t* lock);
-int pthread_spin_trylock(pthread_spinlock_t* lock);
-int pthread_spin_unlock(pthread_spinlock_t* lock); */
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/pthread_spin_init.html */
+int pthread_spin_init(pthread_spinlock_t* lock, int pshared) {
+    (void)pshared;
+    if (sizeof(atomic_flag) <= sizeof(lock->lock)) {
+        atomic_flag_clear_explicit((atomic_flag*)lock->lock, memory_order_relaxed);
+    } else {
+        atomic_flag** flag = (atomic_flag**)lock->lock;
+        int old_errno = errno;
+        *flag = malloc(sizeof(atomic_flag));
+        if (!*flag) {
+            int result = errno;
+            errno = old_errno;
+            return result;
+        }
+        atomic_flag_clear_explicit(*flag, memory_order_relaxed);
+    }
+    return 0;
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/pthread_spin_destroy.html */
+int pthread_spin_destroy(pthread_spinlock_t* lock) {
+    if (sizeof(atomic_flag) <= sizeof(lock->lock)) {
+        if (atomic_flag_test_and_set_explicit((atomic_flag*)lock->lock, memory_order_relaxed)) return EBUSY;
+    } else {
+        atomic_flag** flag = (atomic_flag**)lock->lock;
+        if (!*flag) return EINVAL;
+        if (atomic_flag_test_and_set_explicit(*flag, memory_order_relaxed)) return EBUSY;
+        free(*flag);
+        *flag = NULL;
+    }
+    return 0;
+}
+
+#define SPINLOCK_TO_FLAG \
+    atomic_flag* flag; \
+    if (sizeof(atomic_flag) <= sizeof(lock->lock)) { \
+        flag = (atomic_flag*)lock->lock; \
+    } else { \
+        flag = *(atomic_flag**)lock->lock; \
+    }
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/pthread_spin_lock.html */
+int pthread_spin_lock(pthread_spinlock_t* lock) {
+    SPINLOCK_TO_FLAG
+    while (atomic_flag_test_and_set_explicit(flag, memory_order_acq_rel)) sched_yield();
+    return 0;
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/pthread_spin_trylock.html */
+int pthread_spin_trylock(pthread_spinlock_t* lock) {
+    SPINLOCK_TO_FLAG
+    return atomic_flag_test_and_set_explicit(flag, memory_order_acq_rel) ? EBUSY : 0;
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/pthread_spin_unlock.html */
+int pthread_spin_unlock(pthread_spinlock_t* lock) {
+    SPINLOCK_TO_FLAG
+    atomic_flag_clear_explicit(flag, memory_order_release);
+    return 0;
+}
 
 /* Mutexes */
 /* TODO
