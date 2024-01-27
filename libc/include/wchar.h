@@ -84,9 +84,13 @@ wint_t towlower(wint_t wc);
 wint_t towupper(wint_t wc);
 
 /* String conversion (mirroring stdlib.h) */
+long wcstol(const wchar_t* _PHOENIX_restrict ws, wchar_t** _PHOENIX_restrict endptr, int base);
+long long wcstoll(const wchar_t* _PHOENIX_restrict ws, wchar_t** _PHOENIX_restrict endptr, int base);
+unsigned long wcstoul(const wchar_t* _PHOENIX_restrict ws, wchar_t** _PHOENIX_restrict endptr, int base);
+unsigned long long wcstoull(const wchar_t* _PHOENIX_restrict ws, wchar_t** _PHOENIX_restrict endptr, int base);
+float wcstof(const wchar_t* _PHOENIX_restrict ws, wchar_t** _PHOENIX_restrict endptr);
 double wcstod(const wchar_t* _PHOENIX_restrict ws, wchar_t** _PHOENIX_restrict endptr);
-long int wcstol(const wchar_t* _PHOENIX_restrict ws, wchar_t** _PHOENIX_restrict endptr, int base);
-unsigned long int wcstoul(const wchar_t* _PHOENIX_restrict ws, wchar_t** _PHOENIX_restrict endptr, int base);
+long double wcstold(const wchar_t* _PHOENIX_restrict ws, wchar_t** _PHOENIX_restrict endptr);
 wint_t btowc(int c);
 size_t mbrlen(const char* _PHOENIX_restrict mbc, size_t max_bytes, mbstate_t* _PHOENIX_restrict state);
 size_t mbrtowc(wchar_t* _PHOENIX_restrict wc, const char* mbc, size_t max_bytes, mbstate_t* _PHOENIX_restrict state);

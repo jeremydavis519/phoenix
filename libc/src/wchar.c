@@ -145,10 +145,15 @@ wint_t towlower(wint_t wc);
 wint_t towupper(wint_t wc); */
 
 /* String conversion (mirroring stdlib.h) */
+/* wcstol defined in stdio.c */
+/* wcstoll defined in stdio.c */
+/* wcstoul defined in stdio.c */
+/* wcstoull defined in stdio.c */
+
 /* TODO
+float wcstof(const wchar_t* restrict ws, wchar_t** restrict endptr);
 double wcstod(const wchar_t* restrict ws, wchar_t** restrict endptr);
-long int wcstol(const wchar_t* restrict ws, wchar_t** restrict endptr, int base);
-unsigned long int wcstoul(const wchar_t* restrict ws, wchar_t** restrict endptr, int base);
+long double wcstold(const wchar_t* restrict ws, wchar_t** restrict endptr);
 wint_t btowc(int c);
 size_t mbrlen(const char* restrict mbc, size_t max_bytes, mbstate_t* restrict state);
 size_t mbrtowc(wchar_t* restrict wc, const char* mbc, size_t max_bytes, mbstate_t* restrict state);
