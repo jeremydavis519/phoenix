@@ -22,6 +22,7 @@
 #include <locale.h>
 #include <stdlib.h>
 #include <string.h>
+#include <wctype.h>
 
 /* A single collation element and its weight */
 struct collation_weight {
@@ -329,8 +330,8 @@ locale_t _PHOENIX_uselocale(locale_t newloc) __attribute__((alias("uselocale")))
 
 
 /* Functions defined in ctype.h */
-#define DEFINE_CTYPE_IS(class, posix_test) \
-int is##class##_l(int c, locale_t locale) { \
+#define DEFINE_CTYPE_IS(class, int_t, posix_test) \
+int is##class##_l(int_t c, locale_t locale) { \
     switch (((struct locale*)locale)->ctype) { \
     case POSIX_LOCALE_INDEX: \
         return (posix_test); \
@@ -340,8 +341,8 @@ int is##class##_l(int c, locale_t locale) { \
     } \
 }
 
-#define DEFINE_CTYPE_TO(class, posix_convert) \
-int to##class##_l(int c, locale_t locale) { \
+#define DEFINE_CTYPE_TO(class, int_t, posix_convert) \
+int_t to##class##_l(int_t c, locale_t locale) { \
     switch (((struct locale*)locale)->ctype) { \
     case POSIX_LOCALE_INDEX: \
         return (posix_convert); \
@@ -350,51 +351,125 @@ int to##class##_l(int c, locale_t locale) { \
         return c; \
     } \
 } \
-\
-int _PHOENIX_to##class##_l(int c, locale_t locale) __attribute__((alias("to" #class "_l")));
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isupper_l.html */
+DEFINE_CTYPE_IS(upper, int, c >= 'A' && c <= 'Z')
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/islower_l.html */
+DEFINE_CTYPE_IS(lower, int, c >= 'a' && c <= 'z')
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isalpha_l.html */
+DEFINE_CTYPE_IS(alpha, int, (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'))
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isdigit_l.html */
+DEFINE_CTYPE_IS(digit, int, c >= '0' && c <= '9')
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isxdigit_l.html */
+DEFINE_CTYPE_IS(xdigit, int, (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f'))
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isalnum_l.html */
 int isalnum_l(int c, locale_t locale) {
     return isalpha_l(c, locale) || isdigit_l(c, locale);
 }
 
-/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isupper_l.html */
-DEFINE_CTYPE_IS(upper, c >= 'A' && c <= 'Z')
-
-/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/islower_l.html */
-DEFINE_CTYPE_IS(lower, c >= 'a' && c <= 'z')
-
-/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isalpha_l.html */
-DEFINE_CTYPE_IS(alpha, (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'))
-
-/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isdigit_l.html */
-DEFINE_CTYPE_IS(digit, c >= '0' && c <= '9')
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/ispunct_l.html */
+DEFINE_CTYPE_IS(punct, int, c > 0x20 && c <= 0x7e && (c < '0' || c > '9') && (c < 'A' || c > 'Z') && (c < 'a' || c > 'z'))
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isblank_l.html */
-DEFINE_CTYPE_IS(blank, c == '\t' || c == ' ')
+DEFINE_CTYPE_IS(blank, int, c == '\t' || c == ' ')
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isspace_l.html */
-DEFINE_CTYPE_IS(space, c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r' || c == ' ')
-
-/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/iscntrl_l.html */
-DEFINE_CTYPE_IS(cntrl, c < 0x20 || c == 0x7f)
+DEFINE_CTYPE_IS(space, int, c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r' || c == ' ')
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isgraph_l.html */
-DEFINE_CTYPE_IS(graph, c > 0x20 && c <= 0x7e)
+DEFINE_CTYPE_IS(graph, int, c > 0x20 && c <= 0x7e)
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isprint_l.html */
-DEFINE_CTYPE_IS(print, c >= 0x20 && c <= 0x7e)
+DEFINE_CTYPE_IS(print, int, c >= 0x20 && c <= 0x7e)
 
-/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/ispunct_l.html */
-DEFINE_CTYPE_IS(punct, c > 0x20 && c <= 0x7e && (c < '0' || c > '9') && (c < 'A' || c > 'Z') && (c < 'a' || c > 'z'))
-
-/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isxdigit_l.html */
-DEFINE_CTYPE_IS(xdigit, (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f'))
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/iscntrl_l.html */
+DEFINE_CTYPE_IS(cntrl, int, c < 0x20 || c == 0x7f)
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/toupper_l.html */
 #undef toupper_l
-DEFINE_CTYPE_TO(upper, c >= 'a' && c <= 'z' ? c + ('A' - 'a') : c)
+DEFINE_CTYPE_TO(upper, int, c >= 'a' && c <= 'z' ? c + ('A' - 'a') : c)
+int _PHOENIX_toupper_l(int c, locale_t locale) __attribute__((alias("toupper_l")));
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/tolower_l.html */
 #undef tolower_l
-DEFINE_CTYPE_TO(lower, c >= 'A' && c <= 'Z' ? c + ('a' - 'A') : c)
+DEFINE_CTYPE_TO(lower, int, c >= 'A' && c <= 'Z' ? c + ('a' - 'A') : c)
+int _PHOENIX_tolower_l(int c, locale_t locale) __attribute__((alias("tolower_l")));
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/iswupper_l.html */
+DEFINE_CTYPE_IS(wupper, wint_t, c >= 'A' && c <= 'Z')
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/iswlower_l.html */
+DEFINE_CTYPE_IS(wlower, wint_t, c >= 'a' && c <= 'z')
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/iswalpha_l.html */
+DEFINE_CTYPE_IS(walpha, wint_t, (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'))
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/iswdigit_l.html */
+DEFINE_CTYPE_IS(wdigit, wint_t, c >= '0' && c <= '9')
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/iswxdigit_l.html */
+DEFINE_CTYPE_IS(wxdigit, wint_t, (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f'))
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/iswalnum_l.html */
+int iswalnum_l(wint_t c, locale_t locale) {
+    return iswalpha_l(c, locale) || iswdigit_l(c, locale);
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/iswpunct_l.html */
+DEFINE_CTYPE_IS(wpunct, wint_t, c > 0x20 && c <= 0x7e && (c < '0' || c > '9') && (c < 'A' || c > 'Z') && (c < 'a' || c > 'z'))
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/iswblank_l.html */
+DEFINE_CTYPE_IS(wblank, wint_t, c == '\t' || c == ' ')
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/iswspace_l.html */
+DEFINE_CTYPE_IS(wspace, wint_t, c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r' || c == ' ')
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/iswgraph_l.html */
+DEFINE_CTYPE_IS(wgraph, wint_t, c > 0x20 && c <= 0x7e)
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/iswprint_l.html */
+DEFINE_CTYPE_IS(wprint, wint_t, c >= 0x20 && c <= 0x7e)
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/iswcntrl_l.html */
+DEFINE_CTYPE_IS(wcntrl, wint_t, c < 0x20 || c == 0x7f)
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/towupper_l.html */
+DEFINE_CTYPE_TO(wupper, wint_t, c >= 'a' && c <= 'z' ? c + ('A' - 'a') : c)
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/towlower_l.html */
+DEFINE_CTYPE_TO(wlower, wint_t, c >= 'A' && c <= 'Z' ? c + ('a' - 'A') : c)
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/wctype_l.html */
+wctype_t wctype_l(const char* charclass, locale_t locale) {
+    if (!strcmp(charclass, "alnum")) return iswalnum_l;
+    if (!strcmp(charclass, "alpha")) return iswalpha_l;
+    if (!strcmp(charclass, "blank")) return iswblank_l;
+    if (!strcmp(charclass, "cntrl")) return iswcntrl_l;
+    if (!strcmp(charclass, "digit")) return iswdigit_l;
+    if (!strcmp(charclass, "graph")) return iswgraph_l;
+    if (!strcmp(charclass, "lower")) return iswlower_l;
+    if (!strcmp(charclass, "print")) return iswprint_l;
+    if (!strcmp(charclass, "punct")) return iswpunct_l;
+    if (!strcmp(charclass, "space")) return iswspace_l;
+    if (!strcmp(charclass, "upper")) return iswupper_l;
+    if (!strcmp(charclass, "xdigit")) return iswxdigit_l;
+
+    /* TODO: Allow user-defined character classes. */
+    (void)locale;
+    return NULL;
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/wctrans_l.html */
+wctrans_t wctrans_l(const char* mapping, locale_t locale) {
+    if (!strcmp(mapping, "tolower")) return towlower_l;
+    if (!strcmp(mapping, "toupper")) return towupper_l;
+
+    /* TODO: Allow user-defined character mappings. */
+    (void)locale;
+    return NULL;
+}

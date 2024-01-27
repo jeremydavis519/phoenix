@@ -19,60 +19,12 @@
 #include <ctype.h>
 #include <locale.h>
 
+/* Every function in ctype.h that ends with `_l` is defined in locale.c. */
+
 /* Character classification functions */
-/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isalnum.html */
-int isalnum(int c) {
-    return isalnum_l(c, uselocale((locale_t)0));
-}
-
-/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isalpha.html */
-int isalpha(int c) {
-    return isalpha_l(c, uselocale((locale_t)0));
-}
-
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isascii.html */
 int isascii(int c) {
     return c >= 0 && c <= 0x7f;
-}
-
-/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isblank.html */
-int isblank(int c) {
-    return isblank_l(c, uselocale((locale_t)0));
-}
-
-/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/iscntrl.html */
-int iscntrl(int c) {
-    return iscntrl_l(c, uselocale((locale_t)0));
-}
-
-/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isdigit.html */
-int isdigit(int c) {
-    return isdigit_l(c, uselocale((locale_t)0));
-}
-
-/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isgraph.html */
-int isgraph(int c) {
-    return isgraph_l(c, uselocale((locale_t)0));
-}
-
-/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/islower.html */
-int islower(int c) {
-    return islower_l(c, uselocale((locale_t)0));
-}
-
-/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isprint.html */
-int isprint(int c) {
-    return isprint_l(c, uselocale((locale_t)0));
-}
-
-/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/ispunct.html */
-int ispunct(int c) {
-    return ispunct_l(c, uselocale((locale_t)0));
-}
-
-/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isspace.html */
-int isspace(int c) {
-    return isspace_l(c, uselocale((locale_t)0));
 }
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isupper.html */
@@ -80,9 +32,59 @@ int isupper(int c) {
     return isupper_l(c, uselocale((locale_t)0));
 }
 
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/islower.html */
+int islower(int c) {
+    return islower_l(c, uselocale((locale_t)0));
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isalpha.html */
+int isalpha(int c) {
+    return isalpha_l(c, uselocale((locale_t)0));
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isdigit.html */
+int isdigit(int c) {
+    return isdigit_l(c, uselocale((locale_t)0));
+}
+
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isxdigit.html */
 int isxdigit(int c) {
     return isxdigit_l(c, uselocale((locale_t)0));
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isalnum.html */
+int isalnum(int c) {
+    return isalnum_l(c, uselocale((locale_t)0));
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/ispunct.html */
+int ispunct(int c) {
+    return ispunct_l(c, uselocale((locale_t)0));
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isblank.html */
+int isblank(int c) {
+    return isblank_l(c, uselocale((locale_t)0));
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isspace.html */
+int isspace(int c) {
+    return isspace_l(c, uselocale((locale_t)0));
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isgraph.html */
+int isgraph(int c) {
+    return isgraph_l(c, uselocale((locale_t)0));
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isprint.html */
+int isprint(int c) {
+    return isprint_l(c, uselocale((locale_t)0));
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/iscntrl.html */
+int iscntrl(int c) {
+    return iscntrl_l(c, uselocale((locale_t)0));
 }
 
 
@@ -92,18 +94,14 @@ int toascii(int c) {
     return c & 0x7f;
 }
 
-/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/tolower.html */
-#undef tolower
-int tolower(int c) {
-    return tolower_l(c, uselocale((locale_t)0));
-}
-
-/* to_lower_l defined in locale.c */
-
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/toupper.html */
 #undef toupper
 int toupper(int c) {
     return toupper_l(c, uselocale((locale_t)0));
 }
 
-/* to_upper_l defined in locale.c */
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/tolower.html */
+#undef tolower
+int tolower(int c) {
+    return tolower_l(c, uselocale((locale_t)0));
+}

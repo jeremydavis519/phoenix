@@ -24,6 +24,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <phoenix/locale_t.h>
 
 struct lconv {
     /* LC_NUMERIC */
@@ -70,8 +71,6 @@ struct lconv {
 #define LC_NUMERIC_MASK     0x10
 #define LC_TIME_MASK        0x20
 #define LC_ALL_MASK         0x3f
-
-typedef void* locale_t;
 
 const locale_t LC_GLOBAL_LOCALE;
 

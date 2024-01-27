@@ -39,7 +39,7 @@ extern "C" {
 
 typedef struct mbstate_t mbstate_t;
 typedef __WINT_TYPE__ wint_t;
-typedef uint16_t wctype_t;
+typedef int (*wctype_t)(wint_t, locale_t);
 
 /* Input/output (mirroring stdio.h) */
 FILE* open_wmemstream(wchar_t** bufp, size_t* sizep);

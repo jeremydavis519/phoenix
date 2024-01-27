@@ -23,53 +23,53 @@
 #ifndef __PHOENIX_CTYPE_H
 #define __PHOENIX_CTYPE_H
 
-#include <locale.h>
+#include <phoenix/locale_t.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /* Character classification functions */
-int isalnum(int c);
-int isalnum_l(int c, locale_t locale);
-int isalpha(int c);
-int isalpha_l(int c, locale_t locale);
 int isascii(int c);
-int isblank(int c);
-int isblank_l(int c, locale_t locale);
-int iscntrl(int c);
-int iscntrl_l(int c, locale_t locale);
-int isdigit(int c);
-int isdigit_l(int c, locale_t locale);
-int isgraph(int c);
-int isgraph_l(int c, locale_t locale);
-int islower(int c);
-int islower_l(int c, locale_t locale);
-int isprint(int c);
-int isprint_l(int c, locale_t locale);
-int ispunct(int c);
-int ispunct_l(int c, locale_t locale);
-int isspace(int c);
-int isspace_l(int c, locale_t locale);
 int isupper(int c);
 int isupper_l(int c, locale_t locale);
+int islower(int c);
+int islower_l(int c, locale_t locale);
+int isalpha(int c);
+int isalpha_l(int c, locale_t locale);
+int isdigit(int c);
+int isdigit_l(int c, locale_t locale);
 int isxdigit(int c);
 int isxdigit_l(int c, locale_t locale);
+int isalnum(int c);
+int isalnum_l(int c, locale_t locale);
+int ispunct(int c);
+int ispunct_l(int c, locale_t locale);
+int isblank(int c);
+int isblank_l(int c, locale_t locale);
+int isspace(int c);
+int isspace_l(int c, locale_t locale);
+int isgraph(int c);
+int isgraph_l(int c, locale_t locale);
+int isprint(int c);
+int isprint_l(int c, locale_t locale);
+int iscntrl(int c);
+int iscntrl_l(int c, locale_t locale);
 
 /* Character conversion functions */
 int toascii(int c);
-int tolower(int c);
-#define tolower(c) (_PHOENIX_tolower_l((c), _PHOENIX_uselocale((locale_t)0)))
-#define _tolower(c) (_PHOENIX_tolower_l((c), _PHOENIX_uselocale((locale_t)0)))
-int tolower_l(int c, locale_t locale);
-#define tolower_l(c, locale) (_PHOENIX_tolower_l((c), (locale)))
-int _PHOENIX_tolower_l(int c, locale_t locale);
 int toupper(int c);
 #define toupper(c) (_PHOENIX_toupper_l((c), _PHOENIX_uselocale((locale_t)0)))
 #define _toupper(c) (_PHOENIX_toupper_l((c), _PHOENIX_uselocale((locale_t)0)))
 int toupper_l(int c, locale_t locale);
 #define toupper_l(c, locale) (_PHOENIX_toupper_l((c), (locale)))
 int _PHOENIX_toupper_l(int c, locale_t locale);
+int tolower(int c);
+#define tolower(c) (_PHOENIX_tolower_l((c), _PHOENIX_uselocale((locale_t)0)))
+#define _tolower(c) (_PHOENIX_tolower_l((c), _PHOENIX_uselocale((locale_t)0)))
+int tolower_l(int c, locale_t locale);
+#define tolower_l(c, locale) (_PHOENIX_tolower_l((c), (locale)))
+int _PHOENIX_tolower_l(int c, locale_t locale);
 
 #ifdef __cplusplus
 }
