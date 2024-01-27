@@ -16,4 +16,7 @@ default = ["global-allocator"]
 global-allocator = []
 kernelspace = []
 no-start = []
+no-std = []
 profiler = []
+
+rustc-dep-of-std = ["no-std", "hashbrown/rustc-dep-of-std"]
