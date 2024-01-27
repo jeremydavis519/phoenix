@@ -51,7 +51,7 @@ extern "C" {
     static mut errno: c_int;
 }
 
-// From the POSIX descriptions of `malloc` and `realloc` (both quotes are identical):
+// From the POSIX descriptions of `malloc`, `calloc`, and `realloc` (each quote is identical):
 // "The pointer returned if the allocation succeeds shall be suitably aligned so that it may be
 // assigned to a pointer to any type of object and then used to access such an object in the
 // space allocated ...."
@@ -82,6 +82,25 @@ unsafe extern "C" fn free(ptr: *mut c_void) {
     let prefix = ptr.cast::<u8>().sub(prefix_size).cast::<AllocPrefix>();
     let Ok(layout) = Layout::from_size_align((*prefix).size, ALIGNMENT_FOR_ANYTHING) else { return };
     Allocator.dealloc(ptr.cast::<u8>(), layout);
+}
+
+// https://pubs.opengroup.org/onlinepubs/9699919799/functions/calloc.html
+#[cfg(feature = "global-allocator")]
+#[no_mangle]
+unsafe extern "C" fn calloc(elem_count: usize, elem_size: usize) -> *mut c_void {
+    let Some(total_size) = elem_count.checked_mul(elem_size) else {
+        errno = Errno::ENOMEM.into();
+        return ptr::null_mut();
+    };
+    let Ok(layout) = Layout::from_size_align(total_size, ALIGNMENT_FOR_ANYTHING) else {
+        errno = Errno::ENOMEM.into();
+        return ptr::null_mut();
+    };
+    let ptr = Allocator.alloc_zeroed(layout);
+    if ptr.is_null() {
+        errno = Errno::ENOMEM.into();
+    }
+    ptr.cast::<c_void>()
 }
 
 // https://pubs.opengroup.org/onlinepubs/9699919799/functions/realloc.html

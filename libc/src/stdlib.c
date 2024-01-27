@@ -193,18 +193,34 @@ void srand(unsigned int seed) {
     rand_seed = seed;
 }
 
+/* TODO
+double drand48(void);
+double erand48(unsigned short x[3]);
+long jrand48(unsigned short x[3]);
+void lcong48(unsigned short param[7]);
+long lrand48(void);
+long mrand48(void);
+long nrand48(unsigned short x[3]);
+unsigned short seed48(unsigned short seed16v[3]);
+void srand48(long seed);
+char* initstate(unsigned int seed, char* state, size_t size);
+long random(void);
+char* setstate(char* state);
+void srandom(unsigned int seed); */
+
 
 /* Dynamic memory management */
-/* TODO
-void* calloc(size_t num, size_t size); */
-
-/* void free(void* ptr); (Defined in libphoenix) */
 /* void* malloc(size_t size); (Defined in libphoenix) */
+/* void* calloc(size_t num, size_t size); (Defined in libphoenix) */
 /* void* realloc(void* ptr, size_t size); (Defined in libphoenix) */
+/* void free(void* ptr); (Defined in libphoenix) */
+/* TODO
+int posix_memalign(void** memptr, size_t alignment, size_t size); */
 
 
 /* Environment */
 /* TODO
+noreturn
 void abort(void);
 int atexit(void (*func)(void)); */
 
@@ -229,6 +245,10 @@ void _Exit(int status) {
 
 /* TODO
 char* getenv(const char* name);
+int getsubopt(char** option, char* const* keylist, char** value);
+int putenv(char* string);
+int setenv(const char* name, const char* value, int overwrite);
+int unsetenv(const char* name);
 int system(const char* command); */
 
 
@@ -243,7 +263,9 @@ void qsort(void* base, size_t num, size_t size, int (*compar)(const void*, const
 int abs(int n);
 div_t div(int numer, int denom);
 long int labs(long int n);
-ldiv_t ldiv(long int numer, long int denom); */
+long long llabs(long long n);
+ldiv_t ldiv(long int numer, long int denom);
+lldiv_t lldiv(long long numer, long long denom); */
 
 
 /* Multibyte characters */
@@ -257,3 +279,23 @@ int wctomb(char* mbc, wchar_t wc); */
 /* TODO
 size_t mbstowcs(wchar_t* restrict dest, const char* restrict src, size_t max_chars);
 size_t wcstombs(char* dest, const wchar_t* src, size_t max_bytes); */
+
+
+/* File system */
+/* TODO
+char* mkdtemp(char* template);
+int mkstemp(char* template);
+char* realpath(const char* restrict filename, char* restrict resolved_name); */
+
+
+/* Pseudo-terminals */
+/* TODO
+int grantpt(int fildes);
+int posix_openpt(int oflags);
+char* ptsname(int fildes);
+int unlockpt(int fildes); */
+
+
+/* Cryptography */
+/* TODO
+void setkey(const char* key); */
