@@ -1,4 +1,4 @@
-/* Copyright (c) 2021-2023 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2021-2024 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -51,15 +51,16 @@ extern "C" {
     static mut errno: c_int;
 }
 
+// From the POSIX descriptions of `malloc` and `realloc` (both quotes are identical):
+// "The pointer returned if the allocation succeeds shall be suitably aligned so that it may be
+// assigned to a pointer to any type of object and then used to access such an object in the
+// space allocated ...."
+const ALIGNMENT_FOR_ANYTHING: usize = 16;
+
 // https://pubs.opengroup.org/onlinepubs/9699919799/functions/malloc.html
 #[cfg(feature = "global-allocator")]
 #[no_mangle]
 unsafe extern "C" fn malloc(size: usize) -> *mut c_void {
-    // "The pointer returned if the allocation succeeds shall be suitably aligned so that it may be
-    // assigned to a pointer to any type of object and then used to access such an object in the
-    // space allocated ...."
-    const ALIGNMENT_FOR_ANYTHING: usize = 16;
-
     let Ok(layout) = Layout::from_size_align(size, ALIGNMENT_FOR_ANYTHING) else {
         errno = Errno::ENOMEM.into();
         return ptr::null_mut();
@@ -75,9 +76,31 @@ unsafe extern "C" fn malloc(size: usize) -> *mut c_void {
 #[cfg(feature = "global-allocator")]
 #[no_mangle]
 unsafe extern "C" fn free(ptr: *mut c_void) {
-    if !ptr.is_null() {
-        Allocator.dealloc(ptr.cast::<u8>(), Layout::new::<u8>());
+    if ptr.is_null() { return; }
+
+    let prefix_size = (mem::size_of::<AllocPrefix>() + (ALIGNMENT_FOR_ANYTHING - 1)) & !(ALIGNMENT_FOR_ANYTHING);
+    let prefix = ptr.cast::<u8>().sub(prefix_size).cast::<AllocPrefix>();
+    let Ok(layout) = Layout::from_size_align((*prefix).size, ALIGNMENT_FOR_ANYTHING) else { return };
+    Allocator.dealloc(ptr.cast::<u8>(), layout);
+}
+
+// https://pubs.opengroup.org/onlinepubs/9699919799/functions/realloc.html
+#[cfg(feature = "global-allocator")]
+#[no_mangle]
+unsafe extern "C" fn realloc(ptr: *mut c_void, size: usize) -> *mut c_void {
+    if ptr.is_null() { return malloc(size); }
+
+    let prefix_size = (mem::size_of::<AllocPrefix>() + (ALIGNMENT_FOR_ANYTHING - 1)) & !(ALIGNMENT_FOR_ANYTHING);
+    let prefix = ptr.cast::<u8>().sub(prefix_size).cast::<AllocPrefix>();
+    let Ok(layout) = Layout::from_size_align((*prefix).size, ALIGNMENT_FOR_ANYTHING) else {
+        errno = Errno::ENOMEM.into();
+        return ptr::null_mut();
+    };
+    let ptr = Allocator.realloc(ptr.cast::<u8>(), layout, size);
+    if ptr.is_null() {
+        errno = Errno::ENOMEM.into();
     }
+    ptr.cast::<c_void>()
 }
 
 #[cfg(feature = "global-allocator")]
@@ -165,16 +188,25 @@ unsafe impl GlobalAlloc for Allocator {
         // FIXME: This is extremely wasteful, as the kernel can't give us anything smaller than
         // a page, and it can also take a while. Instead, allocate a buffer from the kernel and use
         // that for multiple allocations until it's full.
-        let addr = syscall::memory_alloc(
-            layout.size(),
-            layout.align(),
-        );
-        addr as *mut u8
+        let prefix_size = (mem::size_of::<AllocPrefix>() + (layout.align() - 1)) & !(layout.align() - 1);
+        let ptr = syscall::memory_alloc(prefix_size + layout.size(), layout.align());
+        (*ptr.cast::<MaybeUninit<AllocPrefix>>()).write(AllocPrefix { size: layout.size() }); // Record the size for future calls to libc's `free` and `realloc`.
+        ptr.cast::<u8>().add(prefix_size)
     }
 
-    unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
-        syscall::memory_free(ptr.cast::<MaybeUninit<u8>>());
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        let prefix_size = (mem::size_of::<AllocPrefix>() + (layout.align() - 1)) & !(layout.align() - 1);
+        let ptr = ptr.cast::<MaybeUninit<u8>>().sub(prefix_size);
+        ptr.cast::<AllocPrefix>().drop_in_place();
+        syscall::memory_free(ptr);
     }
+
+    // TODO: Write a more efficient implementation of `GlobalAlloc::realloc`.
+}
+
+#[derive(Debug)]
+struct AllocPrefix {
+    size: usize,
 }
 
 
