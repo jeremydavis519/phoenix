@@ -669,213 +669,219 @@ int sscanf(const char* restrict s, const char* restrict format, ...) {
     return result;
 }
 
-/* TODO
-int vfscanf(FILE* restrict stream, const char* restrict format, va_list args);
-*/
-
-/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/vscanf.html */
-int vscanf(const char* format, va_list args) {
-    return vfscanf(stdin, format, args);
-}
-
-/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/vsscanf.html */
-int vsscanf(const char* restrict s, const char* restrict format, va_list args) {
-    int sign;
-    int radix, dec_digits, hex_digits;
-    uintmax_t i_acc;
-    va_list args_temp;
-    void* out = NULL;
-
-    /* FIXME: Allow the "optional assignment-allocation character 'm'", as described by POSIX. */
-
-    int args_filled = 0;
-    const char* const s_start = s;
-    char c = *s++;
-    while (c && *format) {
-        char fc = *format++;
-
+/* A common implementation for all the scanf variants.
+ * char_t should be set so that the `format` argument to the function is of type `const char_t*`.
+ * _wc should be set to `_wc` if char_t is `wchar_t`, or `` if char_t is `char`.
+ * isspace should be `isspace` if char_t is `char` and `iswspace` if char_t is `wchar_t`.
+ * setup should be a statement that will run before any characters are printed.
+ * get_char should be a statement that gets the next input character in the appropriate way and assigns it to `c`.
+ * unget_char should be a statement that returns `c` to the input stream such that get_char will get it again.
+ * text_count should be an expression that returns the number of times get_char has been executed.
+ * finalize should be a statement that does any necessary cleanup before the function returns with no error.
+ * failure should be a statement that cleans up before the function returns with an error. */
+#define SCANF_BODY_GENERIC(char_t, _wc, isspace, setup, get_char, unget_char, text_count, finalize, failure) \
+    int sign; \
+    int radix, dec_digits, hex_digits; \
+    uintmax_t i_acc; \
+    va_list args_temp; \
+    void* out = NULL; \
+\
+    /* FIXME: Allow the "optional assignment-allocation character 'm'", as described by POSIX. */ \
+\
+    int args_filled = 0; \
+    setup; \
+    char_t c; \
+    get_char; \
+    while (c && *format) { \
+        char_t fc = *format++; \
+\
         /* A single whitespace character in the format string matches 0 or more whitespace characters
-           in the input string. */
-        if (isspace(fc)) {
-            while (isspace(c)) {
-                c = *s++;
-            }
-            continue;
-        }
-
-        /* A non-whitespace, non-format-specifier character must match exactly. */
-        if (fc != '%') {
-            if (c != fc) {
-                goto matching_break;
-            }
-            c = *s++;
-            continue;
-        }
-
-        /* Format specifiers */
-        bool store_arg = true;
-        if (*format == '*') {
-            store_arg = false;
-            ++format;
-        }
-        FormatSpec spec = {0};
-        if (parse_format_spec(&format, &spec)) EFAIL(EINVAL);
-
-        size_t width_counter = SIZE_MAX;
-        if (spec.flags & FSF_HAS_WIDTH) {
-            if (spec.flags & FSF_WIDTH_FROM_ARG) EFAIL(EINVAL);
-            width_counter = spec.width;
-        }
-
-        switch (spec.flags & FSF_TEXT_TYPE) {
-        case FSF_TEXT_INTEGER:
-        case FSF_TEXT_POINTER:
-            while (isspace(c)) {
-                c = *s++;
-            }
-
-            i_acc = 0;
-            sign = 1;
-            if (width_counter != 0) {
-                switch (c) {
-                case '-':
-                    sign = -1;
-                    /* Intentional fall-through */
-                case '+':
-                    c = *s++;
-                    --width_counter;
-                    break;
-                }
-            }
-            switch (spec.flags & FSF_RADIX) {
-            case FSF_ANY_RADIX:
-                radix = 10;
-                if (width_counter-- && c == '0') {
-                    radix = 8;
-                    c = *s++;
-                    if (width_counter-- && (c == 'x' || c == 'X')) {
-                        radix = 16;
-                        c = *s++;
-                    }
-                }
-                break;
-            case FSF_DECIMAL:
-                radix = 10;
-                break;
-            case FSF_OCTAL:
-                radix = 8;
-                break;
-            case FSF_HEX_LOWER:
-            case FSF_HEX_UPPER:
-                radix = 16;
-                if (width_counter >= 2 && c == '0' && (*s == 'x' || *s == 'X')) {
-                    /* A hexadecimal number can optionally start with "0x". */
-                    s++;
-                    c = *s++;
-                    width_counter -= 2;
-                }
-                break;
-            default: /* Should be unreachable */
-                EFAIL(EINTERNAL);
-            }
-            if (radix <= 10) {
-                dec_digits = radix;
-                hex_digits = 0;
-            } else {
-                dec_digits = 10;
-                hex_digits = radix - 10;
-            }
-            while (width_counter--) {
-                if (c >= '0' && c < '0' + dec_digits) {
-                    i_acc = i_acc * radix + (c - '0');
-                    c = *s++;
-                } else if (c >= 'a' && c < 'a' + hex_digits) {
-                    i_acc = i_acc * radix + (c - 'a' + 10);
-                    c = *s++;
-                } else if (c >= 'A' && c < 'A' + hex_digits) {
-                    i_acc = i_acc * radix + (c - 'A' + 10);
-                    c = *s++;
-                }
-            }
-            if (store_arg) {
-                if (spec.argpos) {
-                    va_copy(args_temp, args);
-                    for (long i = 0; i < spec.argpos; ++i) {
-                        out = va_arg(args_temp, void*);
-                    }
-                    va_end(args_temp);
-                } else {
-                    out = va_arg(args, void*);
-                }
-
-                switch (spec.flags & FSF_ARG_TYPE) {
-                case FSF_ARG_DEFAULT:
-                    if ((spec.flags & FSF_TEXT_TYPE) == FSF_TEXT_POINTER) {
-                        *(void**)out = (void*)(sign * (intmax_t)i_acc);
-                    } else if ((spec.flags & FSF_SIGN) == FSF_SIGNED) {
-                        *(int*)out = sign * (intmax_t)i_acc;
-                    } else {
-                        *(unsigned int*)out = sign * i_acc;
-                    }
-                    break;
-                case FSF_ARG_CHAR:
-                    if ((spec.flags & FSF_SIGN) == FSF_SIGNED) {
-                        *(signed char*)out = sign * (intmax_t)i_acc;
-                    } else {
-                        *(unsigned char*)out = sign * i_acc;
-                    }
-                    break;
-                case FSF_ARG_SHORT:
-                    if ((spec.flags & FSF_SIGN) == FSF_SIGNED) {
-                        *(short*)out = sign * (intmax_t)i_acc;
-                    } else {
-                        *(unsigned short*)out = sign * i_acc;
-                    }
-                    break;
-                case FSF_ARG_LONG:
-                    if ((spec.flags & FSF_SIGN) == FSF_SIGNED) {
-                        *(long*)out = sign * (intmax_t)i_acc;
-                    } else {
-                        *(unsigned long*)out = sign * i_acc;
-                    }
-                    break;
-                case FSF_ARG_LONG_LONG:
-                    if ((spec.flags & FSF_SIGN) == FSF_SIGNED) {
-                        *(long long*)out = sign * (intmax_t)i_acc;
-                    } else {
-                        *(unsigned long*)out = sign * i_acc;
-                    }
-                    break;
-                case FSF_ARG_INTMAX_T:
-                    if ((spec.flags & FSF_SIGN) == FSF_SIGNED) {
-                        *(intmax_t*)out = sign * (intmax_t)i_acc;
-                    } else {
-                        *(uintmax_t*)out = sign * i_acc;
-                    }
-                    break;
-                case FSF_ARG_SIZE_T:
-                    *(size_t*)out = sign * i_acc;
-                    break;
-                case FSF_ARG_PTRDIFF_T:
-                    *(ptrdiff_t*)out = sign * (intmax_t)i_acc;
-                    break;
-
-                default:
-                    goto matching_break;
-                }
-                ++args_filled;
-            }
-            break;
-        case FSF_TEXT_FLOAT_LOWER:
-        case FSF_TEXT_FLOAT_UPPER:
-        case FSF_TEXT_FLOAT_SCI_LOWER:
-        case FSF_TEXT_FLOAT_SCI_UPPER:
-        case FSF_TEXT_FLOAT_FLEX_LOWER:
-        case FSF_TEXT_FLOAT_FLEX_UPPER:
-            while (isspace(c)) {
-                c = *s++;
-            }
-
+           in the input string. */ \
+        if (isspace(fc)) { \
+            while (isspace(c)) { \
+                get_char; \
+            } \
+            continue; \
+        } \
+\
+        /* A non-whitespace, non-format-specifier character must match exactly. */ \
+        if (fc != '%') { \
+            if (c != fc) { \
+                goto matching_break; \
+            } \
+            get_char; \
+            continue; \
+        } \
+\
+        /* Format specifiers */ \
+        bool store_arg = true; \
+        if (*format == '*') { \
+            store_arg = false; \
+            ++format; \
+        } \
+        FormatSpec spec = {0}; \
+        if (parse_format_spec##_wc(&format, &spec)) EFAIL(EINVAL); \
+\
+        size_t width_counter = SIZE_MAX; \
+        if (spec.flags & FSF_HAS_WIDTH) { \
+            if (spec.flags & FSF_WIDTH_FROM_ARG) EFAIL(EINVAL); \
+            width_counter = spec.width; \
+        } \
+\
+        switch (spec.flags & FSF_TEXT_TYPE) { \
+        case FSF_TEXT_INTEGER: \
+        case FSF_TEXT_POINTER: \
+            while (isspace(c)) { \
+                get_char; \
+            } \
+\
+            i_acc = 0; \
+            sign = 1; \
+            if (width_counter != 0) { \
+                switch (c) { \
+                case '-': \
+                    sign = -1; \
+                    /* Intentional fall-through */ \
+                case '+': \
+                    get_char; \
+                    --width_counter; \
+                    break; \
+                } \
+            } \
+            switch (spec.flags & FSF_RADIX) { \
+            case FSF_ANY_RADIX: \
+                radix = 10; \
+                if (width_counter-- && c == '0') { \
+                    radix = 8; \
+                    get_char; \
+                    if (width_counter-- && (c == 'x' || c == 'X')) { \
+                        radix = 16; \
+                        get_char; \
+                    } \
+                } \
+                break; \
+            case FSF_DECIMAL: \
+                radix = 10; \
+                break; \
+            case FSF_OCTAL: \
+                radix = 8; \
+                break; \
+            case FSF_HEX_LOWER: \
+            case FSF_HEX_UPPER: \
+                radix = 16; \
+                if (width_counter >= 2 && c == '0') { \
+                    get_char; \
+                    if (c == 'x' || c == 'X') { \
+                        /* A hexadecimal number can optionally start with "0x". */ \
+                        get_char; \
+                        width_counter -= 2; \
+                    } else { \
+                        unget_char; \
+                        c = '0'; \
+                    } \
+                } \
+                break; \
+            default: /* Should be unreachable */ \
+                EFAIL(EINTERNAL); \
+            } \
+            if (radix <= 10) { \
+                dec_digits = radix; \
+                hex_digits = 0; \
+            } else { \
+                dec_digits = 10; \
+                hex_digits = radix - 10; \
+            } \
+            while (width_counter--) { \
+                if (c >= '0' && c < '0' + dec_digits) { \
+                    i_acc = i_acc * radix + (c - '0'); \
+                    get_char; \
+                } else if (c >= 'a' && c < 'a' + hex_digits) { \
+                    i_acc = i_acc * radix + (c - 'a' + 10); \
+                    get_char; \
+                } else if (c >= 'A' && c < 'A' + hex_digits) { \
+                    i_acc = i_acc * radix + (c - 'A' + 10); \
+                    get_char; \
+                } \
+            } \
+            if (store_arg) { \
+                if (spec.argpos) { \
+                    va_copy(args_temp, args); \
+                    for (long i = 0; i < spec.argpos; ++i) { \
+                        out = va_arg(args_temp, void*); \
+                    } \
+                    va_end(args_temp); \
+                } else { \
+                    out = va_arg(args, void*); \
+                } \
+\
+                switch (spec.flags & FSF_ARG_TYPE) { \
+                case FSF_ARG_DEFAULT: \
+                    if ((spec.flags & FSF_TEXT_TYPE) == FSF_TEXT_POINTER) { \
+                        *(void**)out = (void*)(sign * (intmax_t)i_acc); \
+                    } else if ((spec.flags & FSF_SIGN) == FSF_SIGNED) { \
+                        *(int*)out = sign * (intmax_t)i_acc; \
+                    } else { \
+                        *(unsigned int*)out = sign * i_acc; \
+                    } \
+                    break; \
+                case FSF_ARG_CHAR: \
+                    if ((spec.flags & FSF_SIGN) == FSF_SIGNED) { \
+                        *(signed char*)out = sign * (intmax_t)i_acc; \
+                    } else { \
+                        *(unsigned char*)out = sign * i_acc; \
+                    } \
+                    break; \
+                case FSF_ARG_SHORT: \
+                    if ((spec.flags & FSF_SIGN) == FSF_SIGNED) { \
+                        *(short*)out = sign * (intmax_t)i_acc; \
+                    } else { \
+                        *(unsigned short*)out = sign * i_acc; \
+                    } \
+                    break; \
+                case FSF_ARG_LONG: \
+                    if ((spec.flags & FSF_SIGN) == FSF_SIGNED) { \
+                        *(long*)out = sign * (intmax_t)i_acc; \
+                    } else { \
+                        *(unsigned long*)out = sign * i_acc; \
+                    } \
+                    break; \
+                case FSF_ARG_LONG_LONG: \
+                    if ((spec.flags & FSF_SIGN) == FSF_SIGNED) { \
+                        *(long long*)out = sign * (intmax_t)i_acc; \
+                    } else { \
+                        *(unsigned long*)out = sign * i_acc; \
+                    } \
+                    break; \
+                case FSF_ARG_INTMAX_T: \
+                    if ((spec.flags & FSF_SIGN) == FSF_SIGNED) { \
+                        *(intmax_t*)out = sign * (intmax_t)i_acc; \
+                    } else { \
+                        *(uintmax_t*)out = sign * i_acc; \
+                    } \
+                    break; \
+                case FSF_ARG_SIZE_T: \
+                    *(size_t*)out = sign * i_acc; \
+                    break; \
+                case FSF_ARG_PTRDIFF_T: \
+                    *(ptrdiff_t*)out = sign * (intmax_t)i_acc; \
+                    break; \
+\
+                default: \
+                    goto matching_break; \
+                } \
+                ++args_filled; \
+            } \
+            break; \
+        case FSF_TEXT_FLOAT_LOWER: \
+        case FSF_TEXT_FLOAT_UPPER: \
+        case FSF_TEXT_FLOAT_SCI_LOWER: \
+        case FSF_TEXT_FLOAT_SCI_UPPER: \
+        case FSF_TEXT_FLOAT_FLEX_LOWER: \
+        case FSF_TEXT_FLOAT_FLEX_UPPER: \
+            while (isspace(c)) { \
+                get_char; \
+            } \
+\
             /* FIXME
             A valid floating point number for strtod using the "C" locale is formed by an optional
             sign character (+ or -), followed by one of:
@@ -890,198 +896,227 @@ int vsscanf(const char* restrict s, const char* restrict format, va_list args) {
             - NAN or NANsequence (ignoring case), where sequence is a sequence of characters, where
                each character is either an alphanumeric character (as in isalnum) or the underscore
                character (_).
-            */
-            ++args_filled; /* TODO: Should be done only if the argument is actually used */
-            break;
-        case FSF_TEXT_CHAR:
-            if (!(spec.flags & FSF_HAS_WIDTH)) {
-                width_counter = 1;
-            }
-            if (store_arg) {
-                if (spec.argpos) {
-                    va_copy(args_temp, args);
-                    for (long i = 0; i < spec.argpos; ++i) {
-                        out = va_arg(args_temp, void*);
-                    }
-                    va_end(args_temp);
-                } else {
-                    out = va_arg(args, void*);
-                }
-            }
-            while (width_counter--) {
-                if (store_arg) {
-                    switch (spec.flags & FSF_ARG_TYPE) {
-                    case FSF_ARG_DEFAULT:
-                        *(char*)out = c;
-                        out = (char*)out + 1;
-                        break;
-                    case FSF_ARG_LONG:
+            */ \
+            ++args_filled; /* TODO: Should be done only if the argument is actually used */ \
+            break; \
+        case FSF_TEXT_CHAR: \
+            if (!(spec.flags & FSF_HAS_WIDTH)) { \
+                width_counter = 1; \
+            } \
+            if (store_arg) { \
+                if (spec.argpos) { \
+                    va_copy(args_temp, args); \
+                    for (long i = 0; i < spec.argpos; ++i) { \
+                        out = va_arg(args_temp, void*); \
+                    } \
+                    va_end(args_temp); \
+                } else { \
+                    out = va_arg(args, void*); \
+                } \
+            } \
+            while (width_counter--) { \
+                if (store_arg) { \
+                    switch (spec.flags & FSF_ARG_TYPE) { \
+                    case FSF_ARG_DEFAULT: \
+                        *(char*)out = (char)c; \
+                        out = (char*)out + 1; \
+                        break; \
+                    case FSF_ARG_LONG: \
                         /* FIXME: "The conversion specifiers lc, ls, and l[ perform multibyte-to-wide
                         character conversion as if by calling mbrtowc() with an mbstate_t object
-                        initialized to zero before the first character is converted." */
-                        *(wchar_t*)out = c;
-                        out = (wchar_t*)out + 1;
-                        break;
-                    default:
-                        goto matching_break;
-                    }
-                }
-                c = *s++;
-            }
-            if (store_arg) {
-                ++args_filled;
-            }
-            break;
-        case FSF_TEXT_STRING:
-            while (isspace(c)) {
-                c = *s++;
-            }
-
-            if (store_arg) {
-                if (spec.argpos) {
-                    va_copy(args_temp, args);
-                    for (long i = 0; i < spec.argpos; ++i) {
-                        out = va_arg(args_temp, void*);
-                    }
-                    va_end(args_temp);
-                } else {
-                    out = va_arg(args, void*);
-                }
-            }
-            while (width_counter-- && c && !isspace(c)) {
-                if (store_arg) {
-                    switch (spec.flags & FSF_ARG_TYPE) {
-                    case FSF_ARG_DEFAULT:
-                        *(char*)out = c;
-                        out = (char*)out + 1;
-                        break;
-                    case FSF_ARG_LONG:
+                        initialized to zero before the first character is converted." */ \
+                        *(wchar_t*)out = c; \
+                        out = (wchar_t*)out + 1; \
+                        break; \
+                    default: \
+                        goto matching_break; \
+                    } \
+                } \
+                get_char; \
+            } \
+            if (store_arg) { \
+                ++args_filled; \
+            } \
+            break; \
+        case FSF_TEXT_STRING: \
+            while (isspace(c)) { \
+                get_char; \
+            } \
+\
+            if (store_arg) { \
+                if (spec.argpos) { \
+                    va_copy(args_temp, args); \
+                    for (long i = 0; i < spec.argpos; ++i) { \
+                        out = va_arg(args_temp, void*); \
+                    } \
+                    va_end(args_temp); \
+                } else { \
+                    out = va_arg(args, void*); \
+                } \
+            } \
+            while (width_counter-- && c && !isspace(c)) { \
+                if (store_arg) { \
+                    switch (spec.flags & FSF_ARG_TYPE) { \
+                    case FSF_ARG_DEFAULT: \
+                        *(char*)out = (char)c; \
+                        out = (char*)out + 1; \
+                        break; \
+                    case FSF_ARG_LONG: \
                         /* FIXME: "The conversion specifiers lc, ls, and l[ perform multibyte-to-wide
                         character conversion as if by calling mbrtowc() with an mbstate_t object
-                        initialized to zero before the first character is converted." */
-                        *(wchar_t*)out = c;
-                        out = (wchar_t*)out + 1;
-                        break;
-                    default:
-                        goto matching_break;
-                    }
-                }
-                c = *s++;
-            }
-            if (store_arg) {
-                *(char*)out = '\0';
-                ++args_filled;
-            }
-            break;
-        case FSF_TEXT_SCANSET:
-            if (store_arg) {
-                if (spec.argpos) {
-                    va_copy(args_temp, args);
-                    for (long i = 0; i < spec.argpos; ++i) {
-                        out = va_arg(args_temp, void*);
-                    }
-                    va_end(args_temp);
-                } else {
-                    out = va_arg(args, void*);
-                }
-            }
-            while (width_counter-- && c) {
-                const char* scanner = spec.scanner;
-                do {
-                    if (c == *scanner++) {
-                        if (spec.flags & FSF_SCANSET_NEGATED) {
-                            goto scanset_break;
-                        } else {
-                            goto scanset_store;
-                        }
-                    }
-                } while (*scanner != ']');
-scanset_store:
-                if (store_arg) {
-                    switch (spec.flags & FSF_ARG_TYPE) {
-                    case FSF_ARG_DEFAULT:
-                        *(char*)out = c;
-                        out = (char*)out + 1;
-                        break;
-                    case FSF_ARG_LONG:
+                        initialized to zero before the first character is converted." */ \
+                        *(wchar_t*)out = c; \
+                        out = (wchar_t*)out + 1; \
+                        break; \
+                    default: \
+                        goto matching_break; \
+                    } \
+                } \
+                get_char; \
+            } \
+            if (store_arg) { \
+                *(char*)out = '\0'; \
+                ++args_filled; \
+            } \
+            break; \
+        case FSF_TEXT_SCANSET: \
+            if (store_arg) { \
+                if (spec.argpos) { \
+                    va_copy(args_temp, args); \
+                    for (long i = 0; i < spec.argpos; ++i) { \
+                        out = va_arg(args_temp, void*); \
+                    } \
+                    va_end(args_temp); \
+                } else { \
+                    out = va_arg(args, void*); \
+                } \
+            } \
+            while (width_counter-- && c) { \
+                const char_t* scanner = spec.scanner; \
+                do { \
+                    if (c == *scanner++) { \
+                        if (spec.flags & FSF_SCANSET_NEGATED) { \
+                            goto scanset_break; \
+                        } else { \
+                            goto scanset_store; \
+                        } \
+                    } \
+                } while (*scanner != ']'); \
+scanset_store: \
+                if (store_arg) { \
+                    switch (spec.flags & FSF_ARG_TYPE) { \
+                    case FSF_ARG_DEFAULT: \
+                        *(char*)out = (char)c; \
+                        out = (char*)out + 1; \
+                        break; \
+                    case FSF_ARG_LONG: \
                         /* FIXME: "The conversion specifiers lc, ls, and l[ perform multibyte-to-wide
                         character conversion as if by calling mbrtowc() with an mbstate_t object
-                        initialized to zero before the first character is converted." */
-                        *(wchar_t*)out = c;
-                        out = (wchar_t*)out + 1;
-                        break;
-                    default:
-                        goto matching_break;
-                    }
-                }
-                c = *s++;
-            }
-scanset_break:
-            if (store_arg) {
-                *(char*)out = '\0';
-                ++args_filled;
-            }
-            break;
-        case FSF_TEXT_COUNT:
-            if (store_arg) {
-                if (spec.argpos) {
-                    va_copy(args_temp, args);
-                    for (long i = 0; i < spec.argpos; ++i) {
-                        out = va_arg(args_temp, void*);
-                    }
-                    va_end(args_temp);
-                } else {
-                    out = va_arg(args, void*);
-                }
-
-                switch (spec.flags & FSF_ARG_TYPE) {
-                case FSF_ARG_DEFAULT:
-                    *(int*)out = s - s_start;
-                    break;
-                case FSF_ARG_CHAR:
-                    *(signed char*)out = s - s_start;
-                    break;
-                case FSF_ARG_SHORT:
-                    *(short*)out = s - s_start;
-                    break;
-                case FSF_ARG_LONG:
-                    *(long*)out = s - s_start;
-                    break;
-                case FSF_ARG_LONG_LONG:
-                    *(long long*)out = s - s_start;
-                    break;
-                case FSF_ARG_INTMAX_T:
-                    *(intmax_t*)out = s - s_start;
-                    break;
-                case FSF_ARG_SIZE_T:
-                    *(size_t*)out = s - s_start;
-                    break;
-                case FSF_ARG_PTRDIFF_T:
-                    *(ptrdiff_t*)out = s - s_start;
-                    break;
-                default:
-                    goto matching_break;
-                }
-                ++args_filled;
-            }
-            break;
-        case FSF_TEXT_PERCENT:
-            while (isspace(c)) {
-                c = *s++;
-            }
-
-            if (!(width_counter-- && c == '%')) {
-                c = *s++;
-                goto matching_break;
-            }
-            break;
-        }
-    }
-matching_break:
-    return args_filled; /* TODO: If EOF is reached before any data can be read, return EOF. */
-
-fail:
+                        initialized to zero before the first character is converted." */ \
+                        *(wchar_t*)out = c; \
+                        out = (wchar_t*)out + 1; \
+                        break; \
+                    default: \
+                        goto matching_break; \
+                    } \
+                } \
+                get_char; \
+            } \
+scanset_break: \
+            if (store_arg) { \
+                *(char*)out = '\0'; \
+                ++args_filled; \
+            } \
+            break; \
+        case FSF_TEXT_COUNT: \
+            if (store_arg) { \
+                if (spec.argpos) { \
+                    va_copy(args_temp, args); \
+                    for (long i = 0; i < spec.argpos; ++i) { \
+                        out = va_arg(args_temp, void*); \
+                    } \
+                    va_end(args_temp); \
+                } else { \
+                    out = va_arg(args, void*); \
+                } \
+\
+                switch (spec.flags & FSF_ARG_TYPE) { \
+                case FSF_ARG_DEFAULT: \
+                    *(int*)out = (text_count); \
+                    break; \
+                case FSF_ARG_CHAR: \
+                    *(signed char*)out = (text_count); \
+                    break; \
+                case FSF_ARG_SHORT: \
+                    *(short*)out = (text_count); \
+                    break; \
+                case FSF_ARG_LONG: \
+                    *(long*)out = (text_count); \
+                    break; \
+                case FSF_ARG_LONG_LONG: \
+                    *(long long*)out = (text_count); \
+                    break; \
+                case FSF_ARG_INTMAX_T: \
+                    *(intmax_t*)out = (text_count); \
+                    break; \
+                case FSF_ARG_SIZE_T: \
+                    *(size_t*)out = (text_count); \
+                    break; \
+                case FSF_ARG_PTRDIFF_T: \
+                    *(ptrdiff_t*)out = (text_count); \
+                    break; \
+                default: \
+                    goto matching_break; \
+                } \
+                ++args_filled; \
+            } \
+            break; \
+        case FSF_TEXT_PERCENT: \
+            while (isspace(c)) { \
+                get_char; \
+            } \
+\
+            if (!(width_counter-- && c == '%')) { \
+                get_char; \
+                goto matching_break; \
+            } \
+            break; \
+        } \
+    } \
+matching_break: \
+    finalize; \
+    return args_filled; /* FIXME: If EOF is reached before any data can be read, return EOF. */ \
+\
+fail: \
+    failure; \
     return EOF;
+
+int vfscanf(FILE* restrict stream, const char* restrict format, va_list args) {
+    SCANF_BODY_GENERIC(char, , isspace,
+        size_t text_count = 0; flockfile(stream),
+        c = getc_unlocked(stream); ++text_count,
+        ungetc(c, stream); --text_count,
+        text_count,
+        funlockfile(stream),
+        funlockfile(stream)
+    )
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/vscanf.html */
+int vscanf(const char* format, va_list args) {
+    return vfscanf(stdin, format, args);
+}
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/vsscanf.html */
+int vsscanf(const char* restrict s, const char* restrict format, va_list args) {
+    SCANF_BODY_GENERIC(char, , isspace,
+        const char* const s_start = s,
+        c = *s++,
+        --s,
+        s - s_start,
+        ,
+
+    )
 }
 
 
