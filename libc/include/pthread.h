@@ -93,18 +93,18 @@ struct _PHOENIX_pthread_cleanup_handler_node {
 extern __thread struct _PHOENIX_pthread_cleanup_handler_node* _PHOENIX_pthread_cleanup_handler_head;
 
 /* void pthread_cleanup_push(void (*routine)(void*), void* arg); */
-#define pthread_cleanup_push(routine, arg) { \
+#define pthread_cleanup_push(routine, arg) do { \
     struct _PHOENIX_pthread_cleanup_handler_node __pthread_cleanup_handler_node; \
     __pthread_cleanup_handler_node.handler = routine; \
     __pthread_cleanup_handler_node.arg = arg; \
     __pthread_cleanup_handler_node.next = _PHOENIX_cleanup_handler_head; \
-    _PHOENIX_pthread_cleanup_handler_head = &__pthread_cleanup_handler_node;
+    do { _PHOENIX_pthread_cleanup_handler_head = &__pthread_cleanup_handler_node } while (0)
 
 /* void pthread_cleanup_pop(int execute); */
 #define pthread_cleanup_pop(execute) \
     *_PHOENIX_pthread_cleanup_handler_head = __pthread_cleanup_handler_node.next; \
     if (execute) (*__pthread_cleanup_handler_node.handler)(__pthread_cleanup_handler_node.arg); \
-}
+} while (0)
 
 /* Thread attributes */
 int pthread_setcancelstate(int state, int* oldstate);
