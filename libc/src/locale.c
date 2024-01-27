@@ -23,38 +23,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Character class definitions */
-struct ctype {
-    size_t upper_len;
-    const char* upper;
-    size_t lower_len;
-    const char* lower;
-    size_t alpha_len;
-    const char* alpha;
-    size_t digit_len;
-    const char* digit;
-    size_t space_len;
-    const char* space;
-    size_t cntrl_len;
-    const char* cntrl;
-    size_t punct_len;
-    const char* punct;
-    size_t graph_len;
-    const char* graph;
-    size_t print_len;
-    const char* print;
-    size_t xdigit_len;
-    const char* xdigit;
-    size_t blank_len;
-    const char* blank;
-    size_t toupper_len;
-    const char* toupper_from;
-    const char* toupper_to;
-    size_t tolower_len;
-    const char* tolower_from;
-    const char* tolower_to;
-};
-
 /* A single collation element and its weight */
 struct collation_weight {
     const char* elem; /* Special case: Strings starting with '\0' are terminated by the second '\0', not the first. Strings here can't be empty. */
@@ -103,7 +71,7 @@ struct messages {
 /* Built-in locales */
 #define BUILTIN_LOCALES_COUNT 1
 #define MAX_LOCALE_NAME_LEN 1
-static const size_t POSIX_LOCALE_INDEX = 0; /* "POSIX" is equivalent to "C". */
+#define POSIX_LOCALE_INDEX 0 /* "POSIX" is equivalent to "C". */
 static char* const BUILTIN_LOCALE_NAMES[BUILTIN_LOCALES_COUNT] = {"C"};
 static struct lconv BUILTIN_LOCALE_CONVS[BUILTIN_LOCALES_COUNT] = {
     {
@@ -132,38 +100,6 @@ static struct lconv BUILTIN_LOCALE_CONVS[BUILTIN_LOCALES_COUNT] = {
         .n_cs_precedes      = CHAR_MAX,
         .n_sep_by_space     = CHAR_MAX,
         .n_sign_posn        = CHAR_MAX
-    }
-};
-static const struct ctype BUILTIN_LOCALE_CTYPES[BUILTIN_LOCALES_COUNT] = {
-    {
-        .upper_len = 26,
-        .upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-        .lower_len = 26,
-        .lower = "abcdefghijklmnopqrstuvwxyz",
-        .alpha_len = 52,
-        .alpha = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
-        .digit_len = 10,
-        .digit = "0123456789",
-        .space_len = 6,
-        .space = "\t\n\v\f\r ",
-        .cntrl_len = 33,
-        .cntrl = "\a\b\t\n\v\f\r\0\x01\x02\x03\x04\x05\x06\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f\x7f",
-        .punct_len = 32,
-        .punct = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~",
-        .graph_len = 94,
-        .graph = "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~",
-        .print_len = 95,
-        .print = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~",
-        .xdigit_len = 22,
-        .xdigit = "0123456789ABCDEFabcdef",
-        .blank_len = 2,
-        .blank = " \t",
-        .toupper_len = 26,
-        .toupper_from = "abcdefghijklmnopqrstuvwxyz",
-        .toupper_to   = "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-        .tolower_len = 26,
-        .tolower_from = "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-        .tolower_to   = "abcdefghijklmnopqrstuvwxyz"
     }
 };
 static const struct collation_weight POSIX_LOCALE_COLLATIONS[129] = {
@@ -393,22 +329,26 @@ locale_t _PHOENIX_uselocale(locale_t newloc) __attribute__((alias("uselocale")))
 
 
 /* Functions defined in ctype.h */
-#define DEFINE_CTYPE_IS(class) \
+#define DEFINE_CTYPE_IS(class, posix_test) \
 int is##class##_l(int c, locale_t locale) { \
-    const struct ctype* ctype = BUILTIN_LOCALE_CTYPES + ((struct locale*)locale)->ctype; \
-    for (size_t i = 0; i < ctype->class##_len; ++i) { \
-        if ((unsigned char)ctype->class[i] == c) return 1; \
+    switch (((struct locale*)locale)->ctype) { \
+    case POSIX_LOCALE_INDEX: \
+        return (posix_test); \
+    default: \
+        /* TODO: Allow user-defined locales. */ \
+        return 0; \
     } \
-    return 0; \
 }
 
-#define DEFINE_CTYPE_TO(class) \
+#define DEFINE_CTYPE_TO(class, posix_convert) \
 int to##class##_l(int c, locale_t locale) { \
-    const struct ctype* ctype = BUILTIN_LOCALE_CTYPES + ((struct locale*)locale)->ctype; \
-    for (size_t i = 0; i < ctype->to##class##_len; ++i) { \
-        if ((unsigned char)ctype->to##class##_from[i] == c) return (unsigned char)ctype->to##class##_to[i]; \
+    switch (((struct locale*)locale)->ctype) { \
+    case POSIX_LOCALE_INDEX: \
+        return (posix_convert); \
+    default: \
+        /* TODO: Allow user-defined locales. */ \
+        return c; \
     } \
-    return c; \
 } \
 \
 int _PHOENIX_to##class##_l(int c, locale_t locale) __attribute__((alias("to" #class "_l")));
@@ -418,43 +358,43 @@ int isalnum_l(int c, locale_t locale) {
     return isalpha_l(c, locale) || isdigit_l(c, locale);
 }
 
-/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isalpha_l.html */
-DEFINE_CTYPE_IS(alpha)
-
-/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isblank_l.html */
-DEFINE_CTYPE_IS(blank)
-
-/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/iscntrl_l.html */
-DEFINE_CTYPE_IS(cntrl)
-
-/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isdigit_l.html */
-DEFINE_CTYPE_IS(digit)
-
-/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isgraph_l.html */
-DEFINE_CTYPE_IS(graph)
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isupper_l.html */
+DEFINE_CTYPE_IS(upper, c >= 'A' && c <= 'Z')
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/islower_l.html */
-DEFINE_CTYPE_IS(lower)
+DEFINE_CTYPE_IS(lower, c >= 'a' && c <= 'z')
 
-/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isprint_l.html */
-DEFINE_CTYPE_IS(print)
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isalpha_l.html */
+DEFINE_CTYPE_IS(alpha, (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'))
 
-/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/ispunct_l.html */
-DEFINE_CTYPE_IS(punct)
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isdigit_l.html */
+DEFINE_CTYPE_IS(digit, c >= '0' && c <= '9')
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isblank_l.html */
+DEFINE_CTYPE_IS(blank, c == '\t' || c == ' ')
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isspace_l.html */
-DEFINE_CTYPE_IS(space)
+DEFINE_CTYPE_IS(space, c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r' || c == ' ')
 
-/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isupper_l.html */
-DEFINE_CTYPE_IS(upper)
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/iscntrl_l.html */
+DEFINE_CTYPE_IS(cntrl, c < 0x20 || c == 0x7f)
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isgraph_l.html */
+DEFINE_CTYPE_IS(graph, c > 0x20 && c <= 0x7e)
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isprint_l.html */
+DEFINE_CTYPE_IS(print, c >= 0x20 && c <= 0x7e)
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/ispunct_l.html */
+DEFINE_CTYPE_IS(punct, c > 0x20 && c <= 0x7e && (c < '0' || c > '9') && (c < 'A' || c > 'Z') && (c < 'a' || c > 'z'))
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/isxdigit_l.html */
-DEFINE_CTYPE_IS(xdigit)
-
-/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/tolower_l.html */
-#undef tolower_l
-DEFINE_CTYPE_TO(lower)
+DEFINE_CTYPE_IS(xdigit, (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f'))
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/toupper_l.html */
 #undef toupper_l
-DEFINE_CTYPE_TO(upper)
+DEFINE_CTYPE_TO(upper, c >= 'a' && c <= 'z' ? c + ('A' - 'a') : c)
+
+/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/tolower_l.html */
+#undef tolower_l
+DEFINE_CTYPE_TO(lower, c >= 'A' && c <= 'Z' ? c + ('a' - 'A') : c)
