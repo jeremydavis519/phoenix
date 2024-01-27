@@ -472,13 +472,17 @@ int snprintf(char* restrict s, size_t n, const char* restrict format, ...) {
 /* A common implementation for all the printf variants.
  * char_t should be set so that the `format` argument to the function is of type `const char_t*`.
  * _wc should be set to `_wc` if char_t is `wchar_t`, or `` if char_t is `char`.
+ * setup should be a statement that will run before any characters are printed.
  * put_char should be a statement that prints the character `c` in the appropriate way.
- * finalize should be a statement that does any necessary cleanup before the function returns with no error. */
-#define PRINTF_BODY_GENERIC(char_t, _wc, put_char, finalize) \
+ * finalize should be a statement that does any necessary cleanup before the function returns with no error.
+ * failure should be a statement that cleans up before the function returns with an error. */
+#define PRINTF_BODY_GENERIC(char_t, _wc, setup, put_char, finalize, failure) \
     struct lconv* locale_conv = localeconv(); \
     char_t c; \
     int chars_written = 0; \
     const char_t* old_format; \
+\
+    setup; \
 \
     va_list positioned_args[NL_ARGMAX]; \
     long positioned_args_count = find_positioned_args##_wc(format, args, positioned_args); \
@@ -568,11 +572,17 @@ put: \
     return chars_written; \
 \
 fail: \
+    failure; \
     return -1;
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/vfprintf.html */
 int vfprintf(FILE* restrict stream, const char* restrict format, va_list args) {
-    PRINTF_BODY_GENERIC(char, , if (fputc(c, stream) == EOF) goto fail,)
+    PRINTF_BODY_GENERIC(char, ,
+        flockfile(stream),
+        if (putc_unlocked(c, stream) == EOF) goto fail,
+        funlockfile(stream),
+        funlockfile(stream)
+    )
 }
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/vprintf.html */
@@ -582,29 +592,54 @@ int vprintf(const char* format, va_list args) {
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/vdprintf.html */
 int vdprintf(int fildes, const char* restrict format, va_list args) {
-    PRINTF_BODY_GENERIC(char, , if (write(fildes, &c, 1) == -1) goto fail,)
+    PRINTF_BODY_GENERIC(char, ,
+        ,
+        if (write(fildes, &c, 1) == -1) goto fail,
+        ,
+
+    )
 }
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/vsprintf.html */
 int vsprintf(char* restrict s, const char* restrict format, va_list args) {
-    PRINTF_BODY_GENERIC(char, , *s++ = c, *s = '\0')
+    PRINTF_BODY_GENERIC(char, ,
+        ,
+        *s++ = c,
+        *s = '\0',
+
+    )
 }
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/vsnprintf.html */
 int vsnprintf(char* restrict s, size_t n, const char* restrict format, va_list args) {
-    PRINTF_BODY_GENERIC(char, , if (n > 1) { *s++ = c; --n; }, if (n) { *s = '\0'; })
+    PRINTF_BODY_GENERIC(char, ,
+        ,
+        if (n > 1) { *s++ = c; --n; },
+        if (n) { *s = '\0'; },
+
+    )
 }
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/vfwprintf.html */
 /* Declared in wchar.h */
 int vfwprintf(FILE* restrict stream, const wchar_t* restrict format, va_list args) {
-    PRINTF_BODY_GENERIC(wchar_t, _wc, if (fputwc(c, stream) == WEOF) goto fail,)
+    PRINTF_BODY_GENERIC(wchar_t, _wc,
+        flockfile(stream),
+        if (fputwc(c, stream) == WEOF) goto fail,
+        funlockfile(stream),
+        funlockfile(stream)
+    )
 }
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/vswprintf.html */
 /* Declared in wchar.h */
 int vswprintf(wchar_t* restrict ws, size_t max_chars, const wchar_t* restrict format, va_list args) {
-    PRINTF_BODY_GENERIC(wchar_t, _wc, if (max_chars > 1) { *ws++ = c; --max_chars; }, if (max_chars) { *ws = 0; })
+    PRINTF_BODY_GENERIC(wchar_t, _wc,
+        ,
+        if (max_chars > 1) { *ws++ = c; --max_chars; },
+        if (max_chars) { *ws = 0; },
+
+    )
 }
 
 /* https://pubs.opengroup.org/onlinepubs/9699919799/functions/fscanf.html */
