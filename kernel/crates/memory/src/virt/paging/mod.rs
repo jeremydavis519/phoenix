@@ -25,7 +25,7 @@
 #[cfg(target_arch = "x86_64")] pub mod temp {
     #![doc(hidden)]
     // TODO: These are here just to allow the unit tests to compile.
-    use { alloc::alloc::AllocError, core::num::NonZeroUsize, crate::phys::{RegionType, block::BlockMut} };
+    use { alloc::alloc::AllocError, core::{mem::MaybeUninit, num::NonZeroUsize}, crate::phys::{RegionType, block::BlockMut} };
     #[allow(missing_docs)]
     pub fn page_size() -> usize { unimplemented!(); }
     #[derive(Debug)]
@@ -61,7 +61,7 @@
         pub fn map_zeroed_from_exe_file(&self, _virt_base: usize, _size: NonZeroUsize) -> Result<(), ()> {
             unimplemented!()
         }
-        pub fn userspace_addr_to_kernel_addr<E: FnOnce(usize, &mut [u8]) -> Result<(), ()>>(
+        pub fn userspace_addr_to_kernel_addr<E: FnOnce(usize, &mut [MaybeUninit<u8>]) -> Result<(), ()>>(
             &self,
             _userspace_addr: usize,
             _region_type: RegionType,
