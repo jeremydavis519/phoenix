@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2023 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2019-2024 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -94,7 +94,6 @@ enter_userspace:
     ldr x19, [sp], 16
 
     eret
-b leave_userspace
 
 .section .text.leave_userspace, "ax"
 
@@ -170,10 +169,6 @@ leave_userspace:
     // Return to where we were on the main stack before entering userspace.
     ldr x9, [sp], 16 // X9 = the stack pointer that was saved on the trampoline stack
     mov sp, x9
-
-    // Enable interrupts (necessary because we're technically in an exception handler and aren't
-    // going to execute ERET to leave it).
-    msr DAIFClr, 0x7
 
     // Pop what we pushed onto the main stack before entering userspace.
     ldp x4, lr, [sp], 16

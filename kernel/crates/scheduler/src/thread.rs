@@ -1,4 +1,4 @@
-/* Copyright (c) 2022-2023 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2022-2024 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -230,6 +230,12 @@ impl Thread<File> {
             }
         };
         self.save_state();
+
+        // We need to enable interrupts here because we're technically in an exception handler
+        // and won't be returning with ERET. (We need to be careful to do this only *after*
+        // we finish saving the thread's state, or else an interrupt could clobber something.)
+        enable_interrupts();
+
         status
     }
 }
@@ -288,5 +294,14 @@ impl fmt::Display for ThreadCreationError {
             Self::StackAddrConflict => write!(f, "failed to map virtual memory for the thread's stack"),
             Self::OutOfMemory => write!(f, "ran out of memory when allocating the thread")
         }
+    }
+}
+
+fn enable_interrupts() {
+    unsafe {
+        asm!(
+            "msr DAIFClr, 0x7",
+            options(nomem, nostack, preserves_flags)
+        );
     }
 }
