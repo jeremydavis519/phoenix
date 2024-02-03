@@ -1,4 +1,4 @@
-/* Copyright (c) 2017-2022 Jeremy Davis (jeremydavis519@gmail.com)
+/* Copyright (c) 2017-2024 Jeremy Davis (jeremydavis519@gmail.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -189,7 +189,7 @@ synchronous_el1_spx:
     msr UAO, 1
 .endif
     // We would just use `pushtemp` and `poptemp`, but we need the order of operations to be slightly different.
-    stp x30, x1, [sp, -16]!
+    str x30, [sp, -16]!
     stp x2, x3, [sp, -16]!
     stp x4, x5, [sp, -16]!
     stp x6, x7, [sp, -16]!
@@ -199,7 +199,7 @@ synchronous_el1_spx:
     stp x14, x15, [sp, -16]!
     stp x16, x17, [sp, -16]!
     stp x18, x29, [sp, -16]!
-    str x0, [sp, -16]!
+    stp x0, x1, [sp, -16]!
 
     mov x0, 0       // Current thread (None)
     mrs x1, ESR_EL1 // Syndrome register
@@ -208,7 +208,7 @@ synchronous_el1_spx:
     ldr x9, =aarch64_handle_synchronous_exception
     blr x9
 
-    ldr x0, [sp], 16
+    ldp x0, x1, [sp], 16
     ldp x18, x29, [sp], 16
     ldp x16, x17, [sp], 16
     ldp x14, x15, [sp], 16
@@ -218,7 +218,7 @@ synchronous_el1_spx:
     ldp x6, x7, [sp], 16
     ldp x4, x5, [sp], 16
     ldp x2, x3, [sp], 16
-    ldp x30, x1, [sp], 16
+    ldr x30, [sp], 16
     eret
 .Ls1xend:
 .if .Ls1xend - synchronous_el1_spx > 0x80
