@@ -357,7 +357,7 @@ irq_el0_aarch64:
     str x0, [sp, -16]!
     bl aarch64_handle_irq_indirect
     cmp x0, 0 // 0 = normal ERET, 1 = leave userspace
-	ldr x0, [sp], 16
+    ldr x0, [sp], 16
 
     mov sp, x19
     b.eq .Li06eret
