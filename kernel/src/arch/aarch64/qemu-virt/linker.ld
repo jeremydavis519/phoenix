@@ -36,7 +36,7 @@ SECTIONS {
     __start = .;
     __readonly_start = .;
     __text_start = .;
-    .text.boot.entry __start : {
+    .text __start : {
         KEEP(*(.text.boot.entry))
         *(.text.boot) *(.text.boot.*)
         *(.text)
