@@ -27,6 +27,7 @@
 #![feature(coerce_unsized, unsize)]
 #![feature(const_type_name)]
 #![feature(error_in_core)]
+#![feature(exposed_provenance)]
 #![feature(inline_const)]
 #![feature(lang_items)]
 #![feature(layout_for_ptr)]
